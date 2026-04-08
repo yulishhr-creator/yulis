@@ -1,12 +1,12 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Plus, Mail } from 'lucide-react'
+import { Plus, Mail, ListTodo, AlertTriangle, CheckCircle2, Briefcase, Users } from 'lucide-react'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { formatDue } from '@/lib/dates'
-import { PageHeader } from '@/components/ui/PageHeader'
+import { StitchKpiCard } from '@/components/ui/StitchKpiCard'
 
 export function DashboardPage() {
   const { user } = useAuth()
@@ -103,40 +103,88 @@ export function DashboardPage() {
   const reminders = remindersQ.data ?? []
   const kpis = kpisQ.data
 
-  const kpiList = kpis
-    ? [
-        { label: 'Open tasks', value: kpis.openTasks },
-        { label: 'Overdue', value: kpis.overdue },
-        { label: 'Active positions', value: kpis.positions },
-        { label: 'Candidates', value: kpis.candidates },
-      ]
-    : []
-
   return (
     <div className="flex flex-col gap-10">
-      <PageHeader
-        title="My work"
-        subtitle="What to do next — tasks, reminders, and open positions."
-      />
+      <motion.header
+        initial={reduceMotion ? false : { opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+      >
+        <h1 className="font-stitch-head text-stitch-on-surface text-3xl font-extrabold tracking-tight md:text-4xl dark:text-stone-100">
+          My work
+        </h1>
+        <p className="text-stitch-muted mt-2 max-w-xl text-sm leading-relaxed dark:text-stone-400">
+          What to do next — tasks, reminders, and open positions.
+        </p>
+      </motion.header>
 
       {kpis ? (
-        <motion.section aria-label="Overview" initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: reduceMotion ? 0 : 0.07 } } }}>
-          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {kpiList.map((k) => (
-              <motion.li
-                key={k.label}
-                variants={{
-                  hidden: { opacity: 0, y: reduceMotion ? 0 : 12 },
-                  show: { opacity: 1, y: 0 },
-                }}
-                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                className="border-line bg-white/65 group relative overflow-hidden rounded-2xl border px-4 py-4 shadow-sm transition-shadow hover:shadow-md dark:border-line-dark dark:bg-stone-900/50"
-              >
-                <div className="from-accent/0 group-hover:from-accent/8 pointer-events-none absolute inset-0 bg-gradient-to-br to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
-                <p className="text-ink-muted relative text-xs font-medium tracking-wide uppercase dark:text-stone-500">{k.label}</p>
-                <p className="font-display text-ink relative mt-1 text-3xl font-semibold tabular-nums dark:text-stone-100">{k.value}</p>
-              </motion.li>
-            ))}
+        <motion.section aria-label="Overview" initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: reduceMotion ? 0 : 0.08 } } }}>
+          <ul className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <motion.li
+              variants={{
+                hidden: { opacity: 0, y: reduceMotion ? 0 : 14 },
+                show: { opacity: 1, y: 0 },
+              }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="list-none"
+            >
+              <StitchKpiCard
+                label="Open tasks"
+                value={kpis.openTasks}
+                variant="green"
+                icon={ListTodo}
+                footer={kpis.openTasks === 1 ? '1 item in your queue' : `${kpis.openTasks} items in your queue`}
+              />
+            </motion.li>
+            <motion.li
+              variants={{
+                hidden: { opacity: 0, y: reduceMotion ? 0 : 14 },
+                show: { opacity: 1, y: 0 },
+              }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="list-none"
+            >
+              <StitchKpiCard
+                label="Overdue"
+                value={kpis.overdue}
+                variant={kpis.overdue > 0 ? 'danger' : 'green'}
+                icon={kpis.overdue > 0 ? AlertTriangle : CheckCircle2}
+                footer={kpis.overdue > 0 ? `${kpis.overdue} need attention` : 'Nothing overdue'}
+              />
+            </motion.li>
+            <motion.li
+              variants={{
+                hidden: { opacity: 0, y: reduceMotion ? 0 : 14 },
+                show: { opacity: 1, y: 0 },
+              }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="list-none"
+            >
+              <StitchKpiCard
+                label="Active positions"
+                value={kpis.positions}
+                variant="terracotta"
+                icon={Briefcase}
+                footer={kpis.positions === 1 ? '1 role live' : `${kpis.positions} roles live`}
+              />
+            </motion.li>
+            <motion.li
+              variants={{
+                hidden: { opacity: 0, y: reduceMotion ? 0 : 14 },
+                show: { opacity: 1, y: 0 },
+              }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="list-none"
+            >
+              <StitchKpiCard
+                label="Candidates"
+                value={kpis.candidates}
+                variant="blue"
+                icon={Users}
+                footer={kpis.candidates === 1 ? '1 in your funnel' : `${kpis.candidates} in your funnel`}
+              />
+            </motion.li>
           </ul>
         </motion.section>
       ) : null}
