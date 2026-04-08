@@ -1,23 +1,22 @@
 import { useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { motion, useReducedMotion } from 'framer-motion'
+
+import { ScreenHeader } from '@/components/layout/ScreenHeader'
 
 export function IntegrationsPage() {
   const connectDialogRef = useRef<HTMLDialogElement>(null)
+  const reduceMotion = useReducedMotion()
 
   return (
     <div className="mx-auto max-w-xl">
-      <p className="text-sm">
-        <Link to="/settings" className="text-accent hover:underline dark:text-orange-300">
-          Settings
-        </Link>
-      </p>
-      <h1 className="font-display mt-2 text-2xl font-semibold">Integrations</h1>
-      <p className="text-ink-muted mt-2 text-sm">
+      <ScreenHeader title="Integrations" subtitle="Connect external services — Gmail send via Edge Functions (planned)." backTo="/settings" />
+
+      <p className="text-stitch-muted text-sm dark:text-stone-400">
         Gmail OAuth and server-side send will be wired via Supabase Edge Functions + Google Cloud OAuth client. For now,
-        use <strong>Email company</strong> / template flows with <code className="rounded bg-accent-soft/80 px-1">mailto:</code>{' '}
+        use <strong>Email company</strong> / template flows with <code className="rounded bg-[#fd8863]/20 px-1">mailto:</code>{' '}
         to compose in your Gmail.
       </p>
-      <div className="border-line bg-white/70 mt-6 flex items-center gap-4 rounded-2xl border px-4 py-4 dark:border-line-dark dark:bg-stone-900/45">
+      <div className="border-stitch-on-surface/10 mt-6 flex items-center gap-4 rounded-2xl border bg-white/80 px-4 py-4 shadow-sm dark:border-stone-700 dark:bg-stone-900/50">
         <svg className="h-10 w-10" viewBox="0 0 48 48" aria-hidden>
           <path
             fill="#EA4335"
@@ -37,33 +36,33 @@ export function IntegrationsPage() {
           />
         </svg>
         <div className="flex-1">
-          <p className="font-medium">Gmail</p>
-          <p className="text-ink-muted text-sm">
-            Send from the app after OAuth ships. Use <strong>Connect</strong> for what works today.
-          </p>
+          <p className="font-stitch-head font-bold text-[#302e2b] dark:text-stone-100">Gmail</p>
+          <p className="text-stitch-muted text-sm dark:text-stone-400">Connect to send from the app (coming with Edge deployment).</p>
         </div>
-        <button
+        <motion.button
           type="button"
           onClick={() => connectDialogRef.current?.showModal()}
-          className="border-line bg-white/90 hover:bg-accent-soft/60 dark:hover:bg-stone-800/80 rounded-full border px-4 py-2 text-sm font-medium transition dark:border-line-dark dark:bg-stone-900/60"
+          className="rounded-full border border-[#97daff]/60 bg-gradient-to-r from-[#97daff]/30 to-white px-4 py-2 text-sm font-bold text-[#006384] shadow-sm dark:border-cyan-800 dark:from-cyan-900/40 dark:to-stone-800 dark:text-cyan-300"
+          whileHover={reduceMotion ? undefined : { scale: 1.03 }}
+          whileTap={reduceMotion ? undefined : { scale: 0.97 }}
         >
           Connect
-        </button>
+        </motion.button>
       </div>
 
       <dialog
         ref={connectDialogRef}
-        className="border-line bg-paper backdrop:bg-ink/40 fixed top-1/2 left-1/2 z-50 w-[min(100%-2rem,26rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-6 shadow-xl dark:border-line-dark dark:bg-stone-900 dark:backdrop:bg-black/50"
+        className="border-stitch-on-surface/15 fixed top-1/2 left-1/2 z-50 w-[min(100%-2rem,26rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border bg-white p-6 shadow-2xl backdrop:bg-black/45 dark:border-stone-700 dark:bg-stone-900"
       >
-        <h2 className="font-display text-lg font-semibold">Gmail in the app</h2>
-        <p className="text-ink-muted mt-3 text-sm leading-relaxed dark:text-stone-400">
+        <h2 className="font-stitch-head text-lg font-extrabold text-[#302e2b] dark:text-stone-100">Gmail in the app</h2>
+        <p className="text-stitch-muted mt-3 text-sm leading-relaxed dark:text-stone-400">
           OAuth and server-side send are not wired yet (planned: Supabase Edge Functions + Google Cloud OAuth). Until then,
           use <strong>Email company</strong> and email template actions that open{' '}
-          <code className="rounded bg-accent-soft/80 px-1">mailto:</code> links—you compose and send in Gmail yourself.
+          <code className="rounded bg-[#fd8863]/20 px-1">mailto:</code> links—you compose and send in Gmail yourself.
         </p>
         <button
           type="button"
-          className="bg-accent text-stone-50 hover:bg-accent/90 mt-6 w-full rounded-full py-2.5 text-sm font-semibold"
+          className="mt-6 w-full rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] py-2.5 text-sm font-bold text-white"
           onClick={() => connectDialogRef.current?.close()}
         >
           Got it

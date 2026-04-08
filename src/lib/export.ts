@@ -1,3 +1,5 @@
+import * as XLSX from 'xlsx'
+
 export function downloadCsv(filename: string, rows: Record<string, unknown>[]) {
   if (!rows.length) return
   const keys = Object.keys(rows[0]!)
@@ -14,4 +16,21 @@ export function downloadCsv(filename: string, rows: Record<string, unknown>[]) {
   a.download = filename
   a.click()
   URL.revokeObjectURL(a.href)
+}
+
+export function downloadJson(filename: string, data: unknown) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
+export function downloadXlsx(filename: string, rows: Record<string, unknown>[]) {
+  if (!rows.length) return
+  const ws = XLSX.utils.json_to_sheet(rows)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Export')
+  XLSX.writeFile(wb, filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`)
 }

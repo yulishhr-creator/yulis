@@ -4,6 +4,7 @@ import { useState } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
+import { ScreenHeader } from '@/components/layout/ScreenHeader'
 
 export function PositionsPage() {
   const { user } = useAuth()
@@ -51,18 +52,19 @@ export function PositionsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-semibold">Positions</h1>
-          <p className="text-ink-muted mt-1 text-sm dark:text-stone-400">Roles you’re hiring for across clients.</p>
-        </div>
-        <Link
-          to="/positions?create=1"
-          className="bg-accent text-stone-50 hover:bg-accent/90 rounded-full px-5 py-2.5 text-sm font-semibold"
-        >
-          Create position
-        </Link>
-      </div>
+      <ScreenHeader
+        title="Positions"
+        subtitle="Roles you’re hiring for — add tasks from each role."
+        backTo="/"
+        right={
+          <Link
+            to="/positions?create=1"
+            className="rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-4 py-2 text-sm font-bold text-white shadow-md"
+          >
+            New role
+          </Link>
+        }
+      />
 
       {createOpen && companies.length === 0 ? (
         <p className="text-ink-muted rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900/50 dark:bg-amber-950/30">

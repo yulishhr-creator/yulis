@@ -1,9 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
-
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
+import { ScreenHeader } from '@/components/layout/ScreenHeader'
 
 export function EmailTemplatesPage() {
   const { user } = useAuth()
@@ -43,13 +42,12 @@ export function EmailTemplatesPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <p className="text-sm">
-        <Link to="/settings" className="text-accent hover:underline dark:text-orange-300">
-          Settings
-        </Link>
-      </p>
-      <h1 className="font-display mt-2 text-2xl font-semibold">Email templates</h1>
-      <p className="text-ink-muted mt-2 text-sm">
+      <ScreenHeader
+        title="Email templates"
+        subtitle="Use tokens in subjects and bodies for send-email flows."
+        backTo="/settings"
+      />
+      <p className="text-stitch-muted mt-2 text-sm dark:text-stone-400">
         Use tokens like{' '}
         <code className="rounded bg-accent-soft/80 px-1">{'{{position_title}}'}</code>,{' '}
         <code className="rounded bg-accent-soft/80 px-1">{'{{candidate_name}}'}</code>,{' '}

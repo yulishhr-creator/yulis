@@ -18,6 +18,7 @@ import { EmailTemplatesPage } from '@/pages/EmailTemplatesPage'
 import { ListSettingsPage } from '@/pages/ListSettingsPage'
 import { IntegrationsPage } from '@/pages/IntegrationsPage'
 import { ProfilePage } from '@/pages/ProfilePage'
+import { NotificationsPage } from '@/pages/NotificationsPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,6 +45,7 @@ export default function App() {
                     <Route path="/companies/:id" element={<CompanyDetailPage />} />
                     <Route path="/positions" element={<PositionsPage />} />
                     <Route path="/positions/:id" element={<PositionDetailPage />} />
+                    <Route path="/notifications" element={<NotificationsPage />} />
                     <Route path="/settings" element={<SettingsPage />} />
                     <Route path="/settings/profile" element={<ProfilePage />} />
                     <Route path="/settings/email-templates" element={<EmailTemplatesPage />} />

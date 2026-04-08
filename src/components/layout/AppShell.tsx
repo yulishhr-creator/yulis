@@ -4,27 +4,29 @@ import {
   Building2,
   Briefcase,
   Settings,
-  Menu,
-  X,
   CloudSun,
   Sparkles,
   User,
   LogOut,
+  Bell,
 } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
 import { useWeatherLine } from '@/hooks/useWeatherLine'
+import { useNotificationCount } from '@/hooks/useNotificationCount'
 import { AppLogo } from '@/components/ui/AppLogo'
 import { AnimatedOutlet } from '@/components/layout/AnimatedOutlet'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
 
 const nav = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/companies', label: 'Companies', icon: Building2 },
-  { to: '/positions', label: 'Positions', icon: Briefcase },
-  { to: '/settings', label: 'Settings', icon: Settings },
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/companies', label: 'Companies', icon: Building2, end: false },
+  { to: '/positions', label: 'Positions', icon: Briefcase, end: false },
+  { to: '/notifications', label: 'Notifications', icon: Bell, end: false },
+  { to: '/settings', label: 'Settings', icon: Settings, end: false },
 ] as const
 
 function greeting(): string {
@@ -36,11 +38,11 @@ function greeting(): string {
 
 export function AppShell() {
   const { user, signOut } = useAuth()
-  const [open, setOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const weather = useWeatherLine()
   const reduceMotion = useReducedMotion()
+  const { data: notificationCount = 0 } = useNotificationCount()
 
   const displayName = user?.user_metadata?.full_name ?? user?.email?.split('@')[0] ?? 'there'
   const metaName = (user?.user_metadata?.full_name as string | undefined) ?? ''
@@ -56,8 +58,8 @@ export function AppShell() {
   return (
     <div className="bg-paper text-ink relative min-h-dvh overflow-x-hidden dark:bg-paper-dark dark:text-stone-100">
       <div className="pointer-events-none fixed inset-0 -z-10">
-        <div className="bg-accent/[0.06] absolute top-0 right-0 h-[min(50vh,420px)] w-[min(50vw,420px)] rounded-full blur-3xl dark:bg-orange-500/10" />
-        <div className="absolute bottom-0 left-0 h-[min(40vh,360px)] w-[min(45vw,360px)] rounded-full bg-amber-400/[0.07] blur-3xl dark:bg-amber-500/10" />
+        <div className="absolute top-0 right-0 h-[min(55vh,480px)] w-[min(60vw,480px)] rounded-full bg-gradient-to-bl from-[#fd8863]/20 via-[#97daff]/12 to-transparent blur-3xl dark:from-orange-500/15 dark:via-cyan-500/10" />
+        <div className="absolute bottom-0 left-0 h-[min(45vh,400px)] w-[min(50vw,400px)] rounded-full bg-gradient-to-tr from-[#b4fdb4]/15 via-transparent to-[#fd8863]/10 blur-3xl dark:from-emerald-500/10" />
       </div>
 
       <a
@@ -67,56 +69,35 @@ export function AppShell() {
         Skip to content
       </a>
 
-      {open ? (
-        <button
-          type="button"
-          className="fixed inset-0 z-40 bg-black/45 backdrop-blur-[2px] transition-opacity lg:hidden"
-          aria-label="Close menu"
-          onClick={() => setOpen(false)}
-        />
-      ) : null}
-
-      <aside
-        className={`border-line bg-paper/90 fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r backdrop-blur-xl transition-transform duration-300 ease-out lg:translate-x-0 dark:border-line-dark dark:bg-paper-dark/92 ${
-          open ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
-        <div className="border-line flex items-center justify-between gap-2 border-b px-4 py-4 dark:border-line-dark">
-          <Link to="/" className="min-w-0" onClick={() => setOpen(false)}>
+      {/* Desktop / tablet: sidebar */}
+      <aside className="border-line bg-paper/95 fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r backdrop-blur-xl lg:flex dark:border-line-dark dark:bg-paper-dark/95">
+        <div className="border-line flex items-center gap-2 border-b px-4 py-4 dark:border-line-dark">
+          <Link to="/" className="min-w-0">
             <AppLogo size="sm" />
           </Link>
-          <button
-            type="button"
-            className="hover:bg-accent-soft/50 rounded-lg p-2 transition lg:hidden dark:hover:bg-stone-800"
-            onClick={() => setOpen(false)}
-            aria-label="Close sidebar"
-          >
-            <X className="h-5 w-5" />
-          </button>
         </div>
 
         <nav className="flex flex-1 flex-col gap-1 p-3" aria-label="Main">
-          {nav.map(({ to, label, icon: Icon }) => (
+          {nav.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
-              end={to === '/'}
-              onClick={() => setOpen(false)}
+              end={end}
               className={({ isActive }) =>
                 `group relative flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                   isActive
-                    ? 'bg-accent-soft text-ink shadow-sm ring-1 ring-accent/25 dark:bg-stone-800 dark:text-stone-100 dark:ring-orange-400/20'
-                    : 'text-ink-muted hover:bg-accent-soft/70 hover:text-ink dark:text-stone-400 dark:hover:bg-stone-800/90 dark:hover:text-stone-100'
+                    ? 'bg-gradient-to-r from-[#fd8863]/25 to-[#97daff]/20 text-stitch-on-surface shadow-sm ring-1 ring-[#9b3e20]/20 dark:from-orange-500/20 dark:to-cyan-500/15 dark:text-stone-100 dark:ring-orange-400/25'
+                    : 'text-ink-muted hover:bg-white/70 hover:text-ink dark:text-stone-400 dark:hover:bg-stone-800/80 dark:hover:text-stone-100'
                 }`
               }
             >
               {({ isActive }) => (
                 <>
                   <motion.span
-                    className={`relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-all ${
+                    className={`relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all ${
                       isActive
-                        ? 'bg-accent/15 text-accent dark:bg-orange-400/20 dark:text-orange-300'
-                        : 'bg-white/60 text-ink-muted group-hover:bg-accent/10 group-hover:text-accent dark:bg-stone-900/50 dark:group-hover:text-orange-300'
+                        ? 'bg-white/90 text-[#9b3e20] shadow-inner dark:bg-stone-800 dark:text-orange-300'
+                        : 'bg-white/50 text-ink-muted group-hover:bg-[#fd8863]/15 group-hover:text-[#9b3e20] dark:bg-stone-900/50 dark:group-hover:text-orange-300'
                     }`}
                     whileHover={reduceMotion ? undefined : { scale: 1.06, rotate: -3 }}
                     whileTap={reduceMotion ? undefined : { scale: 0.96 }}
@@ -124,13 +105,11 @@ export function AppShell() {
                   >
                     <Icon className="h-[18px] w-[18px]" aria-hidden />
                   </motion.span>
-                  <span className="relative z-10">{label}</span>
-                  {isActive ? (
-                    <motion.span
-                      layoutId="nav-pill"
-                      className="bg-accent/8 absolute inset-0 rounded-xl dark:bg-orange-400/10"
-                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                    />
+                  <span className="relative z-10 flex-1">{label}</span>
+                  {to === '/notifications' && notificationCount > 0 ? (
+                    <span className="bg-red-500 text-[10px] font-extrabold text-white relative z-10 min-w-[1.25rem] rounded-full px-1.5 py-0.5 text-center">
+                      {notificationCount > 99 ? '99+' : notificationCount}
+                    </span>
                   ) : null}
                 </>
               )}
@@ -140,44 +119,36 @@ export function AppShell() {
 
         <div className="border-line relative border-t p-3 dark:border-line-dark">
           <div className="text-ink-muted flex items-center gap-2 text-[10px] font-semibold tracking-widest uppercase dark:text-stone-500">
-            <Sparkles className="text-accent h-3.5 w-3.5 dark:text-orange-400" aria-hidden />
+            <Sparkles className="text-[#9b3e20] h-3.5 w-3.5 dark:text-orange-400" aria-hidden />
             Quick
           </div>
           <p className="text-ink-muted mt-2 text-xs leading-relaxed dark:text-stone-500">
-            Tip: use <span className="text-accent font-medium dark:text-orange-300">Email company</span> from a record to open Gmail with context.
+            Tasks first — open <span className="font-semibold text-[#9b3e20] dark:text-orange-300">Alerts</span> for reminders & overdue.
           </p>
         </div>
       </aside>
 
       <div className="lg:pl-64">
-        <header className="border-line bg-paper/75 sticky top-0 z-30 flex items-center justify-between gap-4 border-b px-4 py-3 backdrop-blur-xl dark:border-line-dark dark:bg-paper-dark/75">
-          <div className="flex min-w-0 items-center gap-3">
-            <button
-              type="button"
-              className="hover:bg-accent-soft/50 rounded-xl p-2 transition lg:hidden dark:hover:bg-stone-800"
-              onClick={() => setOpen(true)}
-              aria-label="Open menu"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-            <motion.div
-              className="min-w-0"
-              initial={false}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35 }}
-            >
-              <p className="font-display text-ink truncate text-sm font-semibold md:text-base dark:text-stone-100">
+        <header className="border-line bg-paper/80 sticky top-0 z-30 flex items-center justify-between gap-3 border-b px-3 py-3 backdrop-blur-xl sm:px-4 dark:border-line-dark dark:bg-paper-dark/80">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+            <Link to="/" className="shrink-0 lg:hidden" aria-label="Home">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-[#9b3e20] to-[#fd8863] shadow-md shadow-[#9b3e20]/25">
+                <span className="font-display text-lg font-bold text-white">Y</span>
+              </div>
+            </Link>
+            <motion.div className="min-w-0 flex-1" initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
+              <p className="from-[#9b3e20] to-[#006384] bg-gradient-to-r bg-clip-text font-stitch-head truncate text-sm font-extrabold text-transparent sm:text-base dark:from-orange-300 dark:to-cyan-300">
                 {greeting()}, {displayName}
               </p>
-              <div className="mt-1 flex flex-wrap items-center gap-2">
+              <div className="mt-0.5 flex flex-wrap items-center gap-2">
                 {weather ? (
                   <motion.span
-                    className="border-line bg-accent-soft/50 text-ink inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium dark:border-line-dark dark:bg-stone-800/80 dark:text-stone-300"
+                    className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#fd8863]/20 to-[#97daff]/25 px-2.5 py-0.5 text-xs font-semibold text-[#302e2b] dark:from-orange-500/20 dark:to-cyan-500/20 dark:text-stone-200"
                     initial={reduceMotion ? false : { opacity: 0, x: -6 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.08 }}
                   >
-                    <CloudSun className="text-accent h-3.5 w-3.5 shrink-0 dark:text-orange-300" aria-hidden />
+                    <CloudSun className="h-3.5 w-3.5 shrink-0 text-[#9b3e20] dark:text-orange-300" aria-hidden />
                     {weather}
                   </motion.span>
                 ) : null}
@@ -185,64 +156,83 @@ export function AppShell() {
             </motion.div>
           </div>
 
-          <div className="relative shrink-0" ref={menuRef}>
-            <button
-              type="button"
-              onClick={() => setMenuOpen((v) => !v)}
-              className="border-line hover:ring-accent/25 flex items-center gap-2 rounded-full border bg-white/80 py-1 pr-1 pl-1 shadow-sm transition hover:shadow-md dark:border-line-dark dark:bg-stone-900/80 dark:hover:ring-orange-400/20"
-              aria-expanded={menuOpen}
-              aria-haspopup="menu"
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            <Link
+              to="/notifications"
+              className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 shadow-sm transition hover:bg-[#97daff]/30 dark:bg-stone-800/90 dark:hover:bg-cyan-900/40"
+              aria-label={`Notifications${notificationCount ? `, ${notificationCount} items` : ''}`}
             >
-              <UserAvatar email={user?.email} name={metaName} size="sm" />
-              <span className="text-ink-muted hidden pr-2 text-xs font-medium sm:inline dark:text-stone-400">Account</span>
-            </button>
-            {menuOpen ? (
-              <motion.div
-                role="menu"
-                className="border-line bg-paper absolute top-full right-0 z-50 mt-2 w-52 overflow-hidden rounded-2xl border py-1 shadow-xl dark:border-line-dark dark:bg-stone-900"
-                initial={reduceMotion ? false : { opacity: 0, y: -6, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+              <Bell className="text-[#006384] h-5 w-5 dark:text-cyan-300" aria-hidden />
+              {notificationCount > 0 ? (
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-extrabold text-white">
+                  {notificationCount > 9 ? '9+' : notificationCount}
+                </span>
+              ) : null}
+            </Link>
+
+            <div className="relative" ref={menuRef}>
+              <button
+                type="button"
+                onClick={() => setMenuOpen((v) => !v)}
+                className="border-line hover:ring-[#fd8863]/40 flex items-center gap-2 rounded-full border bg-white/90 py-1 pr-1 pl-1 shadow-sm transition hover:shadow-md dark:border-line-dark dark:bg-stone-900/90"
+                aria-expanded={menuOpen}
+                aria-haspopup="menu"
               >
-                <Link
-                  to="/settings/profile"
-                  role="menuitem"
-                  className="hover:bg-accent-soft/60 flex items-center gap-2 px-3 py-2.5 text-sm dark:hover:bg-stone-800"
-                  onClick={() => setMenuOpen(false)}
+                <UserAvatar email={user?.email} name={metaName} size="sm" />
+              </button>
+              {menuOpen ? (
+                <motion.div
+                  role="menu"
+                  className="border-line bg-paper absolute top-full right-0 z-50 mt-2 w-52 overflow-hidden rounded-2xl border py-1 shadow-xl dark:border-line-dark dark:bg-stone-900"
+                  initial={reduceMotion ? false : { opacity: 0, y: -6, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 30 }}
                 >
-                  <User className="h-4 w-4 opacity-70" aria-hidden />
-                  Profile
-                </Link>
-                <Link
-                  to="/settings"
-                  role="menuitem"
-                  className="hover:bg-accent-soft/60 flex items-center gap-2 px-3 py-2.5 text-sm dark:hover:bg-stone-800"
-                  onClick={() => setMenuOpen(false)}
-                >
-                  <Settings className="h-4 w-4 opacity-70" aria-hidden />
-                  Settings
-                </Link>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="hover:bg-accent-soft/60 flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm dark:hover:bg-stone-800"
-                  onClick={() => {
-                    setMenuOpen(false)
-                    void signOut()
-                  }}
-                >
-                  <LogOut className="h-4 w-4 opacity-70" aria-hidden />
-                  Sign out
-                </button>
-              </motion.div>
-            ) : null}
+                  <Link
+                    to="/settings/profile"
+                    role="menuitem"
+                    className="hover:bg-[#fd8863]/15 flex items-center gap-2 px-3 py-2.5 text-sm dark:hover:bg-stone-800"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    <User className="h-4 w-4 opacity-70" aria-hidden />
+                    Profile
+                  </Link>
+                  <Link
+                    to="/settings"
+                    role="menuitem"
+                    className="hover:bg-[#fd8863]/15 flex items-center gap-2 px-3 py-2.5 text-sm dark:hover:bg-stone-800"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    <Settings className="h-4 w-4 opacity-70" aria-hidden />
+                    Settings
+                  </Link>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="hover:bg-[#fd8863]/15 flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm dark:hover:bg-stone-800"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      void signOut()
+                    }}
+                  >
+                    <LogOut className="h-4 w-4 opacity-70" aria-hidden />
+                    Sign out
+                  </button>
+                </motion.div>
+              ) : null}
+            </div>
           </div>
         </header>
 
-        <main id="main" className="mx-auto max-w-6xl px-4 py-8 md:px-8">
+        <main
+          id="main"
+          className="mx-auto max-w-6xl px-4 pt-6 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:px-8 md:pt-8 lg:pb-10"
+        >
           <AnimatedOutlet />
         </main>
       </div>
+
+      <MobileBottomNav badgeCount={notificationCount} />
     </div>
   )
 }

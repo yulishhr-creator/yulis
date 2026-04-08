@@ -1,9 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
-
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
+import { ScreenHeader } from '@/components/layout/ScreenHeader'
 
 const KEYS = ['industry', 'payment_term_preset', 'candidate_outcome_label'] as const
 
@@ -51,15 +50,9 @@ export function ListSettingsPage() {
 
   return (
     <div className="mx-auto max-w-xl">
-      <p className="text-sm">
-        <Link to="/settings" className="text-accent hover:underline dark:text-orange-300">
-          Settings
-        </Link>
-      </p>
-      <h1 className="font-display mt-2 text-2xl font-semibold">Lists</h1>
-      <p className="text-ink-muted mt-1 text-sm">Add options used in dropdowns across the app.</p>
+      <ScreenHeader title="Lists" subtitle="Add options used in dropdowns across the app." backTo="/settings" />
 
-      <div className="mt-6">
+      <div className="mt-2">
         <label className="text-sm font-medium">
           List
           <select

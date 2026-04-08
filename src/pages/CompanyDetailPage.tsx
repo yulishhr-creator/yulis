@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
+import { ScreenHeader } from '@/components/layout/ScreenHeader'
 
 export function CompanyDetailPage() {
   const { id } = useParams()
@@ -96,7 +97,7 @@ export function CompanyDetailPage() {
 
   return (
     <div className="mx-auto max-w-xl">
-      <h1 className="font-display text-2xl font-semibold">{isNew ? 'New company' : 'Company'}</h1>
+      <ScreenHeader title={isNew ? 'New company' : 'Company'} subtitle="Client details and contacts." backTo="/companies" />
       <form
         className="mt-6 flex flex-col gap-4"
         onSubmit={(e) => {

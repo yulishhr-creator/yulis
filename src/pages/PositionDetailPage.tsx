@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import * as XLSX from 'xlsx'
 
@@ -8,6 +8,7 @@ import { getSupabase } from '@/lib/supabase'
 import { normalizeEmail, normalizePhone } from '@/lib/normalize'
 import { formatDue } from '@/lib/dates'
 import { buildMailto } from '@/lib/mailto'
+import { ScreenHeader } from '@/components/layout/ScreenHeader'
 
 export function PositionDetailPage() {
   const { id } = useParams()
@@ -280,15 +281,7 @@ export function PositionDetailPage() {
 
   return (
     <div className="flex flex-col gap-10">
-      <div>
-        <p className="text-ink-muted text-sm">
-          <Link to="/positions" className="hover:underline">
-            Positions
-          </Link>
-          {company ? <span> · {company.name}</span> : null}
-        </p>
-        <h1 className="font-display mt-2 text-2xl font-semibold">{position.title}</h1>
-      </div>
+      <ScreenHeader title={position.title} subtitle={company?.name} backTo="/positions" />
 
       <section className="border-line bg-white/60 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40">
         <h2 className="font-display font-semibold">Position details</h2>

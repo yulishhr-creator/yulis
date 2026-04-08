@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { Modal } from '@/components/ui/Modal'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { useToast } from '@/hooks/useToast'
+import { ScreenHeader } from '@/components/layout/ScreenHeader'
 
 export function ProfilePage() {
   const { user } = useAuth()
@@ -40,15 +39,7 @@ export function ProfilePage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <div>
-        <p className="text-sm">
-          <Link to="/settings" className="text-accent hover:underline dark:text-orange-300">
-            Settings
-          </Link>
-        </p>
-        <h1 className="font-display mt-2 text-2xl font-semibold">Profile</h1>
-        <p className="text-ink-muted mt-1 text-sm dark:text-stone-400">Your account and display name across the app.</p>
-      </div>
+      <ScreenHeader title="Profile" subtitle="Your account and display name across the app." backTo="/settings" />
 
       <section className="border-line from-accent-soft/40 bg-gradient-to-br to-transparent dark:from-stone-800/60 relative overflow-hidden rounded-3xl border p-8 dark:border-line-dark">
         <div className="pointer-events-none absolute -right-8 -bottom-8 h-40 w-40 rounded-full bg-amber-400/10 blur-3xl dark:bg-amber-500/10" />

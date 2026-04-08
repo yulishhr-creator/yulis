@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
+import { ScreenHeader } from '@/components/layout/ScreenHeader'
 
 export function CompaniesPage() {
   const { user } = useAuth()
@@ -25,18 +26,19 @@ export function CompaniesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-semibold">Companies</h1>
-          <p className="text-ink-muted mt-1 text-sm dark:text-stone-400">Clients you recruit for.</p>
-        </div>
-        <Link
-          to="/companies/new"
-          className="bg-accent text-stone-50 hover:bg-accent/90 rounded-full px-5 py-2.5 text-sm font-semibold"
-        >
-          Add company
-        </Link>
-      </div>
+      <ScreenHeader
+        title="Companies"
+        subtitle="Clients you recruit for."
+        backTo="/"
+        right={
+          <Link
+            to="/companies/new"
+            className="rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-4 py-2 text-sm font-bold text-white shadow-md"
+          >
+            Add
+          </Link>
+        }
+      />
 
       {q.isLoading ? (
         <p className="text-ink-muted text-sm">Loading…</p>
