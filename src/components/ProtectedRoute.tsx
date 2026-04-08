@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 
 import { useAuth } from '@/auth/useAuth'
+import { BrandLoader } from '@/components/ui/BrandLoader'
 
 export function ProtectedRoute() {
   const { user, loading, configured } = useAuth()
@@ -11,11 +12,7 @@ export function ProtectedRoute() {
   }
 
   if (loading) {
-    return (
-      <div className="bg-paper text-ink-muted flex min-h-dvh items-center justify-center dark:bg-paper-dark">
-        <p className="font-display text-lg">Loading…</p>
-      </div>
-    )
+    return <BrandLoader />
   }
 
   if (!user) {

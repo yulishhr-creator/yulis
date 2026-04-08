@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '@/auth/AuthProvider'
 import { AppShell } from '@/components/layout/AppShell'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
+import { AppSplash } from '@/components/ui/AppSplash'
+import { ToastProvider } from '@/components/ui/toast-context'
 import { LoginPage } from '@/pages/LoginPage'
 import { SetupPage } from '@/pages/SetupPage'
 import { DashboardPage } from '@/pages/DashboardPage'
@@ -15,6 +17,7 @@ import { SettingsPage } from '@/pages/SettingsPage'
 import { EmailTemplatesPage } from '@/pages/EmailTemplatesPage'
 import { ListSettingsPage } from '@/pages/ListSettingsPage'
 import { IntegrationsPage } from '@/pages/IntegrationsPage'
+import { ProfilePage } from '@/pages/ProfilePage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -27,28 +30,33 @@ const queryClient = new QueryClient({
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AuthProvider>
-          <Routes>
-            <Route path="/setup" element={<SetupPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route element={<ProtectedRoute />}>
-              <Route element={<AppShell />}>
-                <Route path="/" element={<DashboardPage />} />
-                <Route path="/companies" element={<CompaniesPage />} />
-                <Route path="/companies/:id" element={<CompanyDetailPage />} />
-                <Route path="/positions" element={<PositionsPage />} />
-                <Route path="/positions/:id" element={<PositionDetailPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/settings/email-templates" element={<EmailTemplatesPage />} />
-                <Route path="/settings/lists" element={<ListSettingsPage />} />
-                <Route path="/settings/integrations" element={<IntegrationsPage />} />
-              </Route>
-            </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </AuthProvider>
-      </BrowserRouter>
+      <ToastProvider>
+        <BrowserRouter>
+          <AppSplash>
+            <AuthProvider>
+              <Routes>
+                <Route path="/setup" element={<SetupPage />} />
+                <Route path="/login" element={<LoginPage />} />
+                <Route element={<ProtectedRoute />}>
+                  <Route element={<AppShell />}>
+                    <Route path="/" element={<DashboardPage />} />
+                    <Route path="/companies" element={<CompaniesPage />} />
+                    <Route path="/companies/:id" element={<CompanyDetailPage />} />
+                    <Route path="/positions" element={<PositionsPage />} />
+                    <Route path="/positions/:id" element={<PositionDetailPage />} />
+                    <Route path="/settings" element={<SettingsPage />} />
+                    <Route path="/settings/profile" element={<ProfilePage />} />
+                    <Route path="/settings/email-templates" element={<EmailTemplatesPage />} />
+                    <Route path="/settings/lists" element={<ListSettingsPage />} />
+                    <Route path="/settings/integrations" element={<IntegrationsPage />} />
+                  </Route>
+                </Route>
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </AuthProvider>
+          </AppSplash>
+        </BrowserRouter>
+      </ToastProvider>
     </QueryClientProvider>
   )
 }

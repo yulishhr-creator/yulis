@@ -1,15 +1,18 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { motion, useReducedMotion } from 'framer-motion'
 import { Plus, Mail } from 'lucide-react'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { formatDue } from '@/lib/dates'
+import { PageHeader } from '@/components/ui/PageHeader'
 
 export function DashboardPage() {
   const { user } = useAuth()
   const supabase = getSupabase()
   const uid = user?.id
+  const reduceMotion = useReducedMotion()
 
   const tasksQ = useQuery({
     queryKey: ['dashboard-tasks', uid],
@@ -100,32 +103,42 @@ export function DashboardPage() {
   const reminders = remindersQ.data ?? []
   const kpis = kpisQ.data
 
+  const kpiList = kpis
+    ? [
+        { label: 'Open tasks', value: kpis.openTasks },
+        { label: 'Overdue', value: kpis.overdue },
+        { label: 'Active positions', value: kpis.positions },
+        { label: 'Candidates', value: kpis.candidates },
+      ]
+    : []
+
   return (
     <div className="flex flex-col gap-10">
-      <div>
-        <h1 className="font-display text-ink text-2xl font-semibold tracking-tight dark:text-stone-100">My work</h1>
-        <p className="text-ink-muted mt-1 text-sm dark:text-stone-400">What to do next — tasks, reminders, and open positions.</p>
-      </div>
+      <PageHeader
+        title="My work"
+        subtitle="What to do next — tasks, reminders, and open positions."
+      />
 
       {kpis ? (
-        <section aria-label="Overview">
+        <motion.section aria-label="Overview" initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: reduceMotion ? 0 : 0.07 } } }}>
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              { label: 'Open tasks', value: kpis.openTasks },
-              { label: 'Overdue', value: kpis.overdue },
-              { label: 'Active positions', value: kpis.positions },
-              { label: 'Candidates', value: kpis.candidates },
-            ].map((k) => (
-              <li
+            {kpiList.map((k) => (
+              <motion.li
                 key={k.label}
-                className="border-line bg-white/60 rounded-2xl border px-4 py-4 dark:border-line-dark dark:bg-stone-900/40"
+                variants={{
+                  hidden: { opacity: 0, y: reduceMotion ? 0 : 12 },
+                  show: { opacity: 1, y: 0 },
+                }}
+                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                className="border-line bg-white/65 group relative overflow-hidden rounded-2xl border px-4 py-4 shadow-sm transition-shadow hover:shadow-md dark:border-line-dark dark:bg-stone-900/50"
               >
-                <p className="text-ink-muted text-xs font-medium uppercase tracking-wide dark:text-stone-500">{k.label}</p>
-                <p className="font-display text-ink mt-1 text-3xl font-semibold tabular-nums dark:text-stone-100">{k.value}</p>
-              </li>
+                <div className="from-accent/0 group-hover:from-accent/8 pointer-events-none absolute inset-0 bg-gradient-to-br to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+                <p className="text-ink-muted relative text-xs font-medium tracking-wide uppercase dark:text-stone-500">{k.label}</p>
+                <p className="font-display text-ink relative mt-1 text-3xl font-semibold tabular-nums dark:text-stone-100">{k.value}</p>
+              </motion.li>
             ))}
           </ul>
-        </section>
+        </motion.section>
       ) : null}
 
       <section aria-labelledby="reminders-heading">
@@ -139,14 +152,16 @@ export function DashboardPage() {
         ) : (
           <ul className="mt-3 space-y-2">
             {reminders.map((r) => (
-              <li
+              <motion.li
                 key={r.id}
-                className="border-line bg-white/60 flex flex-col gap-1 rounded-2xl border px-4 py-3 dark:border-line-dark dark:bg-stone-900/40"
+                initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="border-line bg-white/65 flex flex-col gap-1 rounded-2xl border px-4 py-3 shadow-sm dark:border-line-dark dark:bg-stone-900/45"
               >
                 <span className="font-medium">{r.title}</span>
                 {r.body ? <span className="text-ink-muted text-sm">{r.body}</span> : null}
                 {r.due_at ? <span className="text-ink-muted text-xs">Due {formatDue(r.due_at)}</span> : null}
-              </li>
+              </motion.li>
             ))}
           </ul>
         )}
@@ -157,27 +172,33 @@ export function DashboardPage() {
           Fast actions
         </h2>
         <div className="flex flex-wrap gap-3">
-          <Link
-            to="/positions?create=1"
-            className="bg-accent text-stone-50 hover:bg-accent/90 inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold shadow-sm"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            Create position
-          </Link>
-          <Link
-            to="/positions"
-            className="border-line bg-white/70 text-ink hover:border-accent inline-flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold dark:border-line-dark dark:bg-stone-900/50 dark:text-stone-100"
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            Create task
-          </Link>
-          <Link
-            to="/settings/email-templates"
-            className="border-line bg-white/70 text-ink hover:border-accent inline-flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold dark:border-line-dark dark:bg-stone-900/50 dark:text-stone-100"
-          >
-            <Mail className="h-4 w-4" aria-hidden />
-            Email templates
-          </Link>
+          <motion.div whileHover={reduceMotion ? undefined : { y: -2 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
+            <Link
+              to="/positions?create=1"
+              className="bg-accent text-stone-50 hover:bg-accent/90 inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold shadow-lg shadow-accent/20"
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+              Create position
+            </Link>
+          </motion.div>
+          <motion.div whileHover={reduceMotion ? undefined : { y: -2 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
+            <Link
+              to="/positions"
+              className="border-line bg-white/75 text-ink hover:border-accent inline-flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold shadow-sm dark:border-line-dark dark:bg-stone-900/55 dark:text-stone-100"
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+              Create task
+            </Link>
+          </motion.div>
+          <motion.div whileHover={reduceMotion ? undefined : { y: -2 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
+            <Link
+              to="/settings/email-templates"
+              className="border-line bg-white/75 text-ink hover:border-accent inline-flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold shadow-sm dark:border-line-dark dark:bg-stone-900/55 dark:text-stone-100"
+            >
+              <Mail className="h-4 w-4" aria-hidden />
+              Email templates
+            </Link>
+          </motion.div>
         </div>
       </section>
 
@@ -202,7 +223,7 @@ export function DashboardPage() {
               return (
                 <li
                   key={row.id}
-                  className="border-line bg-white/70 rounded-2xl border px-4 py-4 text-sm leading-relaxed dark:border-line-dark dark:bg-stone-900/45"
+                  className="border-line bg-white/75 rounded-2xl border px-4 py-4 text-sm leading-relaxed shadow-sm transition hover:shadow-md dark:border-line-dark dark:bg-stone-900/45"
                 >
                   <p className="text-ink dark:text-stone-100">
                     You need to <span className="font-semibold">{row.title}</span> for position{' '}
@@ -245,14 +266,18 @@ export function DashboardPage() {
           <ul className="mt-4 space-y-3">
             {(topPositionsQ.data ?? []).map((p) => {
               const company = (p.companies as unknown as { name: string } | null)?.name
-              const cands = (p.candidates as unknown as Array<{
-                id: string
-                full_name: string
-                outcome: string
-                position_stages: { name: string } | null
-              }>) ?? []
+              const cands =
+                (p.candidates as unknown as Array<{
+                  id: string
+                  full_name: string
+                  outcome: string
+                  position_stages: { name: string } | null
+                }>) ?? []
               return (
-                <li key={p.id} className="border-line bg-white/60 rounded-2xl border dark:border-line-dark dark:bg-stone-900/40">
+                <li
+                  key={p.id}
+                  className="border-line bg-white/65 rounded-2xl border shadow-sm transition hover:shadow-md dark:border-line-dark dark:bg-stone-900/45"
+                >
                   <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-3">
                     <Link to={`/positions/${p.id}`} className="font-display text-ink font-semibold hover:underline dark:text-stone-100">
                       {p.title}
