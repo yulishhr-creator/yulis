@@ -19,5 +19,9 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // Syncing form fields from query results is a valid use of useEffect + setState
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
 ])
