@@ -1,6 +1,9 @@
+import { useRef } from 'react'
 import { Link } from 'react-router-dom'
 
 export function IntegrationsPage() {
+  const connectDialogRef = useRef<HTMLDialogElement>(null)
+
   return (
     <div className="mx-auto max-w-xl">
       <p className="text-sm">
@@ -35,16 +38,37 @@ export function IntegrationsPage() {
         </svg>
         <div className="flex-1">
           <p className="font-medium">Gmail</p>
-          <p className="text-ink-muted text-sm">Connect to send from the app (coming with Edge deployment).</p>
+          <p className="text-ink-muted text-sm">
+            Send from the app after OAuth ships. Use <strong>Connect</strong> for what works today.
+          </p>
         </div>
         <button
           type="button"
-          disabled
-          className="rounded-full border border-line px-4 py-2 text-sm font-medium opacity-60 dark:border-line-dark"
+          onClick={() => connectDialogRef.current?.showModal()}
+          className="border-line bg-white/90 hover:bg-accent-soft/60 dark:hover:bg-stone-800/80 rounded-full border px-4 py-2 text-sm font-medium transition dark:border-line-dark dark:bg-stone-900/60"
         >
           Connect
         </button>
       </div>
+
+      <dialog
+        ref={connectDialogRef}
+        className="border-line bg-paper backdrop:bg-ink/40 fixed top-1/2 left-1/2 z-50 w-[min(100%-2rem,26rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-6 shadow-xl dark:border-line-dark dark:bg-stone-900 dark:backdrop:bg-black/50"
+      >
+        <h2 className="font-display text-lg font-semibold">Gmail in the app</h2>
+        <p className="text-ink-muted mt-3 text-sm leading-relaxed dark:text-stone-400">
+          OAuth and server-side send are not wired yet (planned: Supabase Edge Functions + Google Cloud OAuth). Until then,
+          use <strong>Email company</strong> and email template actions that open{' '}
+          <code className="rounded bg-accent-soft/80 px-1">mailto:</code> links—you compose and send in Gmail yourself.
+        </p>
+        <button
+          type="button"
+          className="bg-accent text-stone-50 hover:bg-accent/90 mt-6 w-full rounded-full py-2.5 text-sm font-semibold"
+          onClick={() => connectDialogRef.current?.close()}
+        >
+          Got it
+        </button>
+      </dialog>
     </div>
   )
 }
