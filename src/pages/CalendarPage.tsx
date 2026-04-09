@@ -103,7 +103,11 @@ export function CalendarPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <ScreenHeader title="Calendar" subtitle="Your events — shown in alerts when upcoming." backTo="/" />
+      <ScreenHeader
+        title="Calendar"
+        subtitle="Events are scheduled blocks on this calendar. They are not reminders — set a reminder from Quick actions if you only need a nudge."
+        backTo="/"
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -134,6 +138,7 @@ export function CalendarPage() {
           }}
         >
           <p className="font-semibold">New calendar event</p>
+          <p className="text-ink-muted text-xs">This creates a timed block on the calendar. For a simple nudge without a grid block, use Set Reminder in Quick actions.</p>
           <label className="flex flex-col gap-1 text-sm">
             Title
             <input

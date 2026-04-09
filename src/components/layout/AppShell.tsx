@@ -137,7 +137,7 @@ export function AppShell() {
             Quick
           </div>
           <p className="text-ink-muted mt-2 text-xs leading-relaxed dark:text-stone-500">
-            Tasks first — the bell counts reminders, overdue tasks, and upcoming calendar items.
+            The bell counts overdue tasks, upcoming calendar events (next 48h), and reminders — events and reminders are separate.
           </p>
         </div>
       </aside>

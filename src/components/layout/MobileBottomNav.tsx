@@ -1,5 +1,5 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { ListTodo, Building2, Briefcase, Settings, Plus, CalendarPlus, ClipboardList } from 'lucide-react'
+import { ListTodo, Building2, Briefcase, Settings, Plus, CalendarPlus, ClipboardList, Mail, Bell } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useState } from 'react'
 
@@ -67,8 +67,24 @@ export function MobileBottomNav() {
 
   return (
     <>
-      <Modal open={fabOpen} onClose={() => setFabOpen(false)} title="Quick add">
+      <Modal open={fabOpen} onClose={() => setFabOpen(false)} title="Quick actions">
         <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            className="flex items-center gap-3 rounded-2xl border border-stone-200/80 bg-white px-4 py-3 text-left text-sm font-semibold dark:border-stone-600 dark:bg-stone-800/80"
+            onClick={() => {
+              setFabOpen(false)
+              navigate('/positions?create=1')
+            }}
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#fd8863]/20 text-[#9b3e20] dark:text-orange-300">
+              <Briefcase className="h-5 w-5" aria-hidden />
+            </span>
+            <span>
+              <span className="block">Create new Position</span>
+              <span className="text-ink-muted mt-0.5 block text-xs font-normal dark:text-stone-400">New role for a client</span>
+            </span>
+          </button>
           <button
             type="button"
             className="flex items-center gap-3 rounded-2xl border border-stone-200/80 bg-white px-4 py-3 text-left text-sm font-semibold dark:border-stone-600 dark:bg-stone-800/80"
@@ -81,24 +97,11 @@ export function MobileBottomNav() {
               <ClipboardList className="h-5 w-5" aria-hidden />
             </span>
             <span>
-              <span className="block">Add task</span>
+              <span className="block">Create Task</span>
               <span className="text-ink-muted mt-0.5 block text-xs font-normal dark:text-stone-400">
                 {onPositionDetail ? 'Company & role filled from this page' : 'Choose role on the next screen'}
               </span>
             </span>
-          </button>
-          <button
-            type="button"
-            className="flex items-center gap-3 rounded-2xl border border-stone-200/80 bg-white px-4 py-3 text-left text-sm font-semibold dark:border-stone-600 dark:bg-stone-800/80"
-            onClick={() => {
-              setFabOpen(false)
-              navigate('/positions?create=1')
-            }}
-          >
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#fd8863]/20 text-[#9b3e20] dark:text-orange-300">
-              <Briefcase className="h-5 w-5" aria-hidden />
-            </span>
-            New role
           </button>
           <button
             type="button"
@@ -111,7 +114,46 @@ export function MobileBottomNav() {
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#97daff]/25 text-[#006384] dark:text-cyan-300">
               <CalendarPlus className="h-5 w-5" aria-hidden />
             </span>
-            Add calendar event
+            <span>
+              <span className="block">Add Calendar Event</span>
+              <span className="text-ink-muted mt-0.5 block text-xs font-normal dark:text-stone-400">
+                On your calendar — separate from reminders
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            className="flex items-center gap-3 rounded-2xl border border-stone-200/80 bg-white px-4 py-3 text-left text-sm font-semibold dark:border-stone-600 dark:bg-stone-800/80"
+            onClick={() => {
+              setFabOpen(false)
+              navigate('/companies?sendEmail=1')
+            }}
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/15 text-violet-900 dark:text-violet-300">
+              <Mail className="h-5 w-5" aria-hidden />
+            </span>
+            <span>
+              <span className="block">Send An Email</span>
+              <span className="text-ink-muted mt-0.5 block text-xs font-normal dark:text-stone-400">Pick a client with a contact email</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            className="flex items-center gap-3 rounded-2xl border border-stone-200/80 bg-white px-4 py-3 text-left text-sm font-semibold dark:border-stone-600 dark:bg-stone-800/80"
+            onClick={() => {
+              setFabOpen(false)
+              navigate('/notifications?newReminder=1')
+            }}
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-900 dark:text-amber-300">
+              <Bell className="h-5 w-5" aria-hidden />
+            </span>
+            <span>
+              <span className="block">Set Reminder</span>
+              <span className="text-ink-muted mt-0.5 block text-xs font-normal dark:text-stone-400">
+                A nudge for yourself — not a calendar block
+              </span>
+            </span>
           </button>
         </div>
       </Modal>
@@ -127,7 +169,7 @@ export function MobileBottomNav() {
             type="button"
             onClick={() => setFabOpen(true)}
             className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-[#9b3e20] to-[#fd8863] text-white shadow-md shadow-[#9b3e20]/25"
-            aria-label="Quick add: new role or calendar event"
+            aria-label="Quick actions: position, task, calendar event, email, reminder"
             whileTap={reduceMotion ? undefined : { scale: 0.94 }}
           >
             <Plus className="h-5 w-5 stroke-[2.25]" aria-hidden />

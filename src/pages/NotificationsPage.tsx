@@ -1,7 +1,9 @@
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Bell, CalendarClock, Trash2, AlertTriangle } from 'lucide-react'
+import { Bell, CalendarClock, Trash2, AlertTriangle, CalendarDays } from 'lucide-react'
+import { format } from 'date-fns'
+import { useState } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
@@ -16,6 +18,11 @@ export function NotificationsPage() {
   const { success, error: toastError } = useToast()
   const reduceMotion = useReducedMotion()
   const uid = user?.id
+  const [searchParams, setSearchParams] = useSearchParams()
+  const showNewReminder = searchParams.get('newReminder') === '1'
+  const [remTitle, setRemTitle] = useState('')
+  const [remBody, setRemBody] = useState('')
+  const [remDue, setRemDue] = useState('')
 
   const remindersQ = useQuery({
     queryKey: ['notifications-reminders', uid],
@@ -26,6 +33,24 @@ export function NotificationsPage() {
         .select('id, title, body, due_at')
         .eq('user_id', uid!)
         .order('due_at', { ascending: true, nullsFirst: false })
+      if (error) throw error
+      return data ?? []
+    },
+  })
+
+  const upcomingEventsQ = useQuery({
+    queryKey: ['notifications-calendar-events', uid],
+    enabled: Boolean(supabase && uid),
+    queryFn: async () => {
+      const now = new Date().toISOString()
+      const horizon = new Date(Date.now() + 14 * 864e5).toISOString()
+      const { data, error } = await supabase!
+        .from('calendar_events')
+        .select('id, title, subtitle, starts_at, ends_at')
+        .eq('user_id', uid!)
+        .gte('starts_at', now)
+        .lte('starts_at', horizon)
+        .order('starts_at', { ascending: true })
       if (error) throw error
       return data ?? []
     },
@@ -49,6 +74,38 @@ export function NotificationsPage() {
     },
   })
 
+  const addReminder = useMutation({
+    mutationFn: async () => {
+      if (!remTitle.trim()) throw new Error('Enter a title')
+      const dueIso = remDue.trim() ? new Date(remDue).toISOString() : null
+      const { error } = await supabase!.from('reminders').insert({
+        user_id: uid!,
+        title: remTitle.trim(),
+        body: remBody.trim() || null,
+        due_at: dueIso,
+      })
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      setRemTitle('')
+      setRemBody('')
+      setRemDue('')
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          next.delete('newReminder')
+          return next
+        },
+        { replace: true },
+      )
+      await qc.invalidateQueries({ queryKey: ['notifications-reminders'] })
+      await qc.invalidateQueries({ queryKey: ['dashboard-reminders'] })
+      await qc.invalidateQueries({ queryKey: ['notification-count'] })
+      success('Reminder saved')
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
   const removeReminder = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase!.from('reminders').delete().eq('id', id).eq('user_id', uid!)
@@ -65,10 +122,82 @@ export function NotificationsPage() {
 
   const reminders = remindersQ.data ?? []
   const overdue = overdueQ.data ?? []
+  const upcomingEvents = upcomingEventsQ.data ?? []
 
   return (
     <div className="flex flex-col gap-8">
-      <ScreenHeader subtitle="Tasks can be only by achieving true Unagi" backTo="/" />
+      <ScreenHeader
+        title="Notifications"
+        subtitle="Overdue tasks, upcoming calendar events, and reminders. Calendar events live on your grid; reminders are separate nudges."
+        backTo="/"
+      />
+
+      {showNewReminder ? (
+        <form
+          className="border-line flex flex-col gap-3 rounded-2xl border border-amber-200/80 bg-amber-50/50 p-4 dark:border-amber-900/40 dark:bg-amber-950/25"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void addReminder.mutateAsync()
+          }}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-semibold text-amber-950 dark:text-amber-100">Set Reminder</p>
+            <button
+              type="button"
+              className="text-xs font-bold text-amber-900 underline dark:text-amber-300"
+              onClick={() =>
+                setSearchParams(
+                  (prev) => {
+                    const next = new URLSearchParams(prev)
+                    next.delete('newReminder')
+                    return next
+                  },
+                  { replace: true },
+                )
+              }
+            >
+              Cancel
+            </button>
+          </div>
+          <p className="text-ink-muted text-xs dark:text-stone-400">
+            Reminders are personal nudges (optional time). They are not added to your month calendar — use Calendar for that.
+          </p>
+          <label className="flex flex-col gap-1 text-sm">
+            Title
+            <input
+              value={remTitle}
+              onChange={(e) => setRemTitle(e.target.value)}
+              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+              placeholder="What should you remember?"
+              required
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            Note (optional)
+            <input
+              value={remBody}
+              onChange={(e) => setRemBody(e.target.value)}
+              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            Remind me at (optional)
+            <input
+              type="datetime-local"
+              value={remDue}
+              onChange={(e) => setRemDue(e.target.value)}
+              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={addReminder.isPending}
+            className="w-fit rounded-full bg-gradient-to-r from-amber-700 to-amber-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-50 dark:from-amber-600 dark:to-amber-500"
+          >
+            {addReminder.isPending ? 'Saving…' : 'Save reminder'}
+          </button>
+        </form>
+      ) : null}
 
       <section aria-labelledby="overdue-heading">
         <h2 id="overdue-heading" className="font-stitch-label text-[#9f0519] mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] uppercase dark:text-red-400">
@@ -108,15 +237,52 @@ export function NotificationsPage() {
         )}
       </section>
 
+      <section aria-labelledby="calendar-events-heading">
+        <h2 id="calendar-events-heading" className="font-stitch-label text-[#006384] mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] uppercase dark:text-cyan-400">
+          <CalendarDays className="h-4 w-4" aria-hidden />
+          Upcoming calendar events
+        </h2>
+        <p className="text-ink-muted mb-3 text-xs dark:text-stone-500">
+          Scheduled on your calendar (next 14 days). These are not reminders — add a reminder separately if you want a nudge.
+        </p>
+        {upcomingEventsQ.isLoading ? (
+          <p className="text-stitch-muted text-sm">Loading…</p>
+        ) : upcomingEvents.length === 0 ? (
+          <p className="text-stitch-muted text-sm">No upcoming events in the next two weeks. Add one from Quick actions → Add Calendar Event.</p>
+        ) : (
+          <ul className="space-y-3">
+            {upcomingEvents.map((ev, i) => (
+              <motion.li
+                key={ev.id}
+                initial={reduceMotion ? false : { opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: reduceMotion ? 0 : i * 0.04 }}
+                className="border-stitch-on-surface/10 rounded-2xl border-b-4 border-b-[#006384]/60 bg-white p-4 shadow-[0_16px_36px_rgba(48,46,43,0.08)] dark:border-stone-700 dark:bg-stone-900"
+              >
+                <p className="font-stitch-head text-stitch-on-surface font-bold dark:text-stone-100">{ev.title}</p>
+                {ev.subtitle ? <p className="text-stitch-muted mt-1 text-sm dark:text-stone-400">{ev.subtitle}</p> : null}
+                <p className="text-[#006384] mt-2 text-xs font-semibold tabular-nums dark:text-cyan-300">
+                  {format(new Date(ev.starts_at), 'EEE, MMM d · HH:mm')}
+                  {ev.ends_at ? ` – ${format(new Date(ev.ends_at), 'HH:mm')}` : ''}
+                </p>
+              </motion.li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <section aria-labelledby="reminders-heading">
         <h2 id="reminders-heading" className="font-stitch-label text-[#006384] mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] uppercase dark:text-cyan-400">
           <Bell className="h-4 w-4" aria-hidden />
           Reminders
         </h2>
+        <p className="text-ink-muted mb-3 text-xs dark:text-stone-500">
+          Lightweight to-dos or notes with an optional time — they do not appear as blocks on the calendar grid.
+        </p>
         {remindersQ.isLoading ? (
           <p className="text-stitch-muted text-sm">Loading…</p>
         ) : reminders.length === 0 ? (
-          <p className="text-stitch-muted text-sm">No reminders. Add them from the dashboard workflow when you build that flow, or via your data tool.</p>
+          <p className="text-stitch-muted text-sm">No reminders yet. Set one from the + menu → Set Reminder.</p>
         ) : (
           <ul className="space-y-3">
             {reminders.map((r, i) => (
