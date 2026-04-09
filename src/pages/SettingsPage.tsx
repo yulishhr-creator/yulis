@@ -1,14 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
-import { List, Mail, Download, User, FileJson, FileSpreadsheet, Archive, Clock } from 'lucide-react'
+import { List, Mail, Download, User, Archive, Clock } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import JSZip from 'jszip'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
-import { downloadCsv, downloadJson, downloadXlsx } from '@/lib/export'
+import { downloadCsv, downloadXlsx } from '@/lib/export'
 import { formatWorkedDuration } from '@/lib/formatWorkedDuration'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { useToast } from '@/hooks/useToast'
@@ -29,12 +29,22 @@ const items = [
   { to: '/settings/email-templates', label: 'Email templates', desc: 'Subjects and bodies with {{variables}}.', icon: Mail },
 ] as const
 
+const DATASET_EXPORT_OPTIONS = [
+  { value: 'positions_csv', label: 'Positions — CSV' },
+  { value: 'candidates_csv', label: 'Candidates — CSV' },
+  { value: 'positions_xlsx', label: 'Positions — XLSX' },
+  { value: 'candidates_xlsx', label: 'Candidates — XLSX' },
+] as const
+
+type DatasetExportValue = (typeof DATASET_EXPORT_OPTIONS)[number]['value']
+
 export function SettingsPage() {
   const { user } = useAuth()
   const supabase = getSupabase()
   const reduceMotion = useReducedMotion()
   const { success, error: toastError } = useToast()
   const [gdprBusy, setGdprBusy] = useState(false)
+  const [datasetExport, setDatasetExport] = useState<DatasetExportValue>('positions_csv')
 
   const exportQ = useQuery({
     queryKey: ['export-preview', user?.id],
@@ -73,6 +83,27 @@ export function SettingsPage() {
 
   const pos = exportQ.data?.positions as Record<string, unknown>[] | undefined
   const cand = exportQ.data?.candidates as Record<string, unknown>[] | undefined
+
+  function runDatasetExport() {
+    switch (datasetExport) {
+      case 'positions_csv':
+        if (pos?.length) downloadCsv('positions.csv', pos)
+        else toastError('No positions to export')
+        return
+      case 'candidates_csv':
+        if (cand?.length) downloadCsv('candidates.csv', cand)
+        else toastError('No candidates to export')
+        return
+      case 'positions_xlsx':
+        if (pos?.length) downloadXlsx('positions.xlsx', pos)
+        else toastError('No positions to export')
+        return
+      case 'candidates_xlsx':
+        if (cand?.length) downloadXlsx('candidates.xlsx', cand)
+        else toastError('No candidates to export')
+        return
+    }
+  }
 
   async function downloadGdprZip() {
     if (!supabase || !user) return
@@ -221,66 +252,30 @@ export function SettingsPage() {
           <Download className="h-5 w-5 text-[#9b3e20] dark:text-orange-300" aria-hidden />
           Export (full dataset)
         </h2>
-        <p className="text-stitch-muted mt-1 text-sm">Phase 1 plan: CSV + JSON + XLSX for positions and candidates.</p>
-        <div className="mt-4 flex flex-wrap gap-2">
+        <p className="text-stitch-muted mt-1 text-sm">CSV and XLSX for positions and candidates.</p>
+        <div className="mt-4 flex max-w-md flex-col gap-3 sm:flex-row sm:items-end">
+          <label className="min-w-0 flex-1 text-sm font-medium">
+            Export format
+            <select
+              value={datasetExport}
+              onChange={(e) => setDatasetExport(e.target.value as DatasetExportValue)}
+              className="border-line bg-white/90 mt-1 w-full rounded-xl border px-3 py-2.5 dark:border-line-dark dark:bg-stone-900/50"
+            >
+              {DATASET_EXPORT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <motion.button
             type="button"
-            className="rounded-full border border-[#b4fdb4]/60 bg-white px-4 py-2 text-sm font-bold text-[#165c25] shadow-sm dark:border-emerald-900 dark:bg-stone-800 dark:text-emerald-300"
+            onClick={() => runDatasetExport()}
+            className="bg-accent text-stone-50 shrink-0 rounded-full px-6 py-2.5 text-sm font-bold shadow-md dark:bg-orange-600"
             whileHover={reduceMotion ? undefined : { scale: 1.02 }}
             whileTap={reduceMotion ? undefined : { scale: 0.98 }}
-            onClick={() => {
-              if (pos?.length) downloadCsv('positions.csv', pos)
-            }}
           >
-            Positions CSV
-          </motion.button>
-          <motion.button
-            type="button"
-            className="rounded-full border border-[#b4fdb4]/60 bg-white px-4 py-2 text-sm font-bold text-[#165c25] shadow-sm dark:border-emerald-900 dark:bg-stone-800 dark:text-emerald-300"
-            whileHover={reduceMotion ? undefined : { scale: 1.02 }}
-            whileTap={reduceMotion ? undefined : { scale: 0.98 }}
-            onClick={() => {
-              if (cand?.length) downloadCsv('candidates.csv', cand)
-            }}
-          >
-            Candidates CSV
-          </motion.button>
-          <motion.button
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded-full border border-[#97daff]/60 bg-white px-4 py-2 text-sm font-bold text-[#006384] shadow-sm dark:border-cyan-800 dark:bg-stone-800 dark:text-cyan-300"
-            whileHover={reduceMotion ? undefined : { scale: 1.02 }}
-            whileTap={reduceMotion ? undefined : { scale: 0.98 }}
-            onClick={() => {
-              if (pos?.length || cand?.length)
-                downloadJson('yulis-export.json', { positions: pos ?? [], candidates: cand ?? [], exportedAt: new Date().toISOString() })
-            }}
-          >
-            <FileJson className="h-4 w-4" aria-hidden />
-            JSON bundle
-          </motion.button>
-          <motion.button
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded-full border border-[#fd8863]/50 bg-white px-4 py-2 text-sm font-bold text-[#9b3e20] shadow-sm dark:border-orange-800 dark:bg-stone-800 dark:text-orange-300"
-            whileHover={reduceMotion ? undefined : { scale: 1.02 }}
-            whileTap={reduceMotion ? undefined : { scale: 0.98 }}
-            onClick={() => {
-              if (pos?.length) downloadXlsx('positions.xlsx', pos)
-            }}
-          >
-            <FileSpreadsheet className="h-4 w-4" aria-hidden />
-            Positions XLSX
-          </motion.button>
-          <motion.button
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded-full border border-[#fd8863]/50 bg-white px-4 py-2 text-sm font-bold text-[#9b3e20] shadow-sm dark:border-orange-800 dark:bg-stone-800 dark:text-orange-300"
-            whileHover={reduceMotion ? undefined : { scale: 1.02 }}
-            whileTap={reduceMotion ? undefined : { scale: 0.98 }}
-            onClick={() => {
-              if (cand?.length) downloadXlsx('candidates.xlsx', cand)
-            }}
-          >
-            <FileSpreadsheet className="h-4 w-4" aria-hidden />
-            Candidates XLSX
+            Export
           </motion.button>
         </div>
       </motion.section>
