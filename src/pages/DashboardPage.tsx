@@ -379,7 +379,7 @@ export function DashboardPage() {
             )}
           </h1>
           <p className="text-stitch-muted mt-3 max-w-xl text-base leading-relaxed md:text-lg dark:text-stone-400">
-            so, how should we proceed from here?
+            So, what would you like to do now?
           </p>
           <div className="mt-5 flex flex-nowrap items-center gap-2">
             <motion.div className="min-w-0 flex-1 sm:flex-none" whileHover={reduceMotion ? undefined : { scale: 1.02 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
