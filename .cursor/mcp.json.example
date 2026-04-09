@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "supabase (yulis)": {
+      "url": "https://mcp.supabase.com/mcp?project_ref=YOUR_SUPABASE_PROJECT_REF",
+      "headers": {}
+    },
+    "Yuli's Make Account": {
+      "url": "https://eu1.make.com/mcp/server/YOUR_MAKE_MCP_SERVER_UUID",
+      "headers": {
+        "Authorization": "Bearer YOUR_MAKE_MCP_BEARER_TOKEN"
+      }
+    }
+  }
+}

@@ -17,6 +17,9 @@ dist-ssr
 .env.*
 !.env.example
 
+# Cursor MCP (project-specific; may contain secrets — copy from mcp.json.example)
+.cursor/mcp.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
