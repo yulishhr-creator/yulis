@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
 import { Check, ChevronDown, Timer, Building2, Plus } from 'lucide-react'
@@ -52,6 +52,7 @@ export function DashboardPage() {
   const uid = user?.id
   const reduceMotion = useReducedMotion()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const qc = useQueryClient()
   const timer = useWorkTimer()
   const { success, error: toastError } = useToast()
@@ -62,6 +63,10 @@ export function DashboardPage() {
   const [companyTaskFilter, setCompanyTaskFilter] = useState<'all' | Set<string>>('all')
   const [companyFilterOpen, setCompanyFilterOpen] = useState(false)
   const companyFilterRef = useRef<HTMLDivElement>(null)
+  const [taskModalOpen, setTaskModalOpen] = useState(false)
+  const [newTaskTitle, setNewTaskTitle] = useState('')
+  const [newTaskDue, setNewTaskDue] = useState('')
+  const [newTaskPositionId, setNewTaskPositionId] = useState('')
 
   const tasksQ = useQuery({
     queryKey: ['dashboard-tasks', uid],
@@ -169,6 +174,21 @@ export function DashboardPage() {
     },
   })
 
+  const allPositionsForTaskQ = useQuery({
+    queryKey: ['dashboard-all-positions', uid],
+    enabled: Boolean(supabase && uid && taskModalOpen),
+    queryFn: async () => {
+      const { data, error } = await supabase!
+        .from('positions')
+        .select('id, title, companies ( name )')
+        .eq('user_id', uid!)
+        .is('deleted_at', null)
+        .order('title')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+
   const timerPositionsQ = useQuery({
     queryKey: ['dashboard-timer-positions', uid],
     enabled: Boolean(supabase && uid),
@@ -222,6 +242,50 @@ export function DashboardPage() {
     if (companyFilterOpen) document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
   }, [companyFilterOpen])
+
+  useEffect(() => {
+    if (searchParams.get('addTask') !== '1') return
+    setNewTaskTitle('')
+    setNewTaskDue('')
+    const pid = sessionStorage.getItem('yulis_task_prefill_position_id')
+    setNewTaskPositionId(pid ?? '')
+    setTaskModalOpen(true)
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('addTask')
+        return next
+      },
+      { replace: true },
+    )
+  }, [searchParams, setSearchParams])
+
+  const addTaskFromDashboard = useMutation({
+    mutationFn: async () => {
+      if (!newTaskPositionId.trim()) throw new Error('Choose a position')
+      const { error } = await supabase!.from('tasks').insert({
+        user_id: uid!,
+        position_id: newTaskPositionId.trim(),
+        title: newTaskTitle.trim() || 'Task',
+        status: 'todo',
+        due_at: newTaskDue ? new Date(newTaskDue).toISOString() : null,
+      })
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      success('Task added')
+      setTaskModalOpen(false)
+      setNewTaskTitle('')
+      setNewTaskDue('')
+      setNewTaskPositionId('')
+      await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
+      await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
+      await qc.invalidateQueries({ queryKey: ['position-tasks'] })
+      await qc.invalidateQueries({ queryKey: ['notifications-overdue-tasks'] })
+      await qc.invalidateQueries({ queryKey: ['notification-count'] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
 
   const pipelineHints = useMemo(() => {
     const rows = topPositionsQ.data ?? []
@@ -495,7 +559,8 @@ export function DashboardPage() {
             initial={reduceMotion ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
           >
-            No open tasks. Open a <Link to="/positions" className="font-semibold text-[#9b3e20] underline dark:text-orange-300">position</Link> and add one.
+            No open tasks. Use the <span className="font-semibold">+</span> button (Add task) or open a{' '}
+            <Link to="/positions" className="font-semibold text-[#9b3e20] underline dark:text-orange-300">position</Link>.
           </motion.p>
         ) : filteredTasks.length === 0 && companyTaskFilter !== 'all' ? (
           <p className="text-stitch-muted mt-4 rounded-2xl border border-dashed border-stone-300 px-4 py-6 text-center text-sm dark:border-stone-600">
@@ -612,6 +677,74 @@ export function DashboardPage() {
               Start timer
             </button>
           </>
+        )}
+      </Modal>
+
+      <Modal open={taskModalOpen} onClose={() => setTaskModalOpen(false)} title="New task">
+        <p className="text-ink-muted mb-3 text-sm">
+          {sessionStorage.getItem('yulis_task_prefill_position_id')
+            ? 'Role is pre-filled from the position you were viewing. Change it if needed.'
+            : 'Pick which role this task belongs to.'}
+        </p>
+        {allPositionsForTaskQ.isLoading ? (
+          <p className="text-sm">Loading roles…</p>
+        ) : (allPositionsForTaskQ.data ?? []).length === 0 ? (
+          <p className="text-sm">No positions yet. Create a role first.</p>
+        ) : (
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void addTaskFromDashboard.mutateAsync()
+            }}
+          >
+            <label className="flex flex-col gap-1 text-sm font-medium">
+              Position
+              <select
+                value={newTaskPositionId}
+                onChange={(e) => setNewTaskPositionId(e.target.value)}
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                required
+              >
+                <option value="">Select a role…</option>
+                {(allPositionsForTaskQ.data ?? []).map((row) => {
+                  const co = row.companies as unknown as { name: string } | null
+                  return (
+                    <option key={row.id} value={row.id}>
+                      {row.title}
+                      {co?.name ? ` — ${co.name}` : ''}
+                    </option>
+                  )
+                })}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-sm font-medium">
+              Title
+              <input
+                value={newTaskTitle}
+                onChange={(e) => setNewTaskTitle(e.target.value)}
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                placeholder="What needs doing?"
+                required
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm font-medium">
+              Due (optional)
+              <input
+                type="datetime-local"
+                value={newTaskDue}
+                onChange={(e) => setNewTaskDue(e.target.value)}
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={addTaskFromDashboard.isPending}
+              className="rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] py-2.5 text-sm font-bold text-white disabled:opacity-50"
+            >
+              {addTaskFromDashboard.isPending ? 'Saving…' : 'Save task'}
+            </button>
+          </form>
         )}
       </Modal>
 

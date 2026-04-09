@@ -1,5 +1,5 @@
-import { NavLink, useNavigate } from 'react-router-dom'
-import { ListTodo, Building2, Briefcase, Settings, Plus, CalendarPlus } from 'lucide-react'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
+import { ListTodo, Building2, Briefcase, Settings, Plus, CalendarPlus, ClipboardList } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useState } from 'react'
 
@@ -61,12 +61,32 @@ function NavGroup({
 export function MobileBottomNav() {
   const reduceMotion = useReducedMotion()
   const navigate = useNavigate()
+  const location = useLocation()
   const [fabOpen, setFabOpen] = useState(false)
+  const onPositionDetail = /^\/positions\/[^/]+$/.test(location.pathname)
 
   return (
     <>
       <Modal open={fabOpen} onClose={() => setFabOpen(false)} title="Quick add">
         <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            className="flex items-center gap-3 rounded-2xl border border-stone-200/80 bg-white px-4 py-3 text-left text-sm font-semibold dark:border-stone-600 dark:bg-stone-800/80"
+            onClick={() => {
+              setFabOpen(false)
+              navigate('/?addTask=1')
+            }}
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-800 dark:text-emerald-300">
+              <ClipboardList className="h-5 w-5" aria-hidden />
+            </span>
+            <span>
+              <span className="block">Add task</span>
+              <span className="text-ink-muted mt-0.5 block text-xs font-normal dark:text-stone-400">
+                {onPositionDetail ? 'Company & role filled from this page' : 'Choose role on the next screen'}
+              </span>
+            </span>
+          </button>
           <button
             type="button"
             className="flex items-center gap-3 rounded-2xl border border-stone-200/80 bg-white px-4 py-3 text-left text-sm font-semibold dark:border-stone-600 dark:bg-stone-800/80"

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import {
   CheckCircle,
@@ -11,6 +11,7 @@ import {
   Link2,
   Trash2,
   ChevronRight,
+  Upload,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -18,7 +19,6 @@ import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { normalizeEmail, normalizePhone } from '@/lib/normalize'
 import { formatDue } from '@/lib/dates'
-import { buildMailto } from '@/lib/mailto'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/hooks/useToast'
@@ -42,6 +42,17 @@ export function PositionDetailPage() {
   const { success, error: toastError } = useToast()
   const [search, setSearch] = useSearchParams()
   const highlightCandidate = search.get('candidate')
+  const resumeFileRef = useRef<HTMLInputElement>(null)
+  const excelImportRef = useRef<HTMLInputElement>(null)
+  const [resumePickForId, setResumePickForId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!id) return
+    sessionStorage.setItem('yulis_task_prefill_position_id', id)
+    return () => {
+      sessionStorage.removeItem('yulis_task_prefill_position_id')
+    }
+  }, [id])
 
   const posQ = useQuery({
     queryKey: ['position', id, user?.id],
@@ -88,6 +99,8 @@ export function PositionDetailPage() {
       return data ?? []
     },
   })
+
+  type PositionCandidate = NonNullable<typeof candidatesQ.data>[number] & { resume_storage_path?: string | null }
 
   const tasksQ = useQuery({
     queryKey: ['position-tasks', id, user?.id],
@@ -376,30 +389,6 @@ export function PositionDetailPage() {
     }
   }
 
-  const [taskTitle, setTaskTitle] = useState('')
-  const [taskDue, setTaskDue] = useState('')
-
-  const addTask = useMutation({
-    mutationFn: async () => {
-      const { error } = await supabase!.from('tasks').insert({
-        user_id: user!.id,
-        position_id: id!,
-        title: taskTitle.trim() || 'Task',
-        status: 'todo',
-        due_at: taskDue ? new Date(taskDue).toISOString() : null,
-      })
-      if (error) throw error
-    },
-    onSuccess: async () => {
-      setTaskTitle('')
-      setTaskDue('')
-      success('Task added')
-      await qc.invalidateQueries({ queryKey: ['position-tasks', id] })
-      await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
-    },
-    onError: (e: Error) => toastError(e.message),
-  })
-
   const deleteTask = useMutation({
     mutationFn: async (taskId: string) => {
       const { error } = await supabase!.from('tasks').delete().eq('id', taskId).eq('user_id', user!.id)
@@ -576,6 +565,16 @@ export function PositionDetailPage() {
     await qc.invalidateQueries({ queryKey: ['position-activity', id] })
   }
 
+  async function previewResume(storagePath: string) {
+    if (!supabase) return
+    const { data, error } = await supabase.storage.from('candidate-docs').createSignedUrl(storagePath, 120)
+    if (error || !data?.signedUrl) {
+      toastError(error?.message ?? 'Could not open file')
+      return
+    }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+  }
+
   const filteredActivity = useMemo(() => {
     const rows = activityQ.data ?? []
     if (activityFilter === 'milestones') {
@@ -588,47 +587,188 @@ export function PositionDetailPage() {
 
   const terminalPosition = status === 'success' || status === 'cancelled'
 
+  const activeCandidates = useMemo(
+    () => (candidatesQ.data ?? []).filter((c) => c.outcome === 'active'),
+    [candidatesQ.data],
+  )
+  const pastCandidates = useMemo(
+    () => (candidatesQ.data ?? []).filter((c) => c.outcome !== 'active'),
+    [candidatesQ.data],
+  )
+
   if (posQ.isLoading || !position) {
     return <p className="text-ink-muted text-sm">Loading…</p>
   }
 
+  function renderCandidateCard(c: PositionCandidate) {
+    const st = c.position_stages as unknown as { name: string } | null
+    const hl = highlightCandidate === c.id
+    const active = c.outcome === 'active'
+    const resumePath = c.resume_storage_path ?? null
+    return (
+      <li
+        key={c.id}
+        id={`cand-${c.id}`}
+        className={`border-line rounded-xl border bg-white/60 p-3 dark:border-line-dark dark:bg-stone-900/40 ${hl ? 'ring-accent ring-2' : ''}`}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            {resumePath ? (
+              <button
+                type="button"
+                className="border-line text-ink-muted hover:bg-paper hover:text-accent shrink-0 rounded-lg border p-1.5 transition dark:border-line-dark dark:hover:bg-stone-800"
+                title="Preview résumé"
+                aria-label="Preview résumé"
+                onClick={() => void previewResume(resumePath)}
+              >
+                <FileText className="h-4 w-4" aria-hidden />
+              </button>
+            ) : null}
+            <Link to={`?candidate=${c.id}`} className="font-medium text-[#9b3e20] hover:underline dark:text-orange-300">
+              {c.full_name}
+              <ChevronRight className="ml-1 inline h-4 w-4 opacity-50" aria-hidden />
+            </Link>
+            {hl && active ? (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  title="Mark hired"
+                  aria-label="Mark hired"
+                  onClick={() => {
+                    const close = window.confirm('Also mark open tasks for this candidate as done?')
+                    void updateCandidateOutcome.mutateAsync({ candidateId: c.id, outcome: 'hired', closeTasks: close })
+                  }}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-600/35 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+                >
+                  <CheckCircle className="h-4 w-4" aria-hidden />
+                </button>
+                <button
+                  type="button"
+                  title="Mark rejected"
+                  aria-label="Mark rejected"
+                  onClick={() => {
+                    if (!window.confirm(`Reject ${c.full_name}?`)) return
+                    const close = window.confirm('Mark open tasks for this candidate as done?')
+                    void updateCandidateOutcome.mutateAsync({ candidateId: c.id, outcome: 'rejected', closeTasks: close })
+                  }}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/35 bg-red-500/10 text-red-800 dark:text-red-200"
+                >
+                  <XCircle className="h-4 w-4" aria-hidden />
+                </button>
+              </div>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm(`Archive ${c.full_name}?`)) void softDeleteCandidate.mutateAsync(c.id)
+            }}
+            className="text-ink-muted hover:text-red-600 flex items-center gap-1 text-xs"
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden />
+            Archive
+          </button>
+        </div>
+        <p className="text-ink-muted text-xs">
+          {c.source} · {st?.name ?? '—'} · {c.outcome}
+        </p>
+        <label className="mt-2 block text-xs font-medium">
+          Stage
+          <select
+            value={c.position_stage_id ?? ''}
+            onChange={(e) => void updateCandidateStage.mutateAsync({ candidateId: c.id, stageId: e.target.value || null })}
+            className="border-line mt-1 w-full rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
+          >
+            <option value="">—</option>
+            {(stagesQ.data ?? []).map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setResumePickForId(c.id)
+              queueMicrotask(() => resumeFileRef.current?.click())
+            }}
+            className="border-line inline-flex items-center gap-2 rounded-lg border bg-white/80 px-3 py-2 text-xs font-medium shadow-sm dark:border-line-dark dark:bg-stone-900/60"
+          >
+            <Upload className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            {resumePath ? 'Replace résumé' : 'Upload résumé'}
+          </button>
+          <span className="text-ink-muted text-[11px]">PDF or Word</span>
+          <button type="button" onClick={() => void createShareToken.mutateAsync(c.id)} className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs dark:border-line-dark">
+            <Link2 className="h-3.5 w-3.5" aria-hidden />
+            Share link
+          </button>
+        </div>
+        {hl && !active ? <p className="mt-2 text-sm font-medium text-stone-600 dark:text-stone-400">Outcome: {c.outcome}</p> : null}
+        {hl ? (
+          <div className="mt-3 border-t border-stone-200/80 pt-3 dark:border-stone-600">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-stone-500">Candidate activity</h3>
+            <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-sm">
+              {(activityQ.data ?? [])
+                .filter((a) => a.candidate_id === c.id)
+                .map((a) => (
+                  <li key={a.id} className="text-ink-muted text-xs">
+                    <span className="text-ink font-medium">{a.title}</span>
+                    {a.subtitle ? ` — ${a.subtitle}` : null} · {formatDistanceToNow(new Date(a.created_at), { addSuffix: true })}
+                  </li>
+                ))}
+            </ul>
+          </div>
+        ) : null}
+      </li>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-8">
-      <ScreenHeader title={position.title} subtitle={company?.name} backTo="/positions" />
-
-      {!terminalPosition ? (
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <button
-            type="button"
-            onClick={() => {
-              if (window.confirm('Mark this role fulfilled (placed / done)?')) void setPositionTerminal.mutateAsync('success')
-            }}
-            className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-md hover:bg-emerald-700"
-          >
-            <PartyPopper className="h-5 w-5" aria-hidden />
-            Fulfilled
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (window.confirm('Mark role withdrawn (client pulled the req)?')) void setPositionTerminal.mutateAsync('cancelled')
-            }}
-            className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-3 text-sm font-bold text-white shadow-md hover:bg-red-700"
-          >
-            <Ban className="h-5 w-5" aria-hidden />
-            Withdrawn
-          </button>
-        </div>
-      ) : (
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="border-line rounded-full border bg-white/80 px-3 py-1 text-sm font-semibold dark:bg-stone-800">
-            {status === 'success' ? 'Fulfilled' : 'Withdrawn'}
-          </span>
-          <button type="button" onClick={() => void reopenPosition.mutateAsync()} className="text-accent text-sm font-semibold underline">
-            Reopen role
-          </button>
-        </div>
-      )}
+      <ScreenHeader
+        title={position.title}
+        subtitle={company?.name}
+        backTo="/positions"
+        right={
+          !terminalPosition ? (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                title="Mark role fulfilled"
+                aria-label="Mark role fulfilled"
+                onClick={() => {
+                  if (window.confirm('Mark this role fulfilled (placed / done)?')) void setPositionTerminal.mutateAsync('success')
+                }}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-600/30 bg-emerald-500/12 text-emerald-800 shadow-sm transition hover:bg-emerald-500/20 dark:border-emerald-500/35 dark:text-emerald-200"
+              >
+                <PartyPopper className="h-4 w-4" aria-hidden />
+              </button>
+              <button
+                type="button"
+                title="Mark role withdrawn"
+                aria-label="Mark role withdrawn"
+                onClick={() => {
+                  if (window.confirm('Mark role withdrawn (client pulled the req)?')) void setPositionTerminal.mutateAsync('cancelled')
+                }}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-red-500/35 bg-red-500/10 text-red-800 shadow-sm transition hover:bg-red-500/15 dark:text-red-200"
+              >
+                <Ban className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span className="border-line rounded-full border bg-white/80 px-2.5 py-1 text-xs font-semibold dark:bg-stone-800">
+                {status === 'success' ? 'Fulfilled' : 'Withdrawn'}
+              </span>
+              <button type="button" onClick={() => void reopenPosition.mutateAsync()} className="text-accent text-xs font-semibold underline">
+                Reopen
+              </button>
+            </div>
+          )
+        }
+      />
 
       <section className="border-line bg-white/60 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40">
         <h2 className="font-display font-semibold">Position details</h2>
@@ -784,8 +924,26 @@ export function PositionDetailPage() {
 
       <section>
         <h2 className="font-display font-semibold">Import candidates (Excel)</h2>
-        <p className="text-ink-muted mt-1 text-sm">Columns should include name, email, phone (headers detected automatically).</p>
-        <input type="file" accept=".xlsx,.xls" className="mt-2 text-sm" onChange={(e) => void onExcel(e.target.files?.[0] ?? null)} />
+        <p className="text-ink-muted mt-1 text-sm">Upload a spreadsheet with one row per candidate. We detect columns by header names (name, email, phone).</p>
+        <input
+          ref={excelImportRef}
+          type="file"
+          accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+          className="sr-only"
+          onChange={(e) => {
+            void onExcel(e.target.files?.[0] ?? null)
+            e.target.value = ''
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => excelImportRef.current?.click()}
+          className="border-line mt-3 inline-flex w-full max-w-md items-center justify-center gap-2 rounded-xl border bg-white/80 px-4 py-3 text-sm font-semibold shadow-sm dark:border-line-dark dark:bg-stone-900/60 sm:w-auto"
+        >
+          <Upload className="h-4 w-4 shrink-0" aria-hidden />
+          Choose Excel file
+        </button>
+        <p className="text-ink-muted mt-2 text-xs">Supported: .xlsx, .xls. No file is uploaded until you confirm the import.</p>
         {importError ? <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">{importError}</p> : null}
       </section>
 
@@ -822,166 +980,66 @@ export function PositionDetailPage() {
           </button>
         </form>
 
-        <ul className="mt-4 space-y-3">
-          {(candidatesQ.data ?? []).map((c) => {
-            const st = c.position_stages as unknown as { name: string } | null
-            const hl = highlightCandidate === c.id
-            const active = c.outcome === 'active'
-            return (
-              <li
-                key={c.id}
-                id={`cand-${c.id}`}
-                className={`border-line rounded-xl border bg-white/60 p-3 dark:border-line-dark dark:bg-stone-900/40 ${hl ? 'ring-accent ring-2' : ''}`}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <Link to={`?candidate=${c.id}`} className="font-medium text-[#9b3e20] hover:underline dark:text-orange-300">
-                    {c.full_name}
-                    <ChevronRight className="ml-1 inline h-4 w-4 opacity-50" aria-hidden />
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.confirm(`Archive ${c.full_name}?`)) void softDeleteCandidate.mutateAsync(c.id)
-                    }}
-                    className="text-ink-muted hover:text-red-600 flex items-center gap-1 text-xs"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                    Archive
-                  </button>
-                </div>
-                <p className="text-ink-muted text-xs">
-                  {c.source} · {st?.name ?? '—'} · {c.outcome}
-                </p>
-                <label className="mt-2 block text-xs font-medium">
-                  Stage
-                  <select
-                    value={c.position_stage_id ?? ''}
-                    onChange={(e) => void updateCandidateStage.mutateAsync({ candidateId: c.id, stageId: e.target.value || null })}
-                    className="border-line mt-1 w-full rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
-                  >
-                    <option value="">—</option>
-                    {(stagesQ.data ?? []).map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs dark:border-line-dark">
-                    <FileText className="h-3.5 w-3.5" aria-hidden />
-                    Resume
-                    <input type="file" accept=".pdf,.doc,.docx" className="hidden" onChange={(e) => void uploadResume(c.id, e.target.files?.[0] ?? null)} />
-                  </label>
-                  <button type="button" onClick={() => void createShareToken.mutateAsync(c.id)} className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs dark:border-line-dark">
-                    <Link2 className="h-3.5 w-3.5" aria-hidden />
-                    Share link
-                  </button>
-                </div>
-                {hl && active ? (
-                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const close = window.confirm('Also mark open tasks for this candidate as done?')
-                        void updateCandidateOutcome.mutateAsync({ candidateId: c.id, outcome: 'hired', closeTasks: close })
-                      }}
-                      className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-sm font-bold text-white"
-                    >
-                      <CheckCircle className="h-5 w-5" aria-hidden />
-                      Hired
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!window.confirm(`Reject ${c.full_name}?`)) return
-                        const close = window.confirm('Mark open tasks for this candidate as done?')
-                        void updateCandidateOutcome.mutateAsync({ candidateId: c.id, outcome: 'rejected', closeTasks: close })
-                      }}
-                      className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white"
-                    >
-                      <XCircle className="h-5 w-5" aria-hidden />
-                      Rejected
-                    </button>
-                  </div>
-                ) : null}
-                {hl && !active ? (
-                  <p className="mt-2 text-sm font-medium text-stone-600 dark:text-stone-400">Outcome: {c.outcome}</p>
-                ) : null}
-                {hl ? (
-                  <div className="mt-3 border-t border-stone-200/80 pt-3 dark:border-stone-600">
-                    <h3 className="text-xs font-bold uppercase tracking-wide text-stone-500">Candidate activity</h3>
-                    <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-sm">
-                      {(activityQ.data ?? [])
-                        .filter((a) => a.candidate_id === c.id)
-                        .map((a) => (
-                          <li key={a.id} className="text-ink-muted text-xs">
-                            <span className="text-ink font-medium">{a.title}</span>
-                            {a.subtitle ? ` — ${a.subtitle}` : null} · {formatDistanceToNow(new Date(a.created_at), { addSuffix: true })}
-                          </li>
-                        ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </li>
-            )
-          })}
-        </ul>
-      </section>
-
-      <section>
-        <h2 className="font-display font-semibold">Tasks</h2>
-        <form
-          className="mt-3 flex flex-wrap gap-2"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void addTask.mutateAsync()
+        <input
+          ref={resumeFileRef}
+          type="file"
+          accept=".pdf,.doc,.docx,application/pdf"
+          className="sr-only"
+          tabIndex={-1}
+          onChange={(e) => {
+            const f = e.target.files?.[0] ?? null
+            const cid = resumePickForId
+            setResumePickForId(null)
+            e.target.value = ''
+            if (cid && f) void uploadResume(cid, f)
           }}
-        >
-          <input
-            value={taskTitle}
-            onChange={(e) => setTaskTitle(e.target.value)}
-            placeholder="Task title"
-            className="border-line min-w-[12rem] flex-1 rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-            required
-          />
-          <input type="datetime-local" value={taskDue} onChange={(e) => setTaskDue(e.target.value)} className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
-          <button type="submit" className="bg-ink/90 text-paper rounded-full px-4 py-2 text-sm font-medium dark:bg-stone-200 dark:text-stone-900">
-            Add task
-          </button>
-        </form>
-        <ul className="mt-3 space-y-2">
-          {(tasksQ.data ?? []).map((t) => (
-            <li key={t.id} className="border-line bg-white/60 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/40">
-              <span>
-                {t.title} · {t.status}
-                {t.due_at ? <span className="text-ink-muted"> · due {formatDue(t.due_at)}</span> : null}
-              </span>
-              <button type="button" onClick={() => void deleteTask.mutateAsync(t.id)} className="text-red-600 text-xs font-semibold">
-                Remove
-              </button>
-            </li>
-          ))}
-        </ul>
+        />
+
+        <div className="mt-8">
+          <h3 className="font-display text-base font-semibold tracking-tight">Currently participating</h3>
+          <p className="text-ink-muted mt-1 text-xs">Candidates still in your pipeline and stage flow for this role.</p>
+          <ul className="mt-3 space-y-3">
+            {activeCandidates.length === 0 ? <li className="text-ink-muted text-sm">No active candidates yet.</li> : activeCandidates.map(renderCandidateCard)}
+          </ul>
+        </div>
+
+        {pastCandidates.length > 0 ? (
+          <div className="mt-8">
+            <h3 className="font-display text-base font-semibold tracking-tight">Previously participated</h3>
+            <p className="text-ink-muted mt-1 text-xs">Hired, rejected, or otherwise no longer active on this role.</p>
+            <ul className="mt-3 space-y-3">{pastCandidates.map(renderCandidateCard)}</ul>
+          </div>
+        ) : null}
       </section>
 
       <section>
-        <h2 className="font-display font-semibold">Email</h2>
-        <p className="text-ink-muted mt-1 text-sm">Opens your mail client with company or candidate prefilled.</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {company?.contact_email ? (
-            <a
-              href={buildMailto({
-                to: company.contact_email,
-                subject: `Re: ${position.title}`,
-                body: 'Hi,\n\n',
-              })}
-              className="border-line inline-flex rounded-full border px-4 py-2 text-sm font-medium dark:border-line-dark"
-            >
-              Email company
-            </a>
-          ) : null}
-        </div>
+        <h2 className="font-display font-semibold">Tasks for this role</h2>
+        <p className="text-ink-muted mt-1 text-sm">
+          To add a task, use the <span className="text-ink font-semibold">+</span> button in the bottom bar and choose <span className="text-ink font-medium">Add task</span>. Company and position are filled from this page automatically.
+        </p>
+        <ul className="mt-3 space-y-2">
+          {(tasksQ.data ?? []).length === 0 ? (
+            <li className="text-ink-muted text-sm">No tasks linked to this role yet.</li>
+          ) : (
+            (tasksQ.data ?? []).map((t) => (
+              <li
+                key={t.id}
+                className="border-line bg-white/60 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/40"
+              >
+                <span className="pointer-events-none select-none">
+                  {t.title} · {t.status}
+                  {t.due_at ? <span className="text-ink-muted"> · due {formatDue(t.due_at)}</span> : null}
+                  {(t as { candidates?: { full_name?: string } | null }).candidates?.full_name ? (
+                    <span className="text-ink-muted"> · {(t as { candidates: { full_name: string } }).candidates.full_name}</span>
+                  ) : null}
+                </span>
+                <button type="button" onClick={() => void deleteTask.mutateAsync(t.id)} className="text-red-600 text-xs font-semibold">
+                  Remove
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
       </section>
 
       <Modal open={shareOpen} onClose={() => setShareOpen(false)} title="Share link" size="sm">
