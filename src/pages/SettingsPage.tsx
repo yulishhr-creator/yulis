@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
-import { List, Mail, Download, User, FileJson, FileSpreadsheet, Archive, Clock, Building2 } from 'lucide-react'
+import { List, Mail, Download, User, FileJson, FileSpreadsheet, Archive, Clock } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import JSZip from 'jszip'
@@ -48,8 +48,6 @@ export function SettingsPage() {
     },
   })
 
-  const [workEffortGroupByCompany, setWorkEffortGroupByCompany] = useState(false)
-
   const workRecentQ = useQuery({
     queryKey: ['work-time-entries', 'settings-recent', user?.id],
     enabled: Boolean(supabase && user),
@@ -67,17 +65,6 @@ export function SettingsPage() {
   })
 
   const workEntries = workRecentQ.data ?? []
-
-  const workByCompany = useMemo(() => {
-    const map = new Map<string, WorkEntryRow[]>()
-    for (const row of workEntries) {
-      const name = row.positions?.companies?.name?.trim() || 'No company'
-      const list = map.get(name) ?? []
-      list.push(row)
-      map.set(name, list)
-    }
-    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
-  }, [workEntries])
 
   const workRecentTotalSeconds = useMemo(
     () => workEntries.reduce((acc, row) => acc + (row.duration_seconds ?? 0), 0),
@@ -191,94 +178,36 @@ export function SettingsPage() {
           <span className="text-stitch-muted"> · {workEntries.length} sessions</span>
         </p>
 
-        <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Work effort layout">
-          <button
-            type="button"
-            onClick={() => setWorkEffortGroupByCompany(false)}
-            className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-              !workEffortGroupByCompany
-                ? 'bg-gradient-to-r from-[#9b3e20] to-[#fd8863] text-white shadow-md'
-                : 'border-line border bg-white/80 dark:border-line-dark dark:bg-stone-900/50'
-            }`}
-          >
-            Recent activity
-          </button>
-          <button
-            type="button"
-            onClick={() => setWorkEffortGroupByCompany(true)}
-            className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition ${
-              workEffortGroupByCompany
-                ? 'bg-gradient-to-r from-[#9b3e20] to-[#fd8863] text-white shadow-md'
-                : 'border-line border bg-white/80 dark:border-line-dark dark:bg-stone-900/50'
-            }`}
-          >
-            <Building2 className="h-4 w-4 shrink-0" aria-hidden />
-            Group by company
-          </button>
-        </div>
-
         {workRecentQ.isLoading ? (
           <p className="text-stitch-muted mt-4 text-sm">Loading sessions…</p>
         ) : workEntries.length === 0 ? (
           <p className="text-stitch-muted mt-4 text-sm">No completed sessions yet. Start a timer from the home screen.</p>
-        ) : workEffortGroupByCompany ? (
-          <ul className="mt-4 space-y-5">
-            {workByCompany.map(([companyName, rows]) => {
-              const subtotal = rows.reduce((acc, r) => acc + (r.duration_seconds ?? 0), 0)
-              return (
-                <li key={companyName}>
-                  <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-stone-200/80 pb-2 dark:border-stone-600">
-                    <span className="font-stitch-head font-bold text-[#302e2b] dark:text-stone-100">{companyName}</span>
-                    <span className="text-ink-muted text-xs tabular-nums dark:text-stone-400">
-                      worked: <span className="font-semibold text-[#9b3e20] dark:text-orange-300">{formatWorkedDuration(subtotal)}</span>
-                      <span className="text-stitch-muted"> · {rows.length} session{rows.length === 1 ? '' : 's'}</span>
-                    </span>
-                  </div>
-                  <ul className="mt-2 space-y-2">
-                    {rows.map((row) => {
-                      const title = row.positions?.title ?? 'Role'
-                      const dur = row.duration_seconds ?? 0
-                      return (
-                        <li
-                          key={row.id}
-                          className="border-line flex flex-wrap items-baseline justify-between gap-2 rounded-xl border bg-stone-50/80 px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-800/50"
-                        >
-                          <span className="font-medium">{title}</span>
-                          <span className="text-ink-muted tabular-nums text-xs dark:text-stone-400">
-                            {format(new Date(row.started_at), 'MMM d, HH:mm')} ·{' '}
-                            <span className="font-semibold text-[#302e2b] dark:text-stone-200">worked: {formatWorkedDuration(dur)}</span>
-                          </span>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </li>
-              )
-            })}
-          </ul>
         ) : (
-          <ul className="mt-4 space-y-2">
-            {workEntries.map((row) => {
-              const title = row.positions?.title ?? 'Role'
-              const company = row.positions?.companies?.name?.trim() || 'No company'
-              const dur = row.duration_seconds ?? 0
-              return (
-                <li
-                  key={row.id}
-                  className="border-line flex flex-wrap items-baseline justify-between gap-2 rounded-xl border bg-stone-50/80 px-3 py-2.5 text-sm dark:border-line-dark dark:bg-stone-800/50"
-                >
-                  <div className="min-w-0">
-                    <span className="font-medium">{title}</span>
-                    <span className="text-ink-muted block text-xs dark:text-stone-400">{company}</span>
-                  </div>
-                  <div className="text-ink-muted shrink-0 text-right text-xs tabular-nums dark:text-stone-400">
-                    <div>{format(new Date(row.started_at), 'MMM d, HH:mm')}</div>
-                    <div className="mt-0.5 font-semibold text-[#9b3e20] dark:text-orange-300">worked: {formatWorkedDuration(dur)}</div>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
+          <>
+            <h3 className="font-stitch-head mt-5 text-base font-extrabold text-[#302e2b] dark:text-stone-100">Recent activity</h3>
+            <ul className="mt-3 space-y-2">
+              {workEntries.map((row) => {
+                const title = row.positions?.title ?? 'Role'
+                const company = row.positions?.companies?.name?.trim() || 'No company'
+                const dur = row.duration_seconds ?? 0
+                return (
+                  <li
+                    key={row.id}
+                    className="border-line flex flex-wrap items-baseline justify-between gap-2 rounded-xl border bg-stone-50/80 px-3 py-2.5 text-sm dark:border-line-dark dark:bg-stone-800/50"
+                  >
+                    <div className="min-w-0">
+                      <span className="font-medium">{title}</span>
+                      <span className="text-ink-muted block text-xs dark:text-stone-400">{company}</span>
+                    </div>
+                    <div className="text-ink-muted shrink-0 text-right text-xs tabular-nums dark:text-stone-400">
+                      <div>{format(new Date(row.started_at), 'MMM d, HH:mm')}</div>
+                      <div className="mt-0.5 font-semibold text-[#9b3e20] dark:text-orange-300">worked: {formatWorkedDuration(dur)}</div>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          </>
         )}
       </motion.section>
 
