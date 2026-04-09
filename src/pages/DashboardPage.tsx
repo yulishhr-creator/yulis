@@ -1,7 +1,7 @@
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Check, ChevronDown, Timer, Building2, Plus } from 'lucide-react'
+import { Check, ChevronDown, Timer, ListFilter, Plus } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { differenceInCalendarDays } from 'date-fns'
 
@@ -58,7 +58,7 @@ export function DashboardPage() {
   const { success, error: toastError } = useToast()
   const [trackOpen, setTrackOpen] = useState(false)
   const [trackPosId, setTrackPosId] = useState('')
-  const [positionsScope, setPositionsScope] = useState<'active' | 'all'>('active')
+  const [positionsScope, setPositionsScope] = useState<'open' | 'in_progress' | 'all'>('open')
   /** `all` = show every task; `Set` = only tasks whose position's company id is in the set */
   const [companyTaskFilter, setCompanyTaskFilter] = useState<'all' | Set<string>>('all')
   const [companyFilterOpen, setCompanyFilterOpen] = useState(false)
@@ -133,14 +133,15 @@ export function DashboardPage() {
           updated_at,
           company_id,
           companies ( name ),
-          candidates ( id, full_name, outcome, position_stage_id, updated_at, position_stages ( name ) )
+          candidates ( id, full_name, outcome, position_stage_id, updated_at, created_at, position_stages ( name ) )
         `,
         )
         .eq('user_id', uid!)
         .is('deleted_at', null)
         .order('updated_at', { ascending: false })
         .limit(12)
-      if (positionsScope === 'active') q = q.in('status', ['pending', 'in_progress'])
+      if (positionsScope === 'open') q = q.eq('status', 'pending')
+      else if (positionsScope === 'in_progress') q = q.eq('status', 'in_progress')
       const { data, error } = await q
       if (error) throw error
       return data ?? []
@@ -367,23 +368,23 @@ export function DashboardPage() {
           <p className="text-stitch-muted mt-3 max-w-xl text-base leading-relaxed md:text-lg dark:text-stone-400">
             so, how should we proceed from here?
           </p>
-          <div className="mt-5 flex flex-wrap gap-3">
-            <motion.div whileHover={reduceMotion ? undefined : { scale: 1.02 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
+          <div className="mt-5 flex flex-nowrap items-center gap-2">
+            <motion.div className="min-w-0 flex-1 sm:flex-none" whileHover={reduceMotion ? undefined : { scale: 1.02 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
               <Link
-                to="/positions"
-                className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-5 py-2.5 text-sm font-bold tracking-wide text-white uppercase shadow-lg shadow-[#9b3e20]/25"
+                to="/?addTask=1"
+                className="inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-3 py-2 text-xs font-bold tracking-wide text-white uppercase shadow-md shadow-[#9b3e20]/20 sm:w-auto sm:px-4 sm:text-sm"
               >
-                <Plus className="h-4 w-4" aria-hidden />
+                <Plus className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" aria-hidden />
                 Create task
               </Link>
             </motion.div>
-            <motion.div whileHover={reduceMotion ? undefined : { scale: 1.02 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
+            <motion.div className="min-w-0 flex-1 sm:flex-none" whileHover={reduceMotion ? undefined : { scale: 1.02 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
               <button
                 type="button"
                 onClick={() => setTrackOpen(true)}
-                className="border-[#9b3e20]/35 inline-flex items-center gap-2 rounded-full border-2 bg-stone-900/5 px-5 py-2.5 text-sm font-bold text-[#7c2d12] shadow-sm dark:border-orange-400/35 dark:bg-stone-800/80 dark:text-amber-200"
+                className="border-[#9b3e20]/35 inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-full border-2 bg-stone-900/5 px-3 py-2 text-xs font-bold text-[#7c2d12] shadow-sm dark:border-orange-400/35 dark:bg-stone-800/80 dark:text-amber-200 sm:w-auto sm:px-4 sm:text-sm"
               >
-                <Timer className="h-4 w-4 text-[#9b3e20] dark:text-orange-300" aria-hidden />
+                <Timer className="h-3.5 w-3.5 shrink-0 text-[#9b3e20] dark:text-orange-300 sm:h-4 sm:w-4" aria-hidden />
                 Track time
               </button>
             </motion.div>
@@ -419,11 +420,7 @@ export function DashboardPage() {
               </span>
             </div>
             <div className="flex flex-col items-center justify-center px-2 py-4 text-center sm:px-4 sm:py-5">
-              <span
-                className={`font-stitch-label mb-0.5 text-[10px] font-bold tracking-[0.18em] uppercase ${
-                  kpis.overdue > 0 ? 'text-[#9f0519] dark:text-red-400' : 'text-[#165c25] dark:text-emerald-400'
-                }`}
-              >
+              <span className="font-stitch-label mb-0.5 text-[10px] font-bold tracking-[0.18em] text-[#9f0519] uppercase dark:text-red-400">
                 Overdue
               </span>
               <p className="font-stitch-head text-stitch-on-surface text-2xl font-extrabold tabular-nums sm:text-3xl dark:text-stone-100">{kpis.overdue}</p>
@@ -486,7 +483,7 @@ export function DashboardPage() {
               aria-haspopup="listbox"
               aria-label="Filter tasks by company"
             >
-              <Building2 className="h-5 w-5" aria-hidden />
+              <ListFilter className="h-5 w-5" aria-hidden />
             </button>
             {companyFilterOpen ? (
               <div
@@ -575,7 +572,7 @@ export function DashboardPage() {
               const cand = row.candidates as unknown as { id: string; full_name: string } | null
               const posTitle = pos?.title ?? 'Position'
               const companyName = pos?.companies?.name
-              const due = formatDue(row.due_at)
+              const dueLabel = row.due_at ? formatDue(row.due_at) : null
               return (
                 <motion.li
                   key={row.id}
@@ -585,6 +582,11 @@ export function DashboardPage() {
                   className={`flex gap-3 rounded-2xl border border-white/60 py-4 pl-5 pr-3 shadow-[0_12px_32px_rgba(48,46,43,0.06)] dark:border-stone-700 ${taskAccent(row.status)} border-l-4`}
                 >
                   <div className="min-w-0 flex-1">
+                    {dueLabel ? (
+                      <p className="text-stitch-muted mb-1 text-[11px] font-medium dark:text-stone-500">Due date: {dueLabel}</p>
+                    ) : (
+                      <p className="text-stitch-muted mb-1 text-[11px] font-medium dark:text-stone-500">Due date: none set</p>
+                    )}
                     <p className="text-sm leading-relaxed text-[#302e2b] dark:text-stone-100">
                       You need to <span className="font-bold">{row.title}</span> for position{' '}
                       <Link to={`/positions/${row.position_id}`} className="font-semibold text-[#9b3e20] underline-offset-2 hover:underline dark:text-orange-300">
@@ -602,8 +604,8 @@ export function DashboardPage() {
                             {cand.full_name}
                           </Link>
                         </>
-                      ) : null}{' '}
-                      until <span className="font-semibold">{due}</span>.
+                      ) : null}
+                      .
                     </p>
                     {row.status === 'in_progress' ? (
                       <p className="text-[#006384] mt-2 text-xs font-bold uppercase tracking-wide dark:text-cyan-400">In progress</p>
@@ -753,19 +755,26 @@ export function DashboardPage() {
         className="group border-stitch-on-surface/10 rounded-3xl border bg-white/50 open:bg-white/90 open:shadow-md dark:border-stone-700 dark:bg-stone-900/40 dark:open:bg-stone-900/70"
       >
         <summary className="font-stitch-head flex cursor-pointer list-none items-center justify-between gap-2 rounded-3xl px-4 py-4 text-lg font-extrabold text-[#302e2b] marker:hidden dark:text-stone-100 [&::-webkit-details-marker]:hidden">
-          <span>Candidates overview</span>
+          <span>Positions & candidates overview</span>
           <ChevronDown className="text-stitch-muted h-5 w-5 shrink-0 transition group-open:rotate-180" aria-hidden />
         </summary>
         <div className="border-stitch-on-surface/10 border-t px-4 pb-4 dark:border-stone-700">
           <div className="flex flex-wrap items-center justify-between gap-2 py-3">
             <p className="text-stitch-muted text-sm">Roles and candidates — collapse if you want more focus on tasks.</p>
-            <div className="flex gap-2 text-xs font-bold uppercase">
+            <div className="flex flex-wrap gap-2 text-xs font-bold uppercase">
               <button
                 type="button"
-                className={`rounded-full px-3 py-1 ${positionsScope === 'active' ? 'bg-[#9b3e20] text-white' : 'border border-stone-300 dark:border-stone-600'}`}
-                onClick={() => setPositionsScope('active')}
+                className={`rounded-full px-3 py-1 ${positionsScope === 'open' ? 'bg-[#9b3e20] text-white' : 'border border-stone-300 dark:border-stone-600'}`}
+                onClick={() => setPositionsScope('open')}
               >
-                Active
+                Open
+              </button>
+              <button
+                type="button"
+                className={`rounded-full px-3 py-1 ${positionsScope === 'in_progress' ? 'bg-[#9b3e20] text-white' : 'border border-stone-300 dark:border-stone-600'}`}
+                onClick={() => setPositionsScope('in_progress')}
+              >
+                In progress
               </button>
               <button
                 type="button"
@@ -789,6 +798,7 @@ export function DashboardPage() {
                     id: string
                     full_name: string
                     outcome: string
+                    created_at: string
                     position_stages: { name: string } | null
                   }>) ?? []
                 const pill = positionStatusPill(p.status)
@@ -830,16 +840,25 @@ export function DashboardPage() {
                         onClick={(e) => e.stopPropagation()}
                         onKeyDown={(e) => e.stopPropagation()}
                       >
-                        {cands.map((c) => (
-                          <li key={c.id} className="flex flex-wrap gap-2 text-sm">
-                            <Link to={`/positions/${p.id}?candidate=${c.id}`} className="font-medium text-[#006384] hover:underline dark:text-cyan-300">
-                              {c.full_name}
-                            </Link>
-                            <span className="text-stitch-muted text-xs">
-                              {c.position_stages?.name ?? '—'} · {c.outcome}
-                            </span>
-                          </li>
-                        ))}
+                        {cands.map((c) => {
+                          const daysOnRole = differenceInCalendarDays(new Date(), new Date(c.created_at))
+                          return (
+                            <li key={c.id} className="flex flex-wrap items-center gap-2 text-sm">
+                              <Link to={`/positions/${p.id}?candidate=${c.id}`} className="font-medium text-[#006384] hover:underline dark:text-cyan-300">
+                                {c.full_name}
+                              </Link>
+                              <span
+                                className="text-stitch-muted shrink-0 rounded-md border border-stone-200/80 bg-stone-50 px-1.5 py-0.5 text-[10px] font-bold tabular-nums dark:border-stone-600 dark:bg-stone-800"
+                                title="Days since added to this role"
+                              >
+                                {daysOnRole}d
+                              </span>
+                              <span className="text-stitch-muted text-xs">
+                                {c.position_stages?.name ?? '—'} · {c.outcome}
+                              </span>
+                            </li>
+                          )
+                        })}
                       </ul>
                     ) : null}
                   </li>

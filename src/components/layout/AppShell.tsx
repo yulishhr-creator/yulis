@@ -214,6 +214,13 @@ export function AppShell() {
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
+            <Link
+              to="/calendar"
+              className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 shadow-sm transition hover:bg-[#97daff]/30 dark:bg-stone-800/90 dark:hover:bg-cyan-900/40"
+              aria-label="Calendar"
+            >
+              <CalendarDays className="text-[#006384] h-5 w-5 dark:text-cyan-300" aria-hidden />
+            </Link>
             {timer.open ? (
               <div className="border-line flex max-w-[min(100%,14rem)] items-center gap-2 rounded-2xl border bg-white/90 px-2 py-1.5 shadow-sm dark:border-line-dark dark:bg-stone-800/90">
                 <Clock className="text-[#9b3e20] h-4 w-4 shrink-0 dark:text-orange-300" aria-hidden />
