@@ -20,6 +20,7 @@ import { AppLogo } from '@/components/ui/AppLogo'
 import { AnimatedOutlet } from '@/components/layout/AnimatedOutlet'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
+import { PwaInstallPrompt } from '@/components/pwa/PwaInstallPrompt'
 import { useWorkTimer } from '@/work/WorkTimerContext'
 import { useToast } from '@/hooks/useToast'
 
@@ -282,6 +283,7 @@ export function AppShell() {
         </main>
       </div>
 
+      <PwaInstallPrompt />
       <MobileBottomNav />
     </div>
   )
