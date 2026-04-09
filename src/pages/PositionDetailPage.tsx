@@ -26,6 +26,8 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/hooks/useToast'
 import { criticalStageThreshold, logActivityEvent } from '@/lib/activityLog'
+import { RequirementsMultiSelect } from '@/components/RequirementsMultiSelect'
+import { normalizeRequirementItemValues } from '@/lib/requirementValues'
 
 type StageRow = { id: string; name: string; sort_order: number }
 type ActivityRow = {
@@ -140,7 +142,7 @@ export function PositionDetailPage() {
   const company = position?.companies as unknown as { id: string; name: string; contact_email: string | null } | undefined
 
   const [title, setTitle] = useState('')
-  const [requirements, setRequirements] = useState('')
+  const [requirementItemValues, setRequirementItemValues] = useState<string[]>([])
   const [welcome1, setWelcome1] = useState('')
   const [welcome2, setWelcome2] = useState('')
   const [welcome3, setWelcome3] = useState('')
@@ -159,7 +161,7 @@ export function PositionDetailPage() {
   useEffect(() => {
     if (!position) return
     setTitle(position.title ?? '')
-    setRequirements(position.requirements ?? '')
+    setRequirementItemValues(normalizeRequirementItemValues((position as { requirement_item_values?: unknown }).requirement_item_values))
     setWelcome1(position.welcome_1 ?? '')
     setWelcome2(position.welcome_2 ?? '')
     setWelcome3(position.welcome_3 ?? '')
@@ -216,7 +218,7 @@ export function PositionDetailPage() {
         .from('positions')
         .update({
           title: title.trim() || 'Untitled',
-          requirements: requirements.trim() || null,
+          requirement_item_values: requirementItemValues,
           welcome_1: welcome1.trim() || null,
           welcome_2: welcome2.trim() || null,
           welcome_3: welcome3.trim() || null,
@@ -333,6 +335,7 @@ export function PositionDetailPage() {
   const [cEmail, setCEmail] = useState('')
   const [cPhone, setCPhone] = useState('')
   const [cSource, setCSource] = useState<'app' | 'external'>('app')
+  const [cRequirementItemValues, setCRequirementItemValues] = useState<string[]>([])
 
   const addCandidate = useMutation({
     mutationFn: async () => {
@@ -364,6 +367,7 @@ export function PositionDetailPage() {
           outcome: 'active',
           email_normalized: en,
           phone_normalized: pn,
+          requirement_item_values: cRequirementItemValues,
         })
         .select('id, full_name')
         .single()
@@ -374,6 +378,7 @@ export function PositionDetailPage() {
       setCName('')
       setCEmail('')
       setCPhone('')
+      setCRequirementItemValues([])
       success('Candidate added')
       await logActivityEvent(supabase!, user!.id, {
         event_type: 'candidate_created',
@@ -388,6 +393,21 @@ export function PositionDetailPage() {
       if (e.message === 'cancelled') return
       toastError(e.message)
     },
+  })
+
+  const updateCandidateRequirements = useMutation({
+    mutationFn: async ({ candidateId, values }: { candidateId: string; values: string[] }) => {
+      const { error } = await supabase!
+        .from('candidates')
+        .update({ requirement_item_values: values })
+        .eq('id', candidateId)
+        .eq('user_id', user!.id)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
+    },
+    onError: (e: Error) => toastError(e.message),
   })
 
   const [importError, setImportError] = useState<string | null>(null)
@@ -769,6 +789,15 @@ export function PositionDetailPage() {
         <p className="text-ink-muted text-xs">
           {c.source} · {st?.name ?? '—'} · {c.outcome}
         </p>
+        <div className="mt-2 text-xs font-medium">
+          Requirements
+          <RequirementsMultiSelect
+            className="mt-1"
+            value={normalizeRequirementItemValues(c.requirement_item_values)}
+            onChange={(next) => void updateCandidateRequirements.mutateAsync({ candidateId: c.id, values: next })}
+            disabled={updateCandidateRequirements.isPending}
+          />
+        </div>
         <label className="mt-2 block text-xs font-medium">
           Stage
           <select
@@ -990,10 +1019,14 @@ export function PositionDetailPage() {
               </div>
             </div>
           </details>
-          <label className="text-sm font-medium">
+          <div className="text-sm font-medium">
             Requirements
-            <textarea value={requirements} onChange={(e) => setRequirements(e.target.value)} rows={4} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
-          </label>
+            <RequirementsMultiSelect
+              value={requirementItemValues}
+              onChange={setRequirementItemValues}
+              disabled={savePos.isPending}
+            />
+          </div>
 
           <div className="flex flex-col gap-1">
             <div className="flex items-center justify-between gap-2">
@@ -1173,6 +1206,14 @@ export function PositionDetailPage() {
             Phone
             <input value={cPhone} onChange={(e) => setCPhone(e.target.value)} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
           </label>
+          <div className="text-sm sm:col-span-2">
+            <span className="font-medium">Requirements</span>
+            <RequirementsMultiSelect
+              value={cRequirementItemValues}
+              onChange={setCRequirementItemValues}
+              disabled={addCandidate.isPending}
+            />
+          </div>
           <button type="submit" className="bg-accent text-stone-50 sm:col-span-2 w-fit rounded-full px-4 py-2 text-sm font-semibold">
             Add candidate
           </button>

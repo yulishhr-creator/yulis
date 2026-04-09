@@ -9,6 +9,7 @@ import { getSupabase } from '@/lib/supabase'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { logActivityEvent } from '@/lib/activityLog'
 import { useToast } from '@/hooks/useToast'
+import { RequirementsMultiSelect } from '@/components/RequirementsMultiSelect'
 
 const DRAFT_KEY = 'yulis_position_wizard_draft'
 
@@ -26,6 +27,7 @@ type Draft = {
   industry: string
   status: string
   plannedFee: string
+  requirementItemValues: string[]
 }
 
 function loadDraft(): Partial<Draft> {
@@ -311,11 +313,12 @@ function CreatePositionWizard({ companies }: { companies: { id: string; name: st
   const [industry, setIndustry] = useState(d0.industry ?? '')
   const [status, setStatus] = useState(d0.status ?? 'pending')
   const [plannedFee, setPlannedFee] = useState(d0.plannedFee ?? '')
+  const [requirementItemValues, setRequirementItemValues] = useState<string[]>(d0.requirementItemValues ?? [])
   const [pending, setPending] = useState(false)
 
   useEffect(() => {
-    saveDraft({ step, companyId, title, industry, status, plannedFee })
-  }, [step, companyId, title, industry, status, plannedFee])
+    saveDraft({ step, companyId, title, industry, status, plannedFee, requirementItemValues })
+  }, [step, companyId, title, industry, status, plannedFee, requirementItemValues])
 
   const headlines = ['Company', 'Role & industry', 'Status & fees', 'Review & create']
 
@@ -331,6 +334,7 @@ function CreatePositionWizard({ companies }: { companies: { id: string; name: st
         industry: industry.trim() || null,
         status: status as 'pending' | 'in_progress' | 'success' | 'cancelled',
         planned_fee_ils: plannedFee.trim() ? Number(plannedFee) : null,
+        requirement_item_values: requirementItemValues,
       })
       .select('id, title')
       .single()
@@ -436,6 +440,10 @@ function CreatePositionWizard({ companies }: { companies: { id: string; name: st
                 placeholder="e.g. Software"
               />
             </label>
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="font-medium">Requirements (optional)</span>
+              <RequirementsMultiSelect value={requirementItemValues} onChange={setRequirementItemValues} disabled={pending} />
+            </div>
           </div>
         ) : null}
 
@@ -477,6 +485,10 @@ function CreatePositionWizard({ companies }: { companies: { id: string; name: st
             <li>
               <span className="text-ink-muted">Industry: </span>
               {industry.trim() || '—'}
+            </li>
+            <li>
+              <span className="text-ink-muted">Requirements: </span>
+              {requirementItemValues.length ? requirementItemValues.join(', ') : '—'}
             </li>
             <li>
               <span className="text-ink-muted">Status: </span>

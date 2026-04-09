@@ -4,21 +4,14 @@ import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/useToast'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
+import { slugifyListItemValue } from '@/lib/listItemSlug'
 
 const LIST_CHOICES = [
   { key: 'industry', label: 'Industry' },
   { key: 'payment_term_preset', label: 'Payment term preset' },
   { key: 'candidate_outcome_label', label: 'Candidate outcome label' },
+  { key: 'requirements', label: 'Requirements (role & candidate)' },
 ] as const
-
-function slugifyLabel(label: string): string {
-  const x = label
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '_')
-    .replace(/[^a-z0-9_]/g, '')
-  return (x || 'item').slice(0, 80)
-}
 
 export function ListSettingsPage() {
   const { user } = useAuth()
@@ -50,7 +43,7 @@ export function ListSettingsPage() {
       const label = valueToAdd.trim()
       if (!label) throw new Error('empty')
 
-      let base = slugifyLabel(label)
+      let base = slugifyListItemValue(label)
       let value = base
       let suffix = 0
       // Retry on unique (user_id, list_key, value) violation

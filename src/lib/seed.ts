@@ -34,7 +34,7 @@ export async function seedDemoIfEmpty(supabase: SupabaseClient, userId: string):
       company_id: company.id,
       title: 'Senior Software Engineer',
       description: 'Demo position — explore stages, candidates, and tasks.',
-      requirements: 'TypeScript, React, system design.',
+      requirement_item_values: ['typescript', 'react', 'system_design'],
       industry: 'Software',
       salary_min: 35000,
       salary_max: 45000,
@@ -87,6 +87,7 @@ export async function seedDemoIfEmpty(supabase: SupabaseClient, userId: string):
       email_normalized: 'jamie.rivera@example.com',
       phone_normalized: '972501111111',
       notes: 'Imported from client list (demo).',
+      requirement_item_values: ['typescript', 'react'],
     })
     .select('id')
     .single()
@@ -103,6 +104,7 @@ export async function seedDemoIfEmpty(supabase: SupabaseClient, userId: string):
     email_normalized: 'sam.cohen@example.com',
     phone_normalized: '972502222222',
     notes: 'Added from the app (demo).',
+    requirement_item_values: ['system_design'],
   })
 
   await supabase.from('tasks').insert({
@@ -133,6 +135,9 @@ export async function seedDemoIfEmpty(supabase: SupabaseClient, userId: string):
   const listKeys = [
     { list_key: 'industry', value: 'software', label: 'Software' },
     { list_key: 'payment_term_preset', value: 'net30', label: 'Net 30' },
+    { list_key: 'requirements', value: 'typescript', label: 'TypeScript' },
+    { list_key: 'requirements', value: 'react', label: 'React' },
+    { list_key: 'requirements', value: 'system_design', label: 'System design' },
   ]
   for (const row of listKeys) {
     await supabase.from('list_items').insert({ user_id: userId, ...row, sort_order: 0 })
