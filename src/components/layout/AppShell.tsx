@@ -4,7 +4,6 @@ import {
   Building2,
   Briefcase,
   Settings,
-  CloudSun,
   Sparkles,
   User,
   LogOut,
@@ -14,7 +13,6 @@ import { motion, useReducedMotion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
-import { useWeatherLine } from '@/hooks/useWeatherLine'
 import { useNotificationCount } from '@/hooks/useNotificationCount'
 import { AppLogo } from '@/components/ui/AppLogo'
 import { AnimatedOutlet } from '@/components/layout/AnimatedOutlet'
@@ -40,7 +38,6 @@ export function AppShell() {
   const { user, signOut } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
-  const weather = useWeatherLine()
   const reduceMotion = useReducedMotion()
   const { data: notificationCount = 0 } = useNotificationCount()
 
@@ -131,59 +128,21 @@ export function AppShell() {
       <div className="lg:pl-64">
         <header className="border-line bg-paper/80 sticky top-0 z-30 flex items-center justify-between gap-3 border-b px-3 py-3 backdrop-blur-xl sm:px-4 dark:border-line-dark dark:bg-paper-dark/80">
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-            <Link to="/" className="shrink-0 lg:hidden" aria-label="Home">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-[#9b3e20] to-[#fd8863] shadow-md shadow-[#9b3e20]/25">
-                <span className="font-display text-lg font-bold text-white">Y</span>
-              </div>
-            </Link>
-            <motion.div className="min-w-0 flex-1" initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
-              <p className="from-[#9b3e20] to-[#006384] bg-gradient-to-r bg-clip-text font-stitch-head truncate text-sm font-extrabold text-transparent sm:text-base dark:from-orange-300 dark:to-cyan-300">
-                {greeting()}, {displayName}
-              </p>
-              <div className="mt-0.5 flex flex-wrap items-center gap-2">
-                {weather ? (
-                  <motion.span
-                    className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#fd8863]/20 to-[#97daff]/25 px-2.5 py-0.5 text-xs font-semibold text-[#302e2b] dark:from-orange-500/20 dark:to-cyan-500/20 dark:text-stone-200"
-                    initial={reduceMotion ? false : { opacity: 0, x: -6 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.08 }}
-                  >
-                    <CloudSun className="h-3.5 w-3.5 shrink-0 text-[#9b3e20] dark:text-orange-300" aria-hidden />
-                    {weather}
-                  </motion.span>
-                ) : null}
-              </div>
-            </motion.div>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-            <Link
-              to="/notifications"
-              className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 shadow-sm transition hover:bg-[#97daff]/30 dark:bg-stone-800/90 dark:hover:bg-cyan-900/40"
-              aria-label={`Notifications${notificationCount ? `, ${notificationCount} items` : ''}`}
-            >
-              <Bell className="text-[#006384] h-5 w-5 dark:text-cyan-300" aria-hidden />
-              {notificationCount > 0 ? (
-                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-extrabold text-white">
-                  {notificationCount > 9 ? '9+' : notificationCount}
-                </span>
-              ) : null}
-            </Link>
-
-            <div className="relative" ref={menuRef}>
+            <div className="relative shrink-0" ref={menuRef}>
               <button
                 type="button"
                 onClick={() => setMenuOpen((v) => !v)}
-                className="border-line hover:ring-[#fd8863]/40 flex items-center gap-2 rounded-full border bg-white/90 py-1 pr-1 pl-1 shadow-sm transition hover:shadow-md dark:border-line-dark dark:bg-stone-900/90"
+                className="border-line hover:ring-[#fd8863]/40 flex h-11 w-11 items-center justify-center rounded-full border bg-white/90 shadow-sm transition hover:shadow-md dark:border-line-dark dark:bg-stone-900/90"
                 aria-expanded={menuOpen}
                 aria-haspopup="menu"
+                aria-label="Account menu"
               >
                 <UserAvatar email={user?.email} name={metaName} size="sm" />
               </button>
               {menuOpen ? (
                 <motion.div
                   role="menu"
-                  className="border-line bg-paper absolute top-full right-0 z-50 mt-2 w-52 overflow-hidden rounded-2xl border py-1 shadow-xl dark:border-line-dark dark:bg-stone-900"
+                  className="border-line bg-paper absolute top-full left-0 z-50 mt-2 w-52 overflow-hidden rounded-2xl border py-1 shadow-xl dark:border-line-dark dark:bg-stone-900"
                   initial={reduceMotion ? false : { opacity: 0, y: -6, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   transition={{ type: 'spring', stiffness: 420, damping: 30 }}
@@ -221,12 +180,32 @@ export function AppShell() {
                 </motion.div>
               ) : null}
             </div>
+            <motion.div className="min-w-0 flex-1" initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
+              <p className="from-[#9b3e20] to-[#006384] bg-gradient-to-r bg-clip-text font-stitch-head truncate text-sm font-extrabold text-transparent sm:text-base dark:from-orange-300 dark:to-cyan-300">
+                {greeting()}, {displayName}
+              </p>
+            </motion.div>
+          </div>
+
+          <div className="flex shrink-0 items-center">
+            <Link
+              to="/notifications"
+              className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 shadow-sm transition hover:bg-[#97daff]/30 dark:bg-stone-800/90 dark:hover:bg-cyan-900/40"
+              aria-label={`Notifications${notificationCount ? `, ${notificationCount} items` : ''}`}
+            >
+              <Bell className="text-[#006384] h-5 w-5 dark:text-cyan-300" aria-hidden />
+              {notificationCount > 0 ? (
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-extrabold text-white">
+                  {notificationCount > 9 ? '9+' : notificationCount}
+                </span>
+              ) : null}
+            </Link>
           </div>
         </header>
 
         <main
           id="main"
-          className="mx-auto max-w-6xl px-4 pt-6 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:px-8 md:pt-8 lg:pb-10"
+          className="mx-auto max-w-6xl px-4 pt-6 pb-[calc(6.75rem+env(safe-area-inset-bottom,0px))] md:px-8 md:pt-8 lg:pb-10"
         >
           <AnimatedOutlet />
         </main>

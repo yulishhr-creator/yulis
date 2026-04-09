@@ -1,18 +1,53 @@
-import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { Link, useNavigate } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Plus, Mail, ListTodo, AlertTriangle, CheckCircle2, PlayCircle, ChevronDown } from 'lucide-react'
+import { Plus, Check, ChevronDown } from 'lucide-react'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { formatDue } from '@/lib/dates'
-import { StitchKpiCard } from '@/components/ui/StitchKpiCard'
+
+function positionStatusPill(status: string): { label: string; className: string } {
+  switch (status) {
+    case 'pending':
+      return {
+        label: 'Pending',
+        className:
+          'border-amber-200/80 bg-amber-50 text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/50 dark:text-amber-100',
+      }
+    case 'in_progress':
+      return {
+        label: 'In progress',
+        className:
+          'border-sky-200/80 bg-sky-50 text-sky-900 dark:border-cyan-700/60 dark:bg-cyan-950/40 dark:text-cyan-100',
+      }
+    case 'success':
+      return {
+        label: 'Success',
+        className:
+          'border-emerald-200/80 bg-emerald-50 text-emerald-900 dark:border-emerald-700/60 dark:bg-emerald-950/40 dark:text-emerald-100',
+      }
+    case 'cancelled':
+      return {
+        label: 'Cancelled',
+        className:
+          'border-stone-200/80 bg-stone-100 text-stone-700 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300',
+      }
+    default:
+      return {
+        label: status.replace('_', ' '),
+        className: 'border-stone-200/80 bg-stone-50 text-stone-700 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300',
+      }
+  }
+}
 
 export function DashboardPage() {
   const { user } = useAuth()
   const supabase = getSupabase()
   const uid = user?.id
   const reduceMotion = useReducedMotion()
+  const navigate = useNavigate()
+  const qc = useQueryClient()
 
   const tasksQ = useQuery({
     queryKey: ['dashboard-tasks', uid],
@@ -36,20 +71,6 @@ export function DashboardPage() {
         .neq('status', 'done')
         .order('due_at', { ascending: true, nullsFirst: false })
 
-      if (error) throw error
-      return data ?? []
-    },
-  })
-
-  const remindersQ = useQuery({
-    queryKey: ['dashboard-reminders', uid],
-    enabled: Boolean(supabase && uid),
-    queryFn: async () => {
-      const { data, error } = await supabase!
-        .from('reminders')
-        .select('id, title, body, due_at')
-        .eq('user_id', uid!)
-        .order('due_at', { ascending: true, nullsFirst: false })
       if (error) throw error
       return data ?? []
     },
@@ -106,8 +127,21 @@ export function DashboardPage() {
   })
 
   const tasks = tasksQ.data ?? []
-  const reminders = remindersQ.data ?? []
   const kpis = kpisQ.data
+
+  const markTaskDone = useMutation({
+    mutationFn: async (taskId: string) => {
+      const { error } = await supabase!.from('tasks').update({ status: 'done' }).eq('id', taskId).eq('user_id', uid!)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
+      await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
+      await qc.invalidateQueries({ queryKey: ['position-tasks'] })
+      await qc.invalidateQueries({ queryKey: ['notifications-overdue-tasks'] })
+      await qc.invalidateQueries({ queryKey: ['notification-count'] })
+    },
+  })
 
   function taskAccent(status: string): string {
     if (status === 'in_progress') return 'border-l-[#97daff] bg-gradient-to-r from-[#97daff]/12 to-white dark:from-cyan-500/15 dark:to-stone-900'
@@ -133,7 +167,7 @@ export function DashboardPage() {
             </span>
           </h1>
           <p className="text-stitch-muted mt-2 max-w-xl text-sm leading-relaxed md:text-base dark:text-stone-400">
-            Your task queue is the center of the app — knock out work, then glance at reminders and pipeline.
+            Your task queue is the center of the app — knock out work, then expand pipeline when you need the big picture.
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
             <motion.div whileHover={reduceMotion ? undefined : { scale: 1.02 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
@@ -150,7 +184,7 @@ export function DashboardPage() {
                 className="border-stitch-on-surface/15 inline-flex items-center gap-2 rounded-full border bg-white/80 px-5 py-2.5 text-sm font-bold text-[#006384] shadow-sm dark:border-stone-600 dark:bg-stone-800 dark:text-cyan-300"
               >
                 <Plus className="h-4 w-4" aria-hidden />
-                Log task on a role
+                Create task
               </Link>
             </motion.div>
           </div>
@@ -158,54 +192,57 @@ export function DashboardPage() {
       </motion.section>
 
       {kpis ? (
-        <motion.section aria-label="Task overview" initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: reduceMotion ? 0 : 0.08 } } }}>
+        <motion.section
+          aria-label="Task overview"
+          initial={reduceMotion ? false : { opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+        >
           <h2 className="sr-only">Task counts</h2>
-          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-6">
-            <motion.li
-              variants={{ hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0 } }}
-              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-              className="list-none"
-            >
-              <StitchKpiCard
-                label="To do"
-                value={kpis.todo}
-                variant="green"
-                icon={ListTodo}
-                footer={kpis.todo === 1 ? '1 task waiting' : `${kpis.todo} tasks waiting`}
-              />
-            </motion.li>
-            <motion.li
-              variants={{ hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0 } }}
-              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-              className="list-none"
-            >
-              <StitchKpiCard
-                label="In progress"
-                value={kpis.inProgress}
-                variant="blue"
-                icon={PlayCircle}
-                footer={kpis.inProgress === 0 ? 'Nothing active' : `${kpis.inProgress} in flight`}
-              />
-            </motion.li>
-            <motion.li
-              variants={{ hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0 } }}
-              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-              className="list-none"
-            >
-              <StitchKpiCard
-                label="Overdue"
-                value={kpis.overdue}
-                variant={kpis.overdue > 0 ? 'danger' : 'green'}
-                icon={kpis.overdue > 0 ? AlertTriangle : CheckCircle2}
-                footer={kpis.overdue > 0 ? `${kpis.overdue} past due` : 'On schedule'}
-              />
-            </motion.li>
-          </ul>
+          <article className="grid grid-cols-3 gap-0 overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-[0_16px_40px_rgba(48,46,43,0.07)] dark:border-stone-600 dark:bg-stone-900 dark:shadow-[0_16px_40px_rgba(0,0,0,0.25)] md:rounded-3xl">
+            <div className="flex flex-col items-center justify-center border-r border-stone-200/70 px-2 py-4 text-center dark:border-stone-600 sm:px-4 sm:py-5">
+              <span className="font-stitch-label mb-0.5 text-[10px] font-bold tracking-[0.18em] text-[#165c25] uppercase dark:text-emerald-400">
+                To do
+              </span>
+              <p className="font-stitch-head text-stitch-on-surface text-2xl font-extrabold tabular-nums sm:text-3xl dark:text-stone-100">{kpis.todo}</p>
+              <span className="text-stitch-muted mt-1 hidden text-[11px] font-medium sm:inline dark:text-stone-500">
+                {kpis.todo === 1 ? '1 waiting' : `${kpis.todo} waiting`}
+              </span>
+            </div>
+            <div className="flex flex-col items-center justify-center border-r border-stone-200/70 px-2 py-4 text-center dark:border-stone-600 sm:px-4 sm:py-5">
+              <span className="font-stitch-label mb-0.5 text-[10px] font-bold tracking-[0.18em] text-[#004d68] uppercase dark:text-cyan-400">
+                In progress
+              </span>
+              <p className="font-stitch-head text-stitch-on-surface text-2xl font-extrabold tabular-nums sm:text-3xl dark:text-stone-100">{kpis.inProgress}</p>
+              <span className="text-stitch-muted mt-1 hidden text-[11px] font-medium sm:inline dark:text-stone-500">
+                {kpis.inProgress === 0 ? 'None active' : `${kpis.inProgress} active`}
+              </span>
+            </div>
+            <div className="flex flex-col items-center justify-center px-2 py-4 text-center sm:px-4 sm:py-5">
+              <span
+                className={`font-stitch-label mb-0.5 text-[10px] font-bold tracking-[0.18em] uppercase ${
+                  kpis.overdue > 0 ? 'text-[#9f0519] dark:text-red-400' : 'text-[#165c25] dark:text-emerald-400'
+                }`}
+              >
+                Overdue
+              </span>
+              <p className="font-stitch-head text-stitch-on-surface text-2xl font-extrabold tabular-nums sm:text-3xl dark:text-stone-100">{kpis.overdue}</p>
+              <span className="text-stitch-muted mt-1 hidden text-[11px] font-medium sm:inline dark:text-stone-500">
+                {kpis.overdue > 0 ? `${kpis.overdue} past due` : 'On schedule'}
+              </span>
+            </div>
+          </article>
         </motion.section>
       ) : null}
 
       <section aria-labelledby="tasks-heading">
-        <h2 id="tasks-heading" className="font-stitch-head text-stitch-on-surface text-xl font-extrabold md:text-2xl dark:text-stone-100">
+        <h2
+          id="tasks-heading"
+          className="font-stitch-head text-stitch-on-surface flex items-center gap-2 text-xl font-extrabold md:text-2xl dark:text-stone-100"
+        >
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#b4fdb4]/50 to-[#97daff]/40 text-[#165c25] dark:from-emerald-900/40 dark:to-cyan-900/30 dark:text-emerald-300">
+            <Check className="h-5 w-5 stroke-[2.5]" aria-hidden />
+          </span>
           Your tasks
         </h2>
         <p className="text-stitch-muted mt-1 text-sm">Everything open — sorted by due date.</p>
@@ -235,97 +272,51 @@ export function DashboardPage() {
                   initial={reduceMotion ? false : { opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: reduceMotion ? 0 : i * 0.03 }}
-                  className={`rounded-2xl border border-white/60 py-4 pl-5 pr-4 shadow-[0_12px_32px_rgba(48,46,43,0.06)] dark:border-stone-700 ${taskAccent(row.status)} border-l-4`}
+                  className={`flex gap-3 rounded-2xl border border-white/60 py-4 pl-5 pr-3 shadow-[0_12px_32px_rgba(48,46,43,0.06)] dark:border-stone-700 ${taskAccent(row.status)} border-l-4`}
                 >
-                  <p className="text-sm leading-relaxed text-[#302e2b] dark:text-stone-100">
-                    You need to <span className="font-bold">{row.title}</span> for position{' '}
-                    <Link to={`/positions/${row.position_id}`} className="font-semibold text-[#9b3e20] underline-offset-2 hover:underline dark:text-orange-300">
-                      {posTitle}
-                    </Link>
-                    {companyName ? <span className="text-stitch-muted dark:text-stone-400"> ({companyName})</span> : null}
-                    {cand ? (
-                      <>
-                        {' '}
-                        for candidate{' '}
-                        <Link
-                          to={`/positions/${row.position_id}?candidate=${cand.id}`}
-                          className="font-semibold text-[#006384] underline-offset-2 hover:underline dark:text-cyan-300"
-                        >
-                          {cand.full_name}
-                        </Link>
-                      </>
-                    ) : null}{' '}
-                    until <span className="font-semibold">{due}</span>.
-                  </p>
-                  {row.status === 'in_progress' ? (
-                    <p className="text-[#006384] mt-2 text-xs font-bold uppercase tracking-wide dark:text-cyan-400">In progress</p>
-                  ) : null}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm leading-relaxed text-[#302e2b] dark:text-stone-100">
+                      You need to <span className="font-bold">{row.title}</span> for position{' '}
+                      <Link to={`/positions/${row.position_id}`} className="font-semibold text-[#9b3e20] underline-offset-2 hover:underline dark:text-orange-300">
+                        {posTitle}
+                      </Link>
+                      {companyName ? <span className="text-stitch-muted dark:text-stone-400"> ({companyName})</span> : null}
+                      {cand ? (
+                        <>
+                          {' '}
+                          for candidate{' '}
+                          <Link
+                            to={`/positions/${row.position_id}?candidate=${cand.id}`}
+                            className="font-semibold text-[#006384] underline-offset-2 hover:underline dark:text-cyan-300"
+                          >
+                            {cand.full_name}
+                          </Link>
+                        </>
+                      ) : null}{' '}
+                      until <span className="font-semibold">{due}</span>.
+                    </p>
+                    {row.status === 'in_progress' ? (
+                      <p className="text-[#006384] mt-2 text-xs font-bold uppercase tracking-wide dark:text-cyan-400">In progress</p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    className="text-stitch-muted hover:bg-emerald-500/15 hover:text-emerald-700 dark:hover:text-emerald-300 mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-2xl border border-emerald-200/60 bg-white/80 transition dark:border-emerald-800/60 dark:bg-stone-800/80"
+                    aria-label={`Mark done: ${row.title}`}
+                    disabled={markTaskDone.isPending && markTaskDone.variables === row.id}
+                    onClick={() => markTaskDone.mutate(row.id)}
+                  >
+                    {markTaskDone.isPending && markTaskDone.variables === row.id ? (
+                      <span className="h-5 w-5 animate-pulse rounded-full bg-emerald-400/50" aria-hidden />
+                    ) : (
+                      <Check className="h-5 w-5 stroke-[2.75] text-emerald-700 dark:text-emerald-400" aria-hidden />
+                    )}
+                  </button>
                 </motion.li>
               )
             })}
           </ul>
         )}
-      </section>
-
-      <section aria-labelledby="reminders-heading">
-        <h2 id="reminders-heading" className="font-stitch-head text-stitch-on-surface text-lg font-extrabold dark:text-stone-100">
-          Reminders
-        </h2>
-        {remindersQ.isLoading ? (
-          <p className="text-stitch-muted mt-2 text-sm">Loading…</p>
-        ) : reminders.length === 0 ? (
-          <p className="text-stitch-muted mt-2 text-sm">No reminders.</p>
-        ) : (
-          <ul className="mt-3 space-y-2">
-            {reminders.map((r) => (
-              <motion.li
-                key={r.id}
-                initial={reduceMotion ? false : { opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex flex-col gap-1 rounded-2xl border border-[#97daff]/40 bg-white/90 px-4 py-3 shadow-sm dark:border-cyan-900/50 dark:bg-stone-900/60"
-              >
-                <span className="font-semibold text-[#302e2b] dark:text-stone-100">{r.title}</span>
-                {r.body ? <span className="text-stitch-muted text-sm dark:text-stone-400">{r.body}</span> : null}
-                {r.due_at ? <span className="text-xs font-medium text-[#006384] dark:text-cyan-400">Due {formatDue(r.due_at)}</span> : null}
-              </motion.li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section aria-labelledby="fast-actions-heading">
-        <h2 id="fast-actions-heading" className="font-stitch-head text-stitch-on-surface text-lg font-extrabold dark:text-stone-100">
-          Fast actions
-        </h2>
-        <div className="mt-3 flex flex-wrap gap-3">
-          <motion.div whileHover={reduceMotion ? undefined : { y: -2 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
-            <Link
-              to="/positions?create=1"
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-5 py-2.5 text-sm font-bold text-white shadow-lg"
-            >
-              <Plus className="h-4 w-4" aria-hidden />
-              Create position
-            </Link>
-          </motion.div>
-          <motion.div whileHover={reduceMotion ? undefined : { y: -2 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
-            <Link
-              to="/positions"
-              className="inline-flex items-center gap-2 rounded-full border border-[#97daff]/50 bg-white px-5 py-2.5 text-sm font-bold text-[#006384] shadow-sm dark:border-cyan-800 dark:bg-stone-800 dark:text-cyan-300"
-            >
-              <Plus className="h-4 w-4" aria-hidden />
-              Jump to roles
-            </Link>
-          </motion.div>
-          <motion.div whileHover={reduceMotion ? undefined : { y: -2 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
-            <Link
-              to="/settings/email-templates"
-              className="inline-flex items-center gap-2 rounded-full border border-[#b4fdb4]/60 bg-white px-5 py-2.5 text-sm font-bold text-[#165c25] shadow-sm dark:border-emerald-900 dark:bg-stone-800 dark:text-emerald-300"
-            >
-              <Mail className="h-4 w-4" aria-hidden />
-              Email templates
-            </Link>
-          </motion.div>
-        </div>
       </section>
 
       <details className="group border-stitch-on-surface/10 rounded-3xl border bg-white/50 open:bg-white/90 open:shadow-md dark:border-stone-700 dark:bg-stone-900/40 dark:open:bg-stone-900/70">
@@ -350,20 +341,41 @@ export function DashboardPage() {
                     outcome: string
                     position_stages: { name: string } | null
                   }>) ?? []
+                const pill = positionStatusPill(p.status)
                 return (
                   <li
                     key={p.id}
-                    className="rounded-2xl border border-stone-200/80 bg-white/80 p-3 shadow-sm dark:border-stone-600 dark:bg-stone-900/50"
+                    className="rounded-2xl border border-stone-200/80 bg-white/80 shadow-sm dark:border-stone-600 dark:bg-stone-900/50"
                   >
-                    <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <Link to={`/positions/${p.id}`} className="font-stitch-head font-bold text-[#9b3e20] hover:underline dark:text-orange-300">
-                        {p.title}
-                      </Link>
-                      <span className="text-stitch-muted text-xs uppercase">{p.status.replace('_', ' ')}</span>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      className="cursor-pointer rounded-2xl p-3 transition hover:bg-stone-50/90 dark:hover:bg-stone-800/40"
+                      onClick={() => navigate(`/positions/${p.id}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          navigate(`/positions/${p.id}`)
+                        }
+                      }}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-stitch-head font-bold text-[#9b3e20] dark:text-orange-300">{p.title}</span>
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-bold tracking-wide uppercase ${pill.className}`}
+                        >
+                          {pill.label}
+                        </span>
+                      </div>
+                      {company ? <p className="text-stitch-muted mt-1 text-xs">{company}</p> : null}
+                      {cands.length === 0 ? <p className="text-stitch-muted mt-2 text-xs">No candidates yet.</p> : null}
                     </div>
-                    {company ? <p className="text-stitch-muted text-xs">{company}</p> : null}
                     {cands.length ? (
-                      <ul className="mt-2 space-y-1 border-t border-stone-200/60 pt-2 dark:border-stone-600">
+                      <ul
+                        className="space-y-1 border-t border-stone-200/60 px-3 pt-2 pb-3 dark:border-stone-600"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
                         {cands.map((c) => (
                           <li key={c.id} className="flex flex-wrap gap-2 text-sm">
                             <Link to={`/positions/${p.id}?candidate=${c.id}`} className="font-medium text-[#006384] hover:underline dark:text-cyan-300">
@@ -375,9 +387,7 @@ export function DashboardPage() {
                           </li>
                         ))}
                       </ul>
-                    ) : (
-                      <p className="text-stitch-muted mt-1 text-xs">No candidates yet.</p>
-                    )}
+                    ) : null}
                   </li>
                 )
               })}
