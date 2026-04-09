@@ -183,15 +183,6 @@ export function AppShell() {
                     Profile
                   </Link>
                   <Link
-                    to={location.pathname === '/calendar' ? '/' : '/calendar'}
-                    role="menuitem"
-                    className="hover:bg-[#fd8863]/15 flex items-center gap-2 px-3 py-2.5 text-sm dark:hover:bg-stone-800"
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    <CalendarDays className="h-4 w-4 opacity-70" aria-hidden />
-                    {location.pathname === '/calendar' ? 'Close calendar' : 'Calendar'}
-                  </Link>
-                  <Link
                     to="/settings"
                     role="menuitem"
                     className="hover:bg-[#fd8863]/15 flex items-center gap-2 px-3 py-2.5 text-sm dark:hover:bg-stone-800"
