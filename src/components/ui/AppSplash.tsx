@@ -3,6 +3,12 @@ import { useEffect, useState } from 'react'
 
 const STORAGE_KEY = 'yulis_splash_seen'
 
+const SPLASH_HEADLINES = ['Achieving True Unagi...', 'Always Aware'] as const
+
+/** ~2.6s per headline (fade in, hold, hand off); total splash ~5.2s before app. */
+const HEADLINE_MS = 2600
+const SPLASH_TOTAL_MS = HEADLINE_MS * SPLASH_HEADLINES.length
+
 type AppSplashProps = {
   children: React.ReactNode
 }
@@ -15,10 +21,11 @@ function hasSeenSplash(): boolean {
   }
 }
 
-/** One splash per browser session — brand moment on first load. */
+/** One splash per browser session — spinner GIF + cycling headlines on first load. */
 export function AppSplash({ children }: AppSplashProps) {
   const reduceMotion = useReducedMotion()
   const [showSplash, setShowSplash] = useState(() => !hasSeenSplash())
+  const [headlineIdx, setHeadlineIdx] = useState(0)
 
   useEffect(() => {
     if (!showSplash || reduceMotion) {
@@ -27,8 +34,12 @@ export function AppSplash({ children }: AppSplashProps) {
       }
       return
     }
-    const t = window.setTimeout(() => setShowSplash(false), 1000)
-    return () => window.clearTimeout(t)
+    const t1 = window.setTimeout(() => setHeadlineIdx(1), HEADLINE_MS)
+    const t2 = window.setTimeout(() => setShowSplash(false), SPLASH_TOTAL_MS)
+    return () => {
+      window.clearTimeout(t1)
+      window.clearTimeout(t2)
+    }
   }, [showSplash, reduceMotion])
 
   useEffect(() => {
@@ -52,57 +63,41 @@ export function AppSplash({ children }: AppSplashProps) {
           transition={{ duration: reduceMotion ? 0 : 0.45 }}
         >
           <div className="pointer-events-none absolute inset-0 overflow-hidden">
-            <motion.div
-              className="bg-accent/15 absolute -top-1/4 -left-1/4 h-[60vh] w-[60vh] rounded-full blur-3xl"
-              animate={reduceMotion ? {} : { scale: [1, 1.08, 1], opacity: [0.35, 0.55, 0.35] }}
-              transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-            />
-            <motion.div
-              className="absolute -right-1/4 -bottom-1/4 h-[50vh] w-[50vh] rounded-full bg-amber-500/10 blur-3xl dark:bg-amber-400/10"
-              animate={reduceMotion ? {} : { scale: [1.05, 1, 1.05], opacity: [0.25, 0.45, 0.25] }}
-              transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-            />
+            <div className="absolute top-1/2 left-1/2 h-[min(90vw,28rem)] w-[min(90vw,28rem)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[rgba(59,30,84,0.07)] blur-3xl dark:bg-[rgba(196,168,212,0.12)]" />
           </div>
 
           <motion.div
-            className="relative z-10 flex flex-col items-center gap-6"
-            initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+            className="relative z-10 flex flex-col items-center gap-8 px-6"
+            initial={reduceMotion ? false : { opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
           >
-            <motion.img
-              src="/lvlup-brand.svg"
+            <img
+              src="/splash-spinner.gif"
               alt=""
-              className="h-24 w-24 object-contain drop-shadow-md dark:opacity-95"
-              initial={reduceMotion ? false : { opacity: 0, scale: 0.92 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.05, duration: 0.5 }}
+              width={72}
+              height={72}
+              className="h-[4.5rem] w-[4.5rem] object-contain"
+              decoding="async"
             />
-            <div
-              className="border-accent h-10 w-10 animate-spin rounded-full border-2 border-t-transparent dark:border-orange-400 dark:border-t-transparent"
-              aria-hidden
-            />
-            <motion.p
-              className="font-stitch-head text-center text-xl font-extrabold text-[#302e2b] dark:text-stone-100"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.25, duration: 0.5 }}
-            >
-              LvlUp your hiring workflow
-            </motion.p>
-            <p className="text-ink-muted max-w-xs text-center text-sm dark:text-stone-400">
-              Yuli&apos;s HR — tasks, roles, and candidates in one calm workspace.
-            </p>
-          </motion.div>
 
-          <motion.p
-            className="text-ink-muted absolute bottom-10 text-xs tracking-widest uppercase dark:text-stone-500"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 0.7 }}
-            transition={{ delay: 0.5 }}
-          >
-            Loading
-          </motion.p>
+            <div className="flex min-h-[5rem] max-w-md items-center justify-center">
+              <AnimatePresence mode="wait">
+                <motion.p
+                  key={headlineIdx}
+                  role="status"
+                  aria-live="polite"
+                  className="font-stitch-head text-center text-xl font-extrabold tracking-tight text-[#2d1b4d] dark:text-stone-100"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: reduceMotion ? 0 : 0.55, ease: 'easeInOut' }}
+                >
+                  {SPLASH_HEADLINES[headlineIdx]}
+                </motion.p>
+              </AnimatePresence>
+            </div>
+          </motion.div>
         </motion.div>
       ) : (
         <motion.div

@@ -15,7 +15,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'lvlup-brand.svg'],
+      includeAssets: ['favicon.svg', 'lvlup-brand.svg', 'splash-spinner.gif'],
       manifest: {
         name: "Yuli's HR — Outsmart",
         short_name: 'Yulis',
@@ -54,7 +54,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,svg,png,woff2}'],
+        globPatterns: ['**/*.{js,css,html,ico,svg,png,gif,woff2}'],
       },
     }),
   ],
