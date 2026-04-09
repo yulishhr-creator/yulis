@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
-import { List, Mail, Plug, Download, User, FileJson, FileSpreadsheet } from 'lucide-react'
+import { List, Mail, Download, User, FileJson, FileSpreadsheet } from 'lucide-react'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
@@ -9,10 +9,9 @@ import { downloadCsv, downloadJson, downloadXlsx } from '@/lib/export'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
 
 const items = [
-  { to: '/settings/profile', label: 'Profile & avatar', desc: 'Display name and how you appear in greetings.', icon: User },
+  { to: '/settings/profile', label: 'Profile & avatar', desc: 'Display name, photo, and how you appear in greetings.', icon: User },
   { to: '/settings/lists', label: 'Lists & dropdowns', desc: 'Industries, payment presets, and other options.', icon: List },
   { to: '/settings/email-templates', label: 'Email templates', desc: 'Subjects and bodies with {{variables}}.', icon: Mail },
-  { to: '/settings/integrations', label: 'Integrations', desc: 'Connect Gmail to send from the app.', icon: Plug },
 ] as const
 
 export function SettingsPage() {
@@ -37,7 +36,31 @@ export function SettingsPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <ScreenHeader title="Settings" subtitle="Manage profile, lists, templates, exports, and email." backTo="/" />
+      <ScreenHeader title="Settings" subtitle="Manage profile, lists, templates, and exports." backTo="/" />
+
+      <ul className="space-y-3">
+        {items.map(({ to, label, desc, icon: Icon }, i) => (
+          <motion.li
+            key={to}
+            initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: reduceMotion ? 0 : i * 0.05 }}
+          >
+            <Link
+              to={to}
+              className="border-stitch-on-surface/10 group flex gap-4 rounded-2xl border bg-white/80 px-4 py-4 shadow-sm transition-all hover:border-[#fd8863]/40 hover:shadow-md dark:border-stone-700 dark:bg-stone-900/60"
+            >
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#fd8863]/25 to-[#97daff]/30 text-[#9b3e20] dark:from-orange-500/20 dark:to-cyan-500/20 dark:text-orange-300">
+                <Icon className="h-6 w-6" aria-hidden />
+              </span>
+              <div>
+                <p className="font-stitch-head font-bold text-[#302e2b] dark:text-stone-100">{label}</p>
+                <p className="text-stitch-muted text-sm dark:text-stone-400">{desc}</p>
+              </div>
+            </Link>
+          </motion.li>
+        ))}
+      </ul>
 
       <motion.section
         className="border-stitch-on-surface/10 rounded-3xl border bg-gradient-to-br from-white to-[#97daff]/10 p-5 shadow-[0_20px_48px_rgba(48,46,43,0.08)] dark:border-stone-700 dark:from-stone-900 dark:to-cyan-950/30"
@@ -112,30 +135,6 @@ export function SettingsPage() {
           </motion.button>
         </div>
       </motion.section>
-
-      <ul className="space-y-3">
-        {items.map(({ to, label, desc, icon: Icon }, i) => (
-          <motion.li
-            key={to}
-            initial={reduceMotion ? false : { opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: reduceMotion ? 0 : i * 0.05 }}
-          >
-            <Link
-              to={to}
-              className="border-stitch-on-surface/10 group flex gap-4 rounded-2xl border bg-white/80 px-4 py-4 shadow-sm transition-all hover:border-[#fd8863]/40 hover:shadow-md dark:border-stone-700 dark:bg-stone-900/60"
-            >
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#fd8863]/25 to-[#97daff]/30 text-[#9b3e20] dark:from-orange-500/20 dark:to-cyan-500/20 dark:text-orange-300">
-                <Icon className="h-6 w-6" aria-hidden />
-              </span>
-              <div>
-                <p className="font-stitch-head font-bold text-[#302e2b] dark:text-stone-100">{label}</p>
-                <p className="text-stitch-muted text-sm dark:text-stone-400">{desc}</p>
-              </div>
-            </Link>
-          </motion.li>
-        ))}
-      </ul>
     </div>
   )
 }

@@ -43,6 +43,7 @@ export function AppShell() {
 
   const displayName = user?.user_metadata?.full_name ?? user?.email?.split('@')[0] ?? 'there'
   const metaName = (user?.user_metadata?.full_name as string | undefined) ?? ''
+  const avatarUrl = (user?.user_metadata?.avatar_url as string | undefined) ?? null
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -137,7 +138,7 @@ export function AppShell() {
                 aria-haspopup="menu"
                 aria-label="Account menu"
               >
-                <UserAvatar email={user?.email} name={metaName} size="sm" />
+                <UserAvatar email={user?.email} name={metaName} avatarUrl={avatarUrl} size="sm" />
               </button>
               {menuOpen ? (
                 <motion.div

@@ -16,7 +16,6 @@ import { PositionDetailPage } from '@/pages/PositionDetailPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { EmailTemplatesPage } from '@/pages/EmailTemplatesPage'
 import { ListSettingsPage } from '@/pages/ListSettingsPage'
-import { IntegrationsPage } from '@/pages/IntegrationsPage'
 import { ProfilePage } from '@/pages/ProfilePage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
 
@@ -50,7 +49,6 @@ export default function App() {
                     <Route path="/settings/profile" element={<ProfilePage />} />
                     <Route path="/settings/email-templates" element={<EmailTemplatesPage />} />
                     <Route path="/settings/lists" element={<ListSettingsPage />} />
-                    <Route path="/settings/integrations" element={<IntegrationsPage />} />
                   </Route>
                 </Route>
                 <Route path="*" element={<Navigate to="/" replace />} />
