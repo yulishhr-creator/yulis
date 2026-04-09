@@ -1,6 +1,8 @@
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { differenceInCalendarDays } from 'date-fns'
+import { ListFilter, Plus } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
@@ -44,12 +46,48 @@ function saveDraft(d: Partial<Draft>) {
   }
 }
 
+type PositionListItem = {
+  id: string
+  title: string
+  status: string
+  created_at: string
+  companies: unknown
+}
+
+function PositionListRow({ p }: { p: PositionListItem }) {
+  const co = p.companies as { name: string } | null
+  const daysSince = differenceInCalendarDays(new Date(), new Date(p.created_at))
+  return (
+    <li>
+      <Link
+        to={`/positions/${p.id}`}
+        className="border-line bg-white/70 hover:border-accent flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-4 py-4 dark:border-line-dark dark:bg-stone-900/45"
+      >
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <span className="font-display font-semibold">{p.title}</span>
+          <span
+            className="text-ink-muted shrink-0 rounded-md border border-stone-200/80 bg-stone-50 px-1.5 py-0.5 text-[10px] font-bold tabular-nums dark:border-stone-600 dark:bg-stone-800"
+            title="Days since position was created"
+          >
+            {daysSince}d
+          </span>
+        </div>
+        <span className="text-ink-muted text-sm dark:text-stone-400">
+          {co?.name ?? '—'} · {p.status.replace('_', ' ')}
+        </span>
+      </Link>
+    </li>
+  )
+}
+
 export function PositionsPage() {
   const { user } = useAuth()
   const supabase = getSupabase()
   const [search] = useSearchParams()
   const [companyFilter, setCompanyFilter] = useState<string>('')
   const [statusFilter, setStatusFilter] = useState<string>('')
+  const [statusFilterOpen, setStatusFilterOpen] = useState(false)
+  const statusFilterRef = useRef<HTMLDivElement>(null)
 
   const companiesQ = useQuery({
     queryKey: ['companies', user?.id],
@@ -72,7 +110,7 @@ export function PositionsPage() {
     queryFn: async () => {
       let q = supabase!
         .from('positions')
-        .select('id, title, status, company_id, companies ( name )')
+        .select('id, title, status, company_id, created_at, companies ( name )')
         .eq('user_id', user!.id)
         .is('deleted_at', null)
         .order('updated_at', { ascending: false })
@@ -87,6 +125,34 @@ export function PositionsPage() {
   const createOpen = search.get('create') === '1'
 
   const companies = companiesQ.data ?? []
+  const positions = positionsQ.data ?? []
+
+  const STATUS_OPTIONS = [
+    { value: '', label: 'All statuses' },
+    { value: 'pending', label: 'Pending' },
+    { value: 'in_progress', label: 'In progress' },
+    { value: 'success', label: 'Success' },
+    { value: 'cancelled', label: 'Cancelled' },
+  ] as const
+
+  const activePositions = useMemo(
+    () => positions.filter((p) => p.status === 'pending' || p.status === 'in_progress'),
+    [positions],
+  )
+  const goalAchieved = useMemo(() => positions.filter((p) => p.status === 'success'), [positions])
+  const withdrawn = useMemo(() => positions.filter((p) => p.status === 'cancelled'), [positions])
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (!statusFilterRef.current?.contains(e.target as Node)) setStatusFilterOpen(false)
+    }
+    if (statusFilterOpen) document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [statusFilterOpen])
+
+  const showActiveBlock = !statusFilter || statusFilter === 'pending' || statusFilter === 'in_progress'
+  const showGoalBlock = !statusFilter || statusFilter === 'success'
+  const showWithdrawnBlock = !statusFilter || statusFilter === 'cancelled'
 
   return (
     <div className="flex flex-col gap-6">
@@ -97,9 +163,10 @@ export function PositionsPage() {
         right={
           <Link
             to="/positions?create=1"
-            className="rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-4 py-2 text-sm font-bold text-white shadow-md"
+            className="border-line flex h-10 w-10 items-center justify-center rounded-2xl border bg-gradient-to-br from-[#9b3e20] to-[#fd8863] text-white shadow-md dark:border-line-dark"
+            aria-label="Create new position"
           >
-            New role
+            <Plus className="h-5 w-5 stroke-[2.5]" aria-hidden />
           </Link>
         }
       />
@@ -116,7 +183,7 @@ export function PositionsPage() {
 
       {createOpen && companies.length > 0 ? <CreatePositionWizard companies={companies} /> : null}
 
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <label className="text-sm font-medium">
           Company
           <select
@@ -132,46 +199,109 @@ export function PositionsPage() {
             ))}
           </select>
         </label>
-        <label className="text-sm font-medium">
-          Status
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="border-line bg-white/80 focus:ring-accent ml-2 rounded-xl border px-3 py-2 outline-none focus:ring-2 dark:bg-stone-900/50 dark:border-line-dark"
+        <div className="relative" ref={statusFilterRef}>
+          <button
+            type="button"
+            onClick={() => setStatusFilterOpen((o) => !o)}
+            className={`border-line flex h-10 w-10 items-center justify-center rounded-2xl border shadow-sm transition dark:border-line-dark ${
+              statusFilter
+                ? 'bg-[#9b3e20]/15 text-[#9b3e20] ring-2 ring-[#9b3e20]/25 dark:text-orange-300'
+                : 'bg-white/90 text-stone-600 dark:bg-stone-800 dark:text-stone-300'
+            }`}
+            aria-expanded={statusFilterOpen}
+            aria-haspopup="listbox"
+            aria-label="Filter by status"
           >
-            <option value="">All</option>
-            {['pending', 'in_progress', 'success', 'cancelled'].map((s) => (
-              <option key={s} value={s}>
-                {s.replace('_', ' ')}
-              </option>
-            ))}
-          </select>
-        </label>
+            <ListFilter className="h-5 w-5" aria-hidden />
+          </button>
+          {statusFilterOpen ? (
+            <div
+              className="border-line bg-paper absolute top-full left-0 z-20 mt-2 w-52 rounded-2xl border p-2 shadow-xl dark:border-line-dark dark:bg-stone-900"
+              role="listbox"
+              aria-label="Status filter"
+            >
+              {STATUS_OPTIONS.map(({ value, label }) => (
+                <button
+                  key={value || 'all'}
+                  type="button"
+                  role="option"
+                  aria-selected={statusFilter === value}
+                  className={`w-full rounded-xl px-3 py-2 text-left text-sm font-medium ${
+                    statusFilter === value ? 'bg-[#9b3e20] text-white dark:bg-orange-600' : 'hover:bg-stone-100 dark:hover:bg-stone-800'
+                  }`}
+                  onClick={() => {
+                    setStatusFilter(value)
+                    setStatusFilterOpen(false)
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {positionsQ.isLoading ? (
         <p className="text-ink-muted text-sm">Loading…</p>
-      ) : (positionsQ.data ?? []).length === 0 ? (
+      ) : positions.length === 0 ? (
         <p className="text-ink-muted text-sm">No positions yet.</p>
       ) : (
-        <ul className="space-y-2">
-          {(positionsQ.data ?? []).map((p) => {
-            const co = p.companies as unknown as { name: string } | null
-            return (
-              <li key={p.id}>
-                <Link
-                  to={`/positions/${p.id}`}
-                  className="border-line bg-white/70 hover:border-accent flex flex-wrap items-baseline justify-between gap-2 rounded-2xl border px-4 py-4 dark:border-line-dark dark:bg-stone-900/45"
-                >
-                  <span className="font-display font-semibold">{p.title}</span>
-                  <span className="text-ink-muted text-sm dark:text-stone-400">
-                    {co?.name ?? '—'} · {p.status.replace('_', ' ')}
-                  </span>
-                </Link>
-              </li>
-            )
-          })}
-        </ul>
+        <div className="flex flex-col gap-8">
+          {showActiveBlock ? (
+            <section aria-labelledby="active-positions-heading">
+              <h2 id="active-positions-heading" className="font-stitch-head text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
+                Active positions
+              </h2>
+              <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">Open roles you&apos;re still working (pending or in progress).</p>
+              {activePositions.length === 0 ? (
+                <p className="text-ink-muted mt-3 text-sm">None in this category.</p>
+              ) : (
+                <ul className="mt-3 space-y-2">
+                  {activePositions.map((p) => (
+                    <PositionListRow key={p.id} p={p} />
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
+
+          {showGoalBlock ? (
+            <section aria-labelledby="goal-achieved-heading">
+              <h2 id="goal-achieved-heading" className="font-stitch-head text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
+                Goal achieved
+              </h2>
+              <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">Roles marked fulfilled — placement or hire completed.</p>
+              {goalAchieved.length === 0 ? (
+                <p className="text-ink-muted mt-3 text-sm">None in this category.</p>
+              ) : (
+                <ul className="mt-3 space-y-2">
+                  {goalAchieved.map((p) => (
+                    <PositionListRow key={p.id} p={p} />
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
+
+          {showWithdrawnBlock ? (
+            <section aria-labelledby="withdrawn-positions-heading">
+              <h2 id="withdrawn-positions-heading" className="font-stitch-head text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
+                Withdrawn
+              </h2>
+              <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">Roles pulled or closed without a hire.</p>
+              {withdrawn.length === 0 ? (
+                <p className="text-ink-muted mt-3 text-sm">None in this category.</p>
+              ) : (
+                <ul className="mt-3 space-y-2">
+                  {withdrawn.map((p) => (
+                    <PositionListRow key={p.id} p={p} />
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
+        </div>
       )}
     </div>
   )

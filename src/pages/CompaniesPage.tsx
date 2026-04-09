@@ -1,6 +1,6 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Mail } from 'lucide-react'
+import { Mail, Plus } from 'lucide-react'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
@@ -37,9 +37,10 @@ export function CompaniesPage() {
         right={
           <Link
             to="/companies/new"
-            className="rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-4 py-2 text-sm font-bold text-white shadow-md"
+            className="border-line flex h-10 w-10 items-center justify-center rounded-2xl border bg-gradient-to-br from-[#9b3e20] to-[#fd8863] text-white shadow-md dark:border-line-dark"
+            aria-label="Add company"
           >
-            Add
+            <Plus className="h-5 w-5 stroke-[2.5]" aria-hidden />
           </Link>
         }
       />
