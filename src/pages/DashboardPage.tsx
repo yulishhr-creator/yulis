@@ -1,8 +1,8 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Plus, Check, ChevronDown, Timer } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { Check, ChevronDown, Timer, Building2, Plus } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { differenceInCalendarDays } from 'date-fns'
 
 import { useAuth } from '@/auth/useAuth'
@@ -58,6 +58,10 @@ export function DashboardPage() {
   const [trackOpen, setTrackOpen] = useState(false)
   const [trackPosId, setTrackPosId] = useState('')
   const [positionsScope, setPositionsScope] = useState<'active' | 'all'>('active')
+  /** `all` = show every task; `Set` = only tasks whose position's company id is in the set */
+  const [companyTaskFilter, setCompanyTaskFilter] = useState<'all' | Set<string>>('all')
+  const [companyFilterOpen, setCompanyFilterOpen] = useState(false)
+  const companyFilterRef = useRef<HTMLDivElement>(null)
 
   const tasksQ = useQuery({
     queryKey: ['dashboard-tasks', uid],
@@ -73,7 +77,7 @@ export function DashboardPage() {
           due_at,
           position_id,
           candidate_id,
-          positions ( id, title, companies ( name ) ),
+          positions ( id, title, company_id, companies ( id, name ) ),
           candidates ( id, full_name )
         `,
         )
@@ -138,6 +142,33 @@ export function DashboardPage() {
     },
   })
 
+  const pipelineStatsQ = useQuery({
+    queryKey: ['dashboard-pipeline-stats', uid],
+    enabled: Boolean(supabase && uid),
+    queryFn: async () => {
+      const { data: positions, error: pErr } = await supabase!
+        .from('positions')
+        .select('id')
+        .eq('user_id', uid!)
+        .is('deleted_at', null)
+        .in('status', ['pending', 'in_progress'])
+      if (pErr) throw pErr
+      const posIds = (positions ?? []).map((p) => p.id)
+      if (posIds.length === 0) {
+        return { activeCandidateCount: 0, activePositionCount: 0 }
+      }
+      const { count, error: cErr } = await supabase!
+        .from('candidates')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', uid!)
+        .is('deleted_at', null)
+        .eq('outcome', 'active')
+        .in('position_id', posIds)
+      if (cErr) throw cErr
+      return { activeCandidateCount: count ?? 0, activePositionCount: posIds.length }
+    },
+  })
+
   const timerPositionsQ = useQuery({
     queryKey: ['dashboard-timer-positions', uid],
     enabled: Boolean(supabase && uid),
@@ -156,6 +187,41 @@ export function DashboardPage() {
 
   const tasks = tasksQ.data ?? []
   const kpis = kpisQ.data
+  const pipelineStats = pipelineStatsQ.data
+
+  const taskCompanyIds = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const row of tasks) {
+      const pos = row.positions as unknown as
+        | { companies: { id: string; name: string } | null; company_id?: string | null }
+        | null
+      const id = pos?.companies?.id ?? pos?.company_id
+      const name = pos?.companies?.name
+      if (id && name) map.set(id, name)
+    }
+    return map
+  }, [tasks])
+
+  const filteredTasks = useMemo(() => {
+    if (companyTaskFilter === 'all') return tasks
+    if (companyTaskFilter.size === 0) return []
+    return tasks.filter((row) => {
+      const pos = row.positions as unknown as
+        | { companies: { id: string } | null; company_id?: string | null }
+        | null
+      const cid = pos?.companies?.id ?? pos?.company_id
+      if (cid == null) return false
+      return companyTaskFilter.has(cid)
+    })
+  }, [tasks, companyTaskFilter])
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (!companyFilterRef.current?.contains(e.target as Node)) setCompanyFilterOpen(false)
+    }
+    if (companyFilterOpen) document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [companyFilterOpen])
 
   const pipelineHints = useMemo(() => {
     const rows = topPositionsQ.data ?? []
@@ -223,42 +289,39 @@ export function DashboardPage() {
         <div className="pointer-events-none absolute -right-16 -bottom-16 h-48 w-48 rounded-full bg-[#fd8863]/20 blur-3xl dark:bg-orange-500/20" />
         <div className="pointer-events-none absolute top-0 left-1/2 h-32 w-32 -translate-x-1/2 rounded-full bg-[#97daff]/30 blur-2xl dark:bg-cyan-500/15" />
         <div className="relative z-10">
-          <h1 className="font-stitch-head text-stitch-on-surface text-3xl font-extrabold tracking-tight md:text-4xl dark:text-stone-100">
-            What you need to do{' '}
-            <span className="bg-gradient-to-r from-[#9b3e20] to-[#006384] bg-clip-text text-transparent dark:from-orange-300 dark:to-cyan-300">
-              right now
-            </span>
+          <h1 className="font-stitch-head text-stitch-on-surface text-2xl font-extrabold tracking-tight md:text-3xl dark:text-stone-100">
+            {pipelineStatsQ.isLoading ? (
+              <>You&apos;re currently working on…</>
+            ) : (
+              <>
+                You&apos;re currently working on{' '}
+                <span className="text-[#9b3e20] dark:text-orange-300">{pipelineStats?.activeCandidateCount ?? 0}</span> candidates within{' '}
+                <span className="text-[#9b3e20] dark:text-orange-300">{pipelineStats?.activePositionCount ?? 0}</span> positions, good luck
+              </>
+            )}
           </h1>
-          <p className="text-stitch-muted mt-2 max-w-xl text-sm leading-relaxed md:text-base dark:text-stone-400">
-            Your task queue is the center of the app — knock out work, then expand pipeline when you need the big picture.
+          <p className="text-stitch-muted mt-3 max-w-xl text-base leading-relaxed md:text-lg dark:text-stone-400">
+            so, how should we proceed from here?
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
             <motion.div whileHover={reduceMotion ? undefined : { scale: 1.02 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
               <Link
-                to="/notifications"
+                to="/positions"
                 className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-5 py-2.5 text-sm font-bold tracking-wide text-white uppercase shadow-lg shadow-[#9b3e20]/25"
               >
-                Open alerts
+                <Plus className="h-4 w-4" aria-hidden />
+                Create task
               </Link>
             </motion.div>
             <motion.div whileHover={reduceMotion ? undefined : { scale: 1.02 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
               <button
                 type="button"
                 onClick={() => setTrackOpen(true)}
-                className="border-stitch-on-surface/15 inline-flex items-center gap-2 rounded-full border bg-white/80 px-5 py-2.5 text-sm font-bold text-[#006384] shadow-sm dark:border-stone-600 dark:bg-stone-800 dark:text-cyan-300"
+                className="border-[#9b3e20]/35 inline-flex items-center gap-2 rounded-full border-2 bg-stone-900/5 px-5 py-2.5 text-sm font-bold text-[#7c2d12] shadow-sm dark:border-orange-400/35 dark:bg-stone-800/80 dark:text-amber-200"
               >
-                <Timer className="h-4 w-4" aria-hidden />
+                <Timer className="h-4 w-4 text-[#9b3e20] dark:text-orange-300" aria-hidden />
                 Track time
               </button>
-            </motion.div>
-            <motion.div whileHover={reduceMotion ? undefined : { scale: 1.02 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
-              <Link
-                to="/positions"
-                className="border-stitch-on-surface/15 inline-flex items-center gap-2 rounded-full border bg-white/80 px-5 py-2.5 text-sm font-bold text-[#006384] shadow-sm dark:border-stone-600 dark:bg-stone-800 dark:text-cyan-300"
-              >
-                <Plus className="h-4 w-4" aria-hidden />
-                Create task
-              </Link>
             </motion.div>
           </div>
         </div>
@@ -336,15 +399,93 @@ export function DashboardPage() {
       ) : null}
 
       <section aria-labelledby="tasks-heading">
-        <h2
-          id="tasks-heading"
-          className="font-stitch-head text-stitch-on-surface flex items-center gap-2 text-xl font-extrabold md:text-2xl dark:text-stone-100"
-        >
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#b4fdb4]/50 to-[#97daff]/40 text-[#165c25] dark:from-emerald-900/40 dark:to-cyan-900/30 dark:text-emerald-300">
-            <Check className="h-5 w-5 stroke-[2.5]" aria-hidden />
-          </span>
-          Your tasks
-        </h2>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h2
+            id="tasks-heading"
+            className="font-stitch-head text-stitch-on-surface flex items-center gap-2 text-xl font-extrabold md:text-2xl dark:text-stone-100"
+          >
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#b4fdb4]/50 to-[#97daff]/40 text-[#165c25] dark:from-emerald-900/40 dark:to-cyan-900/30 dark:text-emerald-300">
+              <Check className="h-5 w-5 stroke-[2.5]" aria-hidden />
+            </span>
+            Your tasks
+          </h2>
+          <div className="relative shrink-0" ref={companyFilterRef}>
+            <button
+              type="button"
+              onClick={() => setCompanyFilterOpen((o) => !o)}
+              className={`border-line flex h-10 w-10 items-center justify-center rounded-2xl border shadow-sm transition dark:border-line-dark ${
+                companyTaskFilter !== 'all'
+                  ? 'bg-[#9b3e20]/15 text-[#9b3e20] ring-2 ring-[#9b3e20]/25 dark:text-orange-300'
+                  : 'bg-white/90 text-stone-600 dark:bg-stone-800 dark:text-stone-300'
+              }`}
+              aria-expanded={companyFilterOpen}
+              aria-haspopup="listbox"
+              aria-label="Filter tasks by company"
+            >
+              <Building2 className="h-5 w-5" aria-hidden />
+            </button>
+            {companyFilterOpen ? (
+              <div
+                className="border-line bg-paper absolute top-full right-0 z-20 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-2xl border p-3 shadow-xl dark:border-line-dark dark:bg-stone-900"
+                role="listbox"
+                aria-label="Companies"
+              >
+                <p className="text-ink-muted mb-2 text-xs font-semibold uppercase tracking-wide">Companies</p>
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="rounded-full bg-[#9b3e20] px-3 py-1 text-xs font-bold text-white dark:bg-orange-600"
+                    onClick={() => {
+                      setCompanyTaskFilter('all')
+                      setCompanyFilterOpen(false)
+                    }}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    className="border-line rounded-full border px-3 py-1 text-xs font-bold dark:border-stone-600"
+                    onClick={() => setCompanyTaskFilter(new Set())}
+                  >
+                    Unselect all
+                  </button>
+                </div>
+                <ul className="max-h-52 space-y-1 overflow-y-auto">
+                  {[...taskCompanyIds.entries()].map(([id, name]) => {
+                    const checked = companyTaskFilter === 'all' ? true : companyTaskFilter.has(id)
+                    return (
+                      <li key={id}>
+                        <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-stone-100 dark:hover:bg-stone-800">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              if (companyTaskFilter === 'all') {
+                                const all = new Set(taskCompanyIds.keys())
+                                all.delete(id)
+                                setCompanyTaskFilter(all)
+                                return
+                              }
+                              const next = new Set(companyTaskFilter)
+                              if (next.has(id)) next.delete(id)
+                              else next.add(id)
+                              if (next.size === taskCompanyIds.size) setCompanyTaskFilter('all')
+                              else setCompanyTaskFilter(next)
+                            }}
+                          />
+                          <span className="truncate">{name}</span>
+                        </label>
+                      </li>
+                    )
+                  })}
+                </ul>
+                {taskCompanyIds.size === 0 ? (
+                  <p className="text-ink-muted text-xs">No companies on open tasks yet.</p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
         <p className="text-stitch-muted mt-1 text-sm">Everything open — sorted by due date.</p>
         {tasksQ.isLoading ? (
           <p className="text-stitch-muted mt-4 text-sm">Loading…</p>
@@ -356,11 +497,15 @@ export function DashboardPage() {
           >
             No open tasks. Open a <Link to="/positions" className="font-semibold text-[#9b3e20] underline dark:text-orange-300">position</Link> and add one.
           </motion.p>
+        ) : filteredTasks.length === 0 && companyTaskFilter !== 'all' ? (
+          <p className="text-stitch-muted mt-4 rounded-2xl border border-dashed border-stone-300 px-4 py-6 text-center text-sm dark:border-stone-600">
+            No tasks for the selected companies. Choose <span className="font-semibold">All</span> or pick at least one company.
+          </p>
         ) : (
           <ul className="mt-4 space-y-3">
-            {tasks.map((row, i) => {
+            {filteredTasks.map((row, i) => {
               const pos = row.positions as unknown as
-                | { id: string; title: string; companies: { name: string } | null }
+                | { id: string; title: string; companies: { id?: string; name: string } | null }
                 | null
               const cand = row.candidates as unknown as { id: string; full_name: string } | null
               const posTitle = pos?.title ?? 'Position'
@@ -470,14 +615,17 @@ export function DashboardPage() {
         )}
       </Modal>
 
-      <details className="group border-stitch-on-surface/10 rounded-3xl border bg-white/50 open:bg-white/90 open:shadow-md dark:border-stone-700 dark:bg-stone-900/40 dark:open:bg-stone-900/70">
+      <details
+        open
+        className="group border-stitch-on-surface/10 rounded-3xl border bg-white/50 open:bg-white/90 open:shadow-md dark:border-stone-700 dark:bg-stone-900/40 dark:open:bg-stone-900/70"
+      >
         <summary className="font-stitch-head flex cursor-pointer list-none items-center justify-between gap-2 rounded-3xl px-4 py-4 text-lg font-extrabold text-[#302e2b] marker:hidden dark:text-stone-100 [&::-webkit-details-marker]:hidden">
-          <span>Pipeline overview</span>
+          <span>Candidates overview</span>
           <ChevronDown className="text-stitch-muted h-5 w-5 shrink-0 transition group-open:rotate-180" aria-hidden />
         </summary>
         <div className="border-stitch-on-surface/10 border-t px-4 pb-4 dark:border-stone-700">
           <div className="flex flex-wrap items-center justify-between gap-2 py-3">
-            <p className="text-stitch-muted text-sm">Roles and candidates — expand when you need the big picture.</p>
+            <p className="text-stitch-muted text-sm">Roles and candidates — collapse if you want more focus on tasks.</p>
             <div className="flex gap-2 text-xs font-bold uppercase">
               <button
                 type="button"
@@ -528,15 +676,19 @@ export function DashboardPage() {
                         }
                       }}
                     >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-stitch-head font-bold text-[#9b3e20] dark:text-orange-300">{p.title}</span>
+                      <div className="flex items-start gap-3">
+                        <div className="min-w-0 flex-1">
+                          <span className="font-stitch-head block truncate font-bold text-[#9b3e20] dark:text-orange-300" title={p.title}>
+                            {p.title}
+                          </span>
+                          {company ? <p className="text-stitch-muted mt-1 truncate text-xs">{company}</p> : null}
+                        </div>
                         <span
-                          className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-bold tracking-wide uppercase ${pill.className}`}
+                          className={`inline-flex shrink-0 items-center self-start rounded-full border px-2.5 py-0.5 text-[11px] font-bold tracking-wide whitespace-nowrap uppercase ${pill.className}`}
                         >
                           {pill.label}
                         </span>
                       </div>
-                      {company ? <p className="text-stitch-muted mt-1 text-xs">{company}</p> : null}
                       {cands.length === 0 ? <p className="text-stitch-muted mt-2 text-xs">No candidates yet.</p> : null}
                     </div>
                     {cands.length ? (
