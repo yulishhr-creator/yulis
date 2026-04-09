@@ -61,20 +61,24 @@ function PositionListRow({ p }: { p: PositionListItem }) {
     <li>
       <Link
         to={`/positions/${p.id}`}
-        className="border-line bg-white/70 hover:border-accent flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-4 py-4 dark:border-line-dark dark:bg-stone-900/45"
+        className="border-line bg-white/70 hover:border-accent flex flex-col gap-2.5 rounded-2xl border px-4 py-4 transition-colors dark:border-line-dark dark:bg-stone-900/45"
       >
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          <span className="font-display font-semibold">{p.title}</span>
+        <div className="flex items-start justify-between gap-3">
+          <span className="font-display min-w-0 flex-1 text-base leading-snug font-semibold break-words text-[#302e2b] dark:text-stone-100">
+            {p.title}
+          </span>
           <span
-            className="text-ink-muted shrink-0 rounded-md border border-stone-200/80 bg-stone-50 px-1.5 py-0.5 text-[10px] font-bold tabular-nums dark:border-stone-600 dark:bg-stone-800"
-            title="Days since position was created"
+            className="shrink-0 rounded-xl bg-gradient-to-br from-[#fd8863]/35 to-[#97daff]/40 px-2.5 py-1 text-xs font-extrabold tabular-nums text-[#9b3e20] ring-1 ring-[#9b3e20]/25 dark:from-orange-500/30 dark:to-cyan-500/25 dark:text-orange-200 dark:ring-orange-400/35"
+            title="Days since this position was created"
           >
             {daysSince}d
           </span>
         </div>
-        <span className="text-ink-muted text-sm dark:text-stone-400">
-          {co?.name ?? '—'} · {p.status.replace('_', ' ')}
-        </span>
+        <p className="text-sm leading-snug text-stone-600 dark:text-stone-400">
+          <span className="font-medium text-stone-800 dark:text-stone-200">{co?.name ?? '—'}</span>
+          <span className="text-stone-400 dark:text-stone-500"> · </span>
+          <span className="capitalize">{p.status.replace('_', ' ')}</span>
+        </p>
       </Link>
     </li>
   )
@@ -170,15 +174,15 @@ export function PositionsPage() {
 
       {createOpen && companies.length > 0 ? <CreatePositionWizard companies={companies} /> : null}
 
-      <div className="flex flex-wrap items-center gap-3">
-        <label className="text-sm font-medium">
+      <div className="flex items-end gap-3">
+        <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm font-medium">
           Company
           <select
             value={companyFilter}
             onChange={(e) => setCompanyFilter(e.target.value)}
-            className="border-line bg-white/80 focus:ring-accent ml-2 rounded-xl border px-3 py-2 outline-none focus:ring-2 dark:bg-stone-900/50 dark:border-line-dark"
+            className="border-line bg-white/80 focus:ring-accent w-full min-w-0 rounded-xl border px-3 py-2.5 outline-none focus:ring-2 dark:bg-stone-900/50 dark:border-line-dark"
           >
-            <option value="">All</option>
+            <option value="">All companies</option>
             {companies.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -186,7 +190,7 @@ export function PositionsPage() {
             ))}
           </select>
         </label>
-        <div className="relative" ref={statusFilterRef}>
+        <div className="relative shrink-0" ref={statusFilterRef}>
           <button
             type="button"
             onClick={() => setStatusFilterOpen((o) => !o)}
