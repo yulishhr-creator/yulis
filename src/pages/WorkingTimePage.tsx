@@ -5,15 +5,13 @@ import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
+import { formatWorkedDuration } from '@/lib/formatWorkedDuration'
 
 type Preset = 'today' | 'week' | 'month' | '7d' | 'custom'
 
 function fmtDuration(sec: number | null | undefined): string {
   if (sec == null || sec <= 0) return '—'
-  const h = Math.floor(sec / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  if (h > 0) return `${h}h ${m}m`
-  return `${m}m`
+  return formatWorkedDuration(sec)
 }
 
 export function WorkingTimePage() {
