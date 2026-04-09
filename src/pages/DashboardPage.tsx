@@ -1,7 +1,7 @@
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Check, ChevronDown, Timer, ListFilter, Plus } from 'lucide-react'
+import { Check, ChevronDown, Timer, ListFilter, Plus, Users } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { differenceInCalendarDays } from 'date-fns'
 
@@ -763,41 +763,61 @@ export function DashboardPage() {
         )}
       </Modal>
 
+      <section aria-labelledby="candidates-overview-heading">
       <details
         open
         className="group border-stitch-on-surface/10 rounded-3xl border bg-white/50 open:bg-white/90 open:shadow-md dark:border-stone-700 dark:bg-stone-900/40 dark:open:bg-stone-900/70"
       >
-        <summary className="font-stitch-head flex cursor-pointer list-none items-center justify-between gap-2 rounded-3xl px-4 py-4 text-lg font-extrabold text-[#302e2b] marker:hidden dark:text-stone-100 [&::-webkit-details-marker]:hidden">
-          <span>Positions & candidates overview</span>
-          <ChevronDown className="text-stitch-muted h-5 w-5 shrink-0 transition group-open:rotate-180" aria-hidden />
-        </summary>
-        <div className="border-stitch-on-surface/10 border-t px-4 pb-4 dark:border-stone-700">
-          <div className="flex flex-wrap items-center justify-between gap-2 py-3">
-            <p className="text-stitch-muted text-sm">Roles and candidates — collapse if you want more focus on tasks.</p>
-            <div className="flex flex-wrap gap-2 text-xs font-bold uppercase">
-              <button
-                type="button"
-                className={`rounded-full px-3 py-1 ${positionsScope === 'open' ? 'bg-[#9b3e20] text-white' : 'border border-stone-300 dark:border-stone-600'}`}
-                onClick={() => setPositionsScope('open')}
-              >
-                Open
-              </button>
-              <button
-                type="button"
-                className={`rounded-full px-3 py-1 ${positionsScope === 'in_progress' ? 'bg-[#9b3e20] text-white' : 'border border-stone-300 dark:border-stone-600'}`}
-                onClick={() => setPositionsScope('in_progress')}
-              >
-                In progress
-              </button>
-              <button
-                type="button"
-                className={`rounded-full px-3 py-1 ${positionsScope === 'all' ? 'bg-[#9b3e20] text-white' : 'border border-stone-300 dark:border-stone-600'}`}
-                onClick={() => setPositionsScope('all')}
-              >
-                All
-              </button>
+        <summary className="font-stitch-head list-none cursor-pointer rounded-t-3xl px-4 py-4 marker:hidden [&::-webkit-details-marker]:hidden">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <h2
+              id="candidates-overview-heading"
+              className="text-stitch-on-surface flex items-center gap-2 text-xl font-extrabold md:text-2xl dark:text-stone-100"
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#fd8863]/35 to-[#97daff]/40 text-[#9b3e20] dark:from-orange-500/30 dark:to-cyan-500/25 dark:text-orange-300">
+                <Users className="h-5 w-5 stroke-[2.25]" aria-hidden />
+              </span>
+              Candidates overview
+            </h2>
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <div className="flex flex-wrap gap-2 text-xs font-bold uppercase">
+                <button
+                  type="button"
+                  className={`rounded-full px-3 py-1 ${positionsScope === 'open' ? 'bg-[#9b3e20] text-white dark:bg-orange-600' : 'border border-stone-300 dark:border-stone-600'}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setPositionsScope('open')
+                  }}
+                >
+                  Open
+                </button>
+                <button
+                  type="button"
+                  className={`rounded-full px-3 py-1 ${positionsScope === 'in_progress' ? 'bg-[#9b3e20] text-white dark:bg-orange-600' : 'border border-stone-300 dark:border-stone-600'}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setPositionsScope('in_progress')
+                  }}
+                >
+                  In progress
+                </button>
+                <button
+                  type="button"
+                  className={`rounded-full px-3 py-1 ${positionsScope === 'all' ? 'bg-[#9b3e20] text-white dark:bg-orange-600' : 'border border-stone-300 dark:border-stone-600'}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setPositionsScope('all')
+                  }}
+                >
+                  All
+                </button>
+              </div>
+              <ChevronDown className="text-stitch-muted h-5 w-5 shrink-0 transition group-open:rotate-180" aria-hidden />
             </div>
           </div>
+          <p className="text-stitch-muted mt-1 text-sm">Roles and who you&apos;re moving — filter the list, or collapse this block to focus on tasks.</p>
+        </summary>
+        <div className="border-stitch-on-surface/10 border-t px-4 pb-4 dark:border-stone-700">
           {topPositionsQ.isLoading ? (
             <p className="text-stitch-muted text-sm">Loading…</p>
           ) : (topPositionsQ.data ?? []).length === 0 ? (
@@ -881,6 +901,7 @@ export function DashboardPage() {
           )}
         </div>
       </details>
+      </section>
     </div>
   )
 }
