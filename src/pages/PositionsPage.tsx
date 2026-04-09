@@ -1,7 +1,7 @@
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { differenceInCalendarDays } from 'date-fns'
-import { ListFilter, Plus } from 'lucide-react'
+import { ListFilter } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
@@ -156,20 +156,7 @@ export function PositionsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <ScreenHeader
-        title="Positions"
-        subtitle="Roles you’re hiring for — add tasks from each role."
-        backTo="/"
-        right={
-          <Link
-            to="/positions?create=1"
-            className="border-line flex h-10 w-10 items-center justify-center rounded-2xl border bg-gradient-to-br from-[#9b3e20] to-[#fd8863] text-white shadow-md dark:border-line-dark"
-            aria-label="Create new position"
-          >
-            <Plus className="h-5 w-5 stroke-[2.5]" aria-hidden />
-          </Link>
-        }
-      />
+      <ScreenHeader title="Positions" subtitle="Roles you’re hiring for — add tasks from each role." backTo="/" />
 
       {createOpen && companies.length === 0 ? (
         <p className="text-ink-muted rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900/50 dark:bg-amber-950/30">

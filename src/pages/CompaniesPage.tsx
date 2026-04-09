@@ -1,6 +1,6 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Mail, Plus } from 'lucide-react'
+import { Mail } from 'lucide-react'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
@@ -34,15 +34,6 @@ export function CompaniesPage() {
         title="Companies"
         subtitle={sendEmailMode ? 'Choose a client to open your mail app — add a contact email on their profile if missing.' : 'Clients you recruit for.'}
         backTo="/"
-        right={
-          <Link
-            to="/companies/new"
-            className="border-line flex h-10 w-10 items-center justify-center rounded-2xl border bg-gradient-to-br from-[#9b3e20] to-[#fd8863] text-white shadow-md dark:border-line-dark"
-            aria-label="Add company"
-          >
-            <Plus className="h-5 w-5 stroke-[2.5]" aria-hidden />
-          </Link>
-        }
       />
 
       {sendEmailMode ? (

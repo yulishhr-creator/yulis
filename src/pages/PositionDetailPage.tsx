@@ -171,6 +171,35 @@ export function PositionDetailPage() {
     setCriticalN(c != null ? String(c) : '3')
   }, [position])
 
+  useEffect(() => {
+    if (search.get('setup') !== '1') return
+    setPositionSetupOpen(true)
+    setSearch(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('setup')
+        return next
+      },
+      { replace: true },
+    )
+  }, [search, setSearch])
+
+  useEffect(() => {
+    if (search.get('addCandidate') !== '1') return
+    const el = document.getElementById('position-add-candidate')
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    const firstInput = el?.querySelector('input') as HTMLInputElement | null
+    requestAnimationFrame(() => firstInput?.focus())
+    setSearch(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('addCandidate')
+        return next
+      },
+      { replace: true },
+    )
+  }, [search, setSearch])
+
   const invalidateAll = async () => {
     await qc.invalidateQueries({ queryKey: ['position', id] })
     await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
@@ -1118,7 +1147,8 @@ export function PositionDetailPage() {
         </div>
 
         <form
-          className="border-line bg-white/60 mt-4 grid gap-2 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40 sm:grid-cols-2"
+          id="position-add-candidate"
+          className="border-line bg-white/60 mt-4 grid gap-2 scroll-mt-24 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40 sm:grid-cols-2"
           onSubmit={(e) => {
             e.preventDefault()
             void addCandidate.mutateAsync()

@@ -261,6 +261,19 @@ export function DashboardPage() {
     )
   }, [searchParams, setSearchParams])
 
+  useEffect(() => {
+    if (searchParams.get('trackTime') !== '1') return
+    setTrackOpen(true)
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('trackTime')
+        return next
+      },
+      { replace: true },
+    )
+  }, [searchParams, setSearchParams])
+
   const addTaskFromDashboard = useMutation({
     mutationFn: async () => {
       if (!newTaskPositionId.trim()) throw new Error('Choose a position')
