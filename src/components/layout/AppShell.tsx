@@ -266,7 +266,7 @@ export function AppShell() {
 
         <main
           id="main"
-          className="mx-auto max-w-6xl px-4 pt-6 pb-[calc(5.25rem+env(safe-area-inset-bottom,0px))] md:px-8 md:pt-8 lg:pb-10"
+          className="pb-app-main-mobile mx-auto max-w-6xl px-4 pt-6 md:px-8 md:pt-8"
         >
           <AnimatedOutlet />
         </main>

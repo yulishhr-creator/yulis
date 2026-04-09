@@ -61,3 +61,23 @@ body {
 #root {
   min-height: 100dvh;
 }
+
+/*
+ * Fixed MobileBottomNav (~lg:hidden): reserve space so page bottoms are not covered.
+ * Nav ≈ pt-2 + nav column (py-2 + h-10 + label) + pb safe-area; 6.75rem + inset leaves headroom.
+ */
+.pb-app-main-mobile {
+  padding-bottom: calc(6.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 1024px) {
+  .pb-app-main-mobile {
+    padding-bottom: 2.5rem;
+  }
+}
+
+@media (max-width: 1023px) {
+  html {
+    scroll-padding-bottom: calc(6.75rem + env(safe-area-inset-bottom, 0px));
+  }
+}
