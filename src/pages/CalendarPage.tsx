@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   addMonths,
@@ -8,13 +8,14 @@ import {
   format,
   isSameDay,
   isSameMonth,
+  startOfDay,
   startOfMonth,
   startOfWeek,
 } from 'date-fns'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
-import { ScreenHeader } from '@/components/layout/ScreenHeader'
+import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/hooks/useToast'
 import { useSearchParams } from 'react-router-dom'
 
@@ -37,16 +38,33 @@ export function CalendarPage() {
   const gridEnd = endOfWeek(monthEnd, { weekStartsOn: 0 })
 
   const eventsQ = useQuery({
-    queryKey: ['calendar-events', uid, format(monthStart, 'yyyy-MM')],
+    queryKey: ['calendar-events', uid, gridStart.toISOString(), gridEnd.toISOString()],
     enabled: Boolean(supabase && uid),
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('calendar_events')
         .select('id, title, subtitle, starts_at, ends_at')
         .eq('user_id', uid!)
-        .gte('starts_at', monthStart.toISOString())
-        .lte('starts_at', monthEnd.toISOString())
+        .gte('starts_at', gridStart.toISOString())
+        .lte('starts_at', gridEnd.toISOString())
         .order('starts_at')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+
+  const upcomingQ = useQuery({
+    queryKey: ['calendar-events', 'upcoming', uid],
+    enabled: Boolean(supabase && uid),
+    queryFn: async () => {
+      const from = startOfDay(new Date()).toISOString()
+      const { data, error } = await supabase!
+        .from('calendar_events')
+        .select('id, title, subtitle, starts_at, ends_at')
+        .eq('user_id', uid!)
+        .gte('starts_at', from)
+        .order('starts_at', { ascending: true })
+        .limit(40)
       if (error) throw error
       return data ?? []
     },
@@ -74,6 +92,7 @@ export function CalendarPage() {
         (prev) => {
           const next = new URLSearchParams(prev)
           next.delete('new')
+          next.delete('date')
           return next
         },
         { replace: true },
@@ -84,12 +103,20 @@ export function CalendarPage() {
     onError: (e: Error) => toastError(e.message),
   })
 
+  const showForm = search.get('new') === '1'
+  const dateFromUrl = search.get('date')
+
+  useEffect(() => {
+    if (!dateFromUrl || !/^\d{4}-\d{2}-\d{2}$/.test(dateFromUrl)) return
+    setStartsAt(`${dateFromUrl}T09:00`)
+  }, [dateFromUrl])
+
   const days = useMemo(() => eachDayOfInterval({ start: gridStart, end: gridEnd }), [gridStart, gridEnd])
 
   const [picked, setPicked] = useState<Date | null>(null)
 
   const eventsByDay = useMemo(() => {
-    const map = new Map<string, typeof eventsQ.data>()
+    const map = new Map<string, NonNullable<typeof eventsQ.data>>()
     for (const ev of eventsQ.data ?? []) {
       const key = format(new Date(ev.starts_at), 'yyyy-MM-dd')
       const list = map.get(key) ?? []
@@ -99,30 +126,37 @@ export function CalendarPage() {
     return map
   }, [eventsQ.data])
 
-  const showForm = search.get('new') === '1'
+  const pickedKey = picked ? format(picked, 'yyyy-MM-dd') : null
+  const pickedDayEvents = pickedKey ? (eventsByDay.get(pickedKey) ?? []) : []
+
+  function openCreateForPickedDay() {
+    if (!picked) return
+    const d = format(picked, 'yyyy-MM-dd')
+    setPicked(null)
+    setSearchParams({ new: '1', date: d }, { replace: false })
+    setStartsAt(`${d}T09:00`)
+  }
 
   return (
     <div className="flex flex-col gap-6">
-      <ScreenHeader
-        title="Calendar"
-        subtitle="Events are scheduled blocks on this calendar. They are not reminders — set a reminder from Quick actions if you only need a nudge."
-        backTo="/"
-      />
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+      <div className="flex w-full justify-center px-1">
+        <div className="flex items-center gap-2 sm:gap-3">
           <button
             type="button"
             className="border-line rounded-xl border px-3 py-2 text-sm font-semibold dark:border-line-dark"
             onClick={() => setCursor((d) => addMonths(d, -1))}
+            aria-label="Previous month"
           >
             ←
           </button>
-          <span className="font-stitch-head min-w-[10rem] text-center text-lg font-extrabold">{format(cursor, 'MMMM yyyy')}</span>
+          <span className="font-stitch-head min-w-[11rem] text-center text-lg font-extrabold sm:min-w-[14rem] sm:text-xl">
+            {format(cursor, 'MMMM yyyy')}
+          </span>
           <button
             type="button"
             className="border-line rounded-xl border px-3 py-2 text-sm font-semibold dark:border-line-dark"
             onClick={() => setCursor((d) => addMonths(d, 1))}
+            aria-label="Next month"
           >
             →
           </button>
@@ -137,27 +171,29 @@ export function CalendarPage() {
             addEvent.mutate()
           }}
         >
-          <p className="font-semibold">New calendar event</p>
-          <p className="text-ink-muted text-xs">This creates a timed block on the calendar. For a simple nudge without a grid block, use Set Reminder in Quick actions.</p>
+          <p className="font-semibold">New event</p>
+          <p className="text-ink-muted text-xs">Date and time, subject, and a short note. Optional end time.</p>
           <label className="flex flex-col gap-1 text-sm">
-            Title
+            Subject
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+              placeholder="e.g. Call with client"
               required
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            Subtitle (optional)
+            Short description <span className="text-ink-muted font-normal">(optional)</span>
             <input
               value={subtitle}
               onChange={(e) => setSubtitle(e.target.value)}
               className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+              placeholder="A few words…"
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            Starts
+            Date &amp; time
             <input
               type="datetime-local"
               value={startsAt}
@@ -167,7 +203,7 @@ export function CalendarPage() {
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            Ends (optional)
+            End <span className="text-ink-muted font-normal">(optional)</span>
             <input
               type="datetime-local"
               value={endsAt}
@@ -224,27 +260,77 @@ export function CalendarPage() {
         })}
       </div>
 
-      {picked ? (
-        <section className="border-line rounded-2xl border bg-white/80 p-4 dark:border-line-dark dark:bg-stone-900/50">
-          <h3 className="font-semibold">{format(picked, 'EEEE, MMM d')}</h3>
-          <ul className="mt-2 space-y-2 text-sm">
-            {(eventsByDay.get(format(picked, 'yyyy-MM-dd')) ?? []).length === 0 ? (
-              <li className="text-ink-muted">No events</li>
-            ) : (
-              (eventsByDay.get(format(picked, 'yyyy-MM-dd')) ?? []).map((ev) => (
-                <li key={ev.id} className="rounded-lg border border-stone-200/80 px-3 py-2 dark:border-stone-600">
-                  <p className="font-medium">{ev.title}</p>
-                  {ev.subtitle ? <p className="text-ink-muted text-xs">{ev.subtitle}</p> : null}
+      <section aria-labelledby="upcoming-events-heading" className="border-line rounded-2xl border bg-white/80 p-4 dark:border-line-dark dark:bg-stone-900/50">
+        <h2 id="upcoming-events-heading" className="font-stitch-head text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
+          Upcoming events
+        </h2>
+        <p className="text-stitch-muted mt-1 text-xs dark:text-stone-400">Soonest first — from today onward.</p>
+        {upcomingQ.isLoading ? (
+          <p className="text-ink-muted mt-3 text-sm">Loading…</p>
+        ) : (upcomingQ.data ?? []).length === 0 ? (
+          <p className="text-ink-muted mt-3 text-sm">No upcoming events. Add one from a day or Quick actions.</p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {(upcomingQ.data ?? []).map((ev) => (
+              <li
+                key={ev.id}
+                className="rounded-xl border border-stone-200/80 px-3 py-2.5 dark:border-stone-600"
+              >
+                <p className="font-semibold">{ev.title}</p>
+                {ev.subtitle ? <p className="text-ink-muted mt-0.5 text-sm">{ev.subtitle}</p> : null}
+                <p className="text-ink-muted mt-1 text-xs tabular-nums">
+                  {format(new Date(ev.starts_at), 'EEE, MMM d · HH:mm')}
+                  {ev.ends_at ? ` – ${format(new Date(ev.ends_at), 'HH:mm')}` : ''}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <Modal
+        open={picked !== null}
+        onClose={() => setPicked(null)}
+        title={picked ? format(picked, 'EEEE, MMM d') : ''}
+        size="md"
+      >
+        <div className="flex flex-col gap-3">
+          {pickedDayEvents.length === 0 ? (
+            <>
+              <p className="text-ink-muted text-sm">Nothing here yet.</p>
+              <button
+                type="button"
+                className="w-full rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] py-2.5 text-sm font-bold text-white"
+                onClick={openCreateForPickedDay}
+              >
+                Create event
+              </button>
+            </>
+          ) : (
+            <ul className="space-y-3 text-sm">
+              {pickedDayEvents.map((ev) => (
+                <li key={ev.id} className="rounded-xl border border-stone-200/80 px-3 py-2 dark:border-stone-600">
+                  <p className="font-semibold">{ev.title}</p>
+                  {ev.subtitle ? <p className="text-ink-muted mt-0.5 text-xs">{ev.subtitle}</p> : null}
                   <p className="text-ink-muted mt-1 text-xs tabular-nums">
                     {format(new Date(ev.starts_at), 'HH:mm')}
                     {ev.ends_at ? ` – ${format(new Date(ev.ends_at), 'HH:mm')}` : ''}
                   </p>
                 </li>
-              ))
-            )}
-          </ul>
-        </section>
-      ) : null}
+              ))}
+            </ul>
+          )}
+          {pickedDayEvents.length > 0 ? (
+            <button
+              type="button"
+              className="border-line w-full rounded-full border py-2 text-sm font-bold dark:border-stone-600"
+              onClick={openCreateForPickedDay}
+            >
+              Create event
+            </button>
+          ) : null}
+        </div>
+      </Modal>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { Link, NavLink } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   ListTodo,
   Building2,
@@ -50,6 +50,8 @@ function formatTimer(sec: number): string {
 
 export function AppShell() {
   const { user, signOut } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const reduceMotion = useReducedMotion()
@@ -97,6 +99,12 @@ export function AppShell() {
               key={to}
               to={to}
               end={end}
+              onClick={(e) => {
+                if (to === '/calendar' && location.pathname === '/calendar') {
+                  e.preventDefault()
+                  navigate('/')
+                }
+              }}
               className={({ isActive }) =>
                 `group relative flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                   isActive
@@ -174,13 +182,13 @@ export function AppShell() {
                     Profile
                   </Link>
                   <Link
-                    to="/calendar"
+                    to={location.pathname === '/calendar' ? '/' : '/calendar'}
                     role="menuitem"
                     className="hover:bg-[#fd8863]/15 flex items-center gap-2 px-3 py-2.5 text-sm dark:hover:bg-stone-800"
                     onClick={() => setMenuOpen(false)}
                   >
                     <CalendarDays className="h-4 w-4 opacity-70" aria-hidden />
-                    Calendar
+                    {location.pathname === '/calendar' ? 'Close calendar' : 'Calendar'}
                   </Link>
                   <Link
                     to="/settings"
@@ -223,9 +231,11 @@ export function AppShell() {
 
           <div className="flex shrink-0 items-center gap-2">
             <Link
-              to="/calendar"
-              className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 shadow-sm transition hover:bg-[#97daff]/30 dark:bg-stone-800/90 dark:hover:bg-cyan-900/40"
-              aria-label="Calendar"
+              to={location.pathname === '/calendar' ? '/' : '/calendar'}
+              className={`flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 shadow-sm transition hover:bg-[#97daff]/30 dark:bg-stone-800/90 dark:hover:bg-cyan-900/40 ${
+                location.pathname === '/calendar' ? 'ring-2 ring-[#006384]/45 dark:ring-cyan-400/50' : ''
+              }`}
+              aria-label={location.pathname === '/calendar' ? 'Close calendar' : 'Calendar'}
             >
               <CalendarDays className="text-[#006384] h-5 w-5 dark:text-cyan-300" aria-hidden />
             </Link>
