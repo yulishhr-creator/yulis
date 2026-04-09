@@ -97,25 +97,24 @@ export function MobileBottomNav() {
       </Modal>
 
       <nav
-        className="border-line bg-paper/92 fixed right-0 bottom-0 left-0 z-50 flex items-end justify-between gap-3 border-t px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_32px_rgba(155,62,32,0.08)] backdrop-blur-xl lg:hidden dark:border-line-dark dark:bg-paper-dark/95 dark:shadow-[0_-8px_32px_rgba(0,0,0,0.35)]"
+        className="border-line bg-paper/92 fixed right-0 bottom-0 left-0 z-50 flex items-stretch justify-between gap-1 border-t px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_32px_rgba(155,62,32,0.08)] backdrop-blur-xl lg:hidden dark:border-line-dark dark:bg-paper-dark/95 dark:shadow-[0_-8px_32px_rgba(0,0,0,0.35)]"
         aria-label="Main navigation"
       >
         <NavGroup items={leftItems} reduceMotion={reduceMotion} />
 
-        <div className="relative flex w-14 min-w-14 shrink-0 flex-col items-center justify-end self-stretch pb-0.5">
-          <motion.div
-            className="absolute left-1/2 bottom-full z-10 -translate-x-1/2 -translate-y-4"
+        <div className="flex w-[3.25rem] min-w-[3.25rem] shrink-0 flex-col items-center gap-1 px-1 py-2">
+          <motion.button
+            type="button"
+            onClick={() => setFabOpen(true)}
+            className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-[#9b3e20] to-[#fd8863] text-white shadow-md shadow-[#9b3e20]/25"
+            aria-label="Quick add: new role or calendar event"
             whileTap={reduceMotion ? undefined : { scale: 0.94 }}
           >
-            <button
-              type="button"
-              onClick={() => setFabOpen(true)}
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-[#9b3e20] to-[#fd8863] text-white shadow-md shadow-[#9b3e20]/30 ring-[3px] ring-paper dark:ring-paper-dark"
-              aria-label="Open quick add menu"
-            >
-              <Plus className="h-5 w-5 stroke-[2.25]" aria-hidden />
-            </button>
-          </motion.div>
+            <Plus className="h-5 w-5 stroke-[2.25]" aria-hidden />
+          </motion.button>
+          <span className="text-[10px] font-bold tracking-wide uppercase opacity-0" aria-hidden>
+            —
+          </span>
         </div>
 
         <NavGroup items={rightItems} reduceMotion={reduceMotion} />

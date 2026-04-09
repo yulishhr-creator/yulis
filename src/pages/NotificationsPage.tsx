@@ -68,7 +68,7 @@ export function NotificationsPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <ScreenHeader title="Notifications" subtitle="Reminders and overdue tasks in one place." backTo="/" />
+      <ScreenHeader subtitle="Tasks can be only by achieving true Unagi" backTo="/" />
 
       <section aria-labelledby="overdue-heading">
         <h2 id="overdue-heading" className="font-stitch-label text-[#9f0519] mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] uppercase dark:text-red-400">

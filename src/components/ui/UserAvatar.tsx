@@ -48,7 +48,7 @@ export function UserAvatar({ avatarUrl, size = 'md', className }: UserAvatarProp
       )}
       aria-hidden
     >
-      <img src="/lvlup-brand.svg" alt="" className="h-[72%] w-[72%] object-contain" />
+      <img src="/yuli-default-avatar.png" alt="" className="h-full w-full object-cover object-top" />
     </span>
   )
 }

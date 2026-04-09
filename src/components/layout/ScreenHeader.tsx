@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
 
 type ScreenHeaderProps = {
-  title: string
+  /** Omit or pass empty string to hide the main heading (subtitle-only layouts). */
+  title?: string
   subtitle?: string
   /** When set, navigates here; otherwise `navigate(-1)` */
   backTo?: string
@@ -35,10 +36,16 @@ export function ScreenHeader({ title, subtitle, backTo, right }: ScreenHeaderPro
         <ArrowLeft className="h-5 w-5" aria-hidden />
       </button>
       <div className="min-w-0 flex-1">
-        <h1 className="font-stitch-head text-stitch-on-surface text-2xl font-extrabold tracking-tight md:text-3xl dark:text-stone-100">
-          {title}
-        </h1>
-        {subtitle ? <p className="text-stitch-muted mt-1 text-sm dark:text-stone-400">{subtitle}</p> : null}
+        {title ? (
+          <h1 className="font-stitch-head text-stitch-on-surface text-2xl font-extrabold tracking-tight md:text-3xl dark:text-stone-100">
+            {title}
+          </h1>
+        ) : null}
+        {subtitle ? (
+          <p className={`text-stitch-muted text-sm dark:text-stone-400 ${title ? 'mt-1' : 'text-base leading-relaxed md:text-lg'}`}>
+            {subtitle}
+          </p>
+        ) : null}
       </div>
       {right ? <div className="flex shrink-0 items-center gap-2">{right}</div> : null}
     </motion.div>
