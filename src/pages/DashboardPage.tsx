@@ -11,6 +11,8 @@ import { formatDue } from '@/lib/dates'
 import { Modal } from '@/components/ui/Modal'
 import { useWorkTimer } from '@/work/WorkTimerContext'
 import { useToast } from '@/hooks/useToast'
+import { WeekendCountdownCard } from '@/components/dashboard/WeekendCountdownCard'
+
 function positionStatusPill(status: string): { label: string; className: string } {
   switch (status) {
     case 'pending':
@@ -644,6 +646,8 @@ export function DashboardPage() {
           </ul>
         )}
       </section>
+
+      <WeekendCountdownCard />
 
       <Modal open={trackOpen} onClose={() => setTrackOpen(false)} title="Track time on a role">
         <p className="text-ink-muted mb-3 text-sm">Every session is tied to a position. Stop the header timer when you are done.</p>
