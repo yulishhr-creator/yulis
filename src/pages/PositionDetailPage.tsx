@@ -3,15 +3,18 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import {
+  Check,
   CheckCircle,
-  XCircle,
+  X,
   PartyPopper,
-  Ban,
   FileText,
   Link2,
   Trash2,
   ChevronRight,
   Upload,
+  Copy,
+  ExternalLink,
+  Settings,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -139,6 +142,11 @@ export function PositionDetailPage() {
   const [title, setTitle] = useState('')
   const [requirements, setRequirements] = useState('')
   const [welcome1, setWelcome1] = useState('')
+  const [welcome2, setWelcome2] = useState('')
+  const [welcome3, setWelcome3] = useState('')
+  const [linkedinSearchUrl, setLinkedinSearchUrl] = useState('')
+  const [positionSetupOpen, setPositionSetupOpen] = useState(false)
+  const [outcomeFilter, setOutcomeFilter] = useState<Set<string>>(() => new Set(['active']))
   const [status, setStatus] = useState('pending')
   const [planned, setPlanned] = useState('')
   const [actual, setActual] = useState('')
@@ -153,6 +161,9 @@ export function PositionDetailPage() {
     setTitle(position.title ?? '')
     setRequirements(position.requirements ?? '')
     setWelcome1(position.welcome_1 ?? '')
+    setWelcome2(position.welcome_2 ?? '')
+    setWelcome3(position.welcome_3 ?? '')
+    setLinkedinSearchUrl((position as { linkedin_saved_search_url?: string | null }).linkedin_saved_search_url ?? '')
     setStatus(position.status ?? 'pending')
     setPlanned(position.planned_fee_ils != null ? String(position.planned_fee_ils) : '')
     setActual(position.actual_fee_ils != null ? String(position.actual_fee_ils) : '')
@@ -178,6 +189,9 @@ export function PositionDetailPage() {
           title: title.trim() || 'Untitled',
           requirements: requirements.trim() || null,
           welcome_1: welcome1.trim() || null,
+          welcome_2: welcome2.trim() || null,
+          welcome_3: welcome3.trim() || null,
+          linkedin_saved_search_url: linkedinSearchUrl.trim() || null,
           status,
           planned_fee_ils: planned ? Number(planned) : null,
           actual_fee_ils: actual ? Number(actual) : null,
@@ -228,6 +242,26 @@ export function PositionDetailPage() {
     onSuccess: async () => {
       setStatus('in_progress')
       success('Position reopened')
+      await invalidateAll()
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const setOpenPositionStatus = useMutation({
+    mutationFn: async (next: 'pending' | 'in_progress') => {
+      const { error } = await supabase!.from('positions').update({ status: next }).eq('id', id!).eq('user_id', user!.id)
+      if (error) throw error
+    },
+    onSuccess: async (_, next) => {
+      setStatus(next)
+      success('Status updated')
+      await logActivityEvent(supabase!, user!.id, {
+        event_type: 'position_status_changed',
+        position_id: id!,
+        title: 'Position status updated',
+        subtitle: next,
+        metadata: { to: next },
+      })
       await invalidateAll()
     },
     onError: (e: Error) => toastError(e.message),
@@ -451,27 +485,27 @@ export function PositionDetailPage() {
     onError: (e: Error) => toastError(e.message),
   })
 
-  const updateCandidateOutcome = useMutation({
+  const setCandidateOutcome = useMutation({
     mutationFn: async ({
       candidateId,
       outcome,
       closeTasks,
     }: {
       candidateId: string
-      outcome: 'hired' | 'rejected'
+      outcome: 'active' | 'hired' | 'rejected' | 'withdrawn'
       closeTasks: boolean
     }) => {
       const cand = (candidatesQ.data ?? []).find((c) => c.id === candidateId)
       const prev = cand?.outcome ?? 'active'
       const { error } = await supabase!.from('candidates').update({ outcome }).eq('id', candidateId).eq('user_id', user!.id)
       if (error) throw error
-      if (closeTasks) {
+      if (closeTasks && outcome !== 'active') {
         await supabase!.from('tasks').update({ status: 'done' }).eq('candidate_id', candidateId).eq('user_id', user!.id).neq('status', 'done')
       }
-      return { candidateId, prev, outcome, name: cand?.full_name ?? 'Candidate', closeTasks }
+      return { candidateId, prev, outcome, name: cand?.full_name ?? 'Candidate' }
     },
     onSuccess: async ({ candidateId, prev, outcome, name }) => {
-      success(outcome === 'hired' ? 'Marked hired' : 'Marked rejected')
+      success('Outcome updated')
       await logActivityEvent(supabase!, user!.id, {
         event_type: 'candidate_outcome_changed',
         position_id: id!,
@@ -587,14 +621,47 @@ export function PositionDetailPage() {
 
   const terminalPosition = status === 'success' || status === 'cancelled'
 
-  const activeCandidates = useMemo(
-    () => (candidatesQ.data ?? []).filter((c) => c.outcome === 'active'),
-    [candidatesQ.data],
+  const filteredCandidates = useMemo(
+    () => (candidatesQ.data ?? []).filter((c) => outcomeFilter.has(c.outcome)),
+    [candidatesQ.data, outcomeFilter],
   )
-  const pastCandidates = useMemo(
-    () => (candidatesQ.data ?? []).filter((c) => c.outcome !== 'active'),
-    [candidatesQ.data],
-  )
+
+  function toggleOutcomeFilter(key: string) {
+    setOutcomeFilter((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        if (next.size <= 1) return prev
+        next.delete(key)
+      } else next.add(key)
+      return next
+    })
+  }
+
+  function copyWelcomeSnippet(text: string, label: string) {
+    if (!text.trim()) {
+      toastError('Nothing to copy')
+      return
+    }
+    void navigator.clipboard.writeText(text).then(
+      () => success(`${label} copied`),
+      () => toastError('Could not copy'),
+    )
+  }
+
+  function openSavedLinkedin() {
+    const raw = linkedinSearchUrl.trim()
+    if (!raw) {
+      toastError('Enter a URL first')
+      return
+    }
+    try {
+      const href = raw.startsWith('http://') || raw.startsWith('https://') ? raw : `https://${raw}`
+      const u = new URL(href)
+      window.open(u.href, '_blank', 'noopener,noreferrer')
+    } catch {
+      toastError('Invalid URL')
+    }
+  }
 
   if (posQ.isLoading || !position) {
     return <p className="text-ink-muted text-sm">Loading…</p>
@@ -629,31 +696,32 @@ export function PositionDetailPage() {
               <ChevronRight className="ml-1 inline h-4 w-4 opacity-50" aria-hidden />
             </Link>
             {hl && active ? (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5">
                 <button
                   type="button"
                   title="Mark hired"
                   aria-label="Mark hired"
                   onClick={() => {
+                    if (!window.confirm('Are you sure you want to mark this candidate as hired?')) return
                     const close = window.confirm('Also mark open tasks for this candidate as done?')
-                    void updateCandidateOutcome.mutateAsync({ candidateId: c.id, outcome: 'hired', closeTasks: close })
+                    void setCandidateOutcome.mutateAsync({ candidateId: c.id, outcome: 'hired', closeTasks: close })
                   }}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-600/35 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+                  className="border-line flex h-7 w-7 items-center justify-center rounded-md border bg-white text-stone-800 hover:bg-stone-50 dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800"
                 >
-                  <CheckCircle className="h-4 w-4" aria-hidden />
+                  <Check className="h-3.5 w-3.5 stroke-[2.5]" aria-hidden />
                 </button>
                 <button
                   type="button"
                   title="Mark rejected"
                   aria-label="Mark rejected"
                   onClick={() => {
-                    if (!window.confirm(`Reject ${c.full_name}?`)) return
-                    const close = window.confirm('Mark open tasks for this candidate as done?')
-                    void updateCandidateOutcome.mutateAsync({ candidateId: c.id, outcome: 'rejected', closeTasks: close })
+                    if (!window.confirm('Are you sure you want to reject this candidate?')) return
+                    const close = window.confirm('Also mark open tasks for this candidate as done?')
+                    void setCandidateOutcome.mutateAsync({ candidateId: c.id, outcome: 'rejected', closeTasks: close })
                   }}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/35 bg-red-500/10 text-red-800 dark:text-red-200"
+                  className="border-line flex h-7 w-7 items-center justify-center rounded-md border bg-white text-stone-800 hover:bg-stone-50 dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800"
                 >
-                  <XCircle className="h-4 w-4" aria-hidden />
+                  <X className="h-3.5 w-3.5 stroke-[2.5]" aria-hidden />
                 </button>
               </div>
             ) : null}
@@ -685,6 +753,27 @@ export function PositionDetailPage() {
                 {s.name}
               </option>
             ))}
+          </select>
+        </label>
+        <label className="mt-2 block text-xs font-medium">
+          Outcome
+          <select
+            key={`${c.id}-${c.outcome}`}
+            value={c.outcome}
+            disabled={setCandidateOutcome.isPending}
+            onChange={(e) => {
+              const v = e.target.value as 'active' | 'hired' | 'rejected' | 'withdrawn'
+              if (v === c.outcome) return
+              if (!window.confirm('Are you sure you want to change this candidate’s outcome?')) return
+              const closeTasks = v !== 'active' ? window.confirm('Also mark open tasks for this candidate as done?') : false
+              void setCandidateOutcome.mutateAsync({ candidateId: c.id, outcome: v, closeTasks })
+            }}
+            className="border-line mt-1 w-full rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
+          >
+            <option value="active">Active</option>
+            <option value="hired">Hired</option>
+            <option value="rejected">Rejected</option>
+            <option value="withdrawn">Withdrawn</option>
           </select>
         </label>
         <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -732,41 +821,54 @@ export function PositionDetailPage() {
         subtitle={company?.name}
         backTo="/positions"
         right={
-          !terminalPosition ? (
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                title="Mark role fulfilled"
-                aria-label="Mark role fulfilled"
-                onClick={() => {
-                  if (window.confirm('Mark this role fulfilled (placed / done)?')) void setPositionTerminal.mutateAsync('success')
-                }}
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-600/30 bg-emerald-500/12 text-emerald-800 shadow-sm transition hover:bg-emerald-500/20 dark:border-emerald-500/35 dark:text-emerald-200"
-              >
-                <PartyPopper className="h-4 w-4" aria-hidden />
-              </button>
-              <button
-                type="button"
-                title="Mark role withdrawn"
-                aria-label="Mark role withdrawn"
-                onClick={() => {
-                  if (window.confirm('Mark role withdrawn (client pulled the req)?')) void setPositionTerminal.mutateAsync('cancelled')
-                }}
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-red-500/35 bg-red-500/10 text-red-800 shadow-sm transition hover:bg-red-500/15 dark:text-red-200"
-              >
-                <Ban className="h-4 w-4" aria-hidden />
-              </button>
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <span className="border-line rounded-full border bg-white/80 px-2.5 py-1 text-xs font-semibold dark:bg-stone-800">
-                {status === 'success' ? 'Fulfilled' : 'Withdrawn'}
-              </span>
-              <button type="button" onClick={() => void reopenPosition.mutateAsync()} className="text-accent text-xs font-semibold underline">
-                Reopen
-              </button>
-            </div>
-          )
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <button
+              type="button"
+              title="Role setup: recruitment stages & Excel import"
+              aria-label="Role setup: recruitment stages and import candidates"
+              onClick={() => setPositionSetupOpen(true)}
+              className="border-line flex h-9 w-9 items-center justify-center rounded-xl border bg-white/90 text-stone-700 shadow-sm transition hover:bg-stone-100 dark:border-line-dark dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
+            >
+              <Settings className="h-4 w-4" aria-hidden />
+            </button>
+            {!terminalPosition ? (
+              <>
+                <button
+                  type="button"
+                  title="Mark role fulfilled"
+                  aria-label="Mark role fulfilled"
+                  onClick={() => {
+                    if (!window.confirm('Are you sure you want to mark this role as fulfilled?')) return
+                    void setPositionTerminal.mutateAsync('success')
+                  }}
+                  className="border-line flex h-9 w-9 items-center justify-center rounded-xl border border-stone-300 bg-white text-stone-800 shadow-sm transition hover:bg-stone-50 dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800"
+                >
+                  <Check className="h-4 w-4 stroke-[2.5]" aria-hidden />
+                </button>
+                <button
+                  type="button"
+                  title="Mark role withdrawn"
+                  aria-label="Mark role withdrawn"
+                  onClick={() => {
+                    if (!window.confirm('Are you sure you want to mark this role as withdrawn?')) return
+                    void setPositionTerminal.mutateAsync('cancelled')
+                  }}
+                  className="border-line flex h-9 w-9 items-center justify-center rounded-xl border border-stone-300 bg-white text-stone-800 shadow-sm transition hover:bg-stone-50 dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800"
+                >
+                  <X className="h-4 w-4 stroke-[2.5]" aria-hidden />
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="border-line rounded-full border bg-white/80 px-2.5 py-1 text-xs font-semibold dark:bg-stone-800">
+                  {status === 'success' ? 'Fulfilled' : 'Withdrawn'}
+                </span>
+                <button type="button" onClick={() => void reopenPosition.mutateAsync()} className="text-accent text-xs font-semibold underline">
+                  Reopen
+                </button>
+              </>
+            )}
+          </div>
         }
       />
 
@@ -783,19 +885,61 @@ export function PositionDetailPage() {
             Title
             <input value={title} onChange={(e) => setTitle(e.target.value)} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
           </label>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium">Role status</span>
+            {!terminalPosition ? (
+              <div className="flex flex-wrap gap-2">
+                {(['pending', 'in_progress'] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    disabled={setOpenPositionStatus.isPending}
+                    onClick={() => void setOpenPositionStatus.mutateAsync(s)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                      status === s ? 'bg-accent text-white' : 'border-line border bg-white/80 hover:bg-stone-50 dark:border-line-dark dark:bg-stone-900/50 dark:hover:bg-stone-800'
+                    }`}
+                  >
+                    {s === 'pending' ? 'Pending' : 'In progress'}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  disabled={setPositionTerminal.isPending}
+                  onClick={() => {
+                    if (!window.confirm('Are you sure you want to mark this role as fulfilled?')) return
+                    void setPositionTerminal.mutateAsync('success')
+                  }}
+                  className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                    status === 'success' ? 'bg-emerald-700 text-white' : 'border-line border bg-white/80 hover:bg-stone-50 dark:border-line-dark dark:bg-stone-900/50 dark:hover:bg-stone-800'
+                  }`}
+                >
+                  Fulfilled
+                </button>
+                <button
+                  type="button"
+                  disabled={setPositionTerminal.isPending}
+                  onClick={() => {
+                    if (!window.confirm('Are you sure you want to mark this role as withdrawn?')) return
+                    void setPositionTerminal.mutateAsync('cancelled')
+                  }}
+                  className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                    status === 'cancelled' ? 'bg-stone-600 text-white' : 'border-line border bg-white/80 hover:bg-stone-50 dark:border-line-dark dark:bg-stone-900/50 dark:hover:bg-stone-800'
+                  }`}
+                >
+                  Withdrawn
+                </button>
+              </div>
+            ) : (
+              <p className="text-ink-muted text-xs">
+                This role is closed — use <span className="font-semibold">Reopen</span> in the header to work it again, or adjust status after reopening.
+              </p>
+            )}
+          </div>
+
           <details className="rounded-xl border border-stone-200/80 bg-stone-50/50 p-3 dark:border-stone-600 dark:bg-stone-900/30">
-            <summary className="cursor-pointer text-sm font-semibold">Advanced status & fees</summary>
+            <summary className="cursor-pointer text-sm font-semibold">Advanced fees & milestones</summary>
             <div className="mt-3 flex flex-col gap-3">
-              <label className="text-sm font-medium">
-                Status (manual)
-                <select value={status} onChange={(e) => setStatus(e.target.value)} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50">
-                  {['pending', 'in_progress', 'success', 'cancelled'].map((s) => (
-                    <option key={s} value={s}>
-                      {s.replace('_', ' ')}
-                    </option>
-                  ))}
-                </select>
-              </label>
               <label className="text-sm font-medium">
                 Critical stage threshold (sort order ≥ this = milestone)
                 <input
@@ -821,10 +965,74 @@ export function PositionDetailPage() {
             Requirements
             <textarea value={requirements} onChange={(e) => setRequirements(e.target.value)} rows={4} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
           </label>
-          <label className="text-sm font-medium">
-            Welcome approach (1)
-            <textarea value={welcome1} onChange={(e) => setWelcome1(e.target.value)} rows={3} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
-          </label>
+
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-medium">LinkedIn saved search</span>
+              <button
+                type="button"
+                onClick={() => openSavedLinkedin()}
+                disabled={!linkedinSearchUrl.trim()}
+                className="border-line flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-white/90 text-[#006384] shadow-sm hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-line-dark dark:bg-stone-800 dark:text-cyan-300 dark:hover:bg-stone-700"
+                title="Open saved LinkedIn URL in a new tab"
+                aria-label="Open LinkedIn saved search in new tab"
+              >
+                <ExternalLink className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+            <input
+              value={linkedinSearchUrl}
+              onChange={(e) => setLinkedinSearchUrl(e.target.value)}
+              placeholder="https://www.linkedin.com/search/results/people/?..."
+              className="border-line mt-1 w-full rounded-xl border px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/50"
+            />
+            <p className="text-ink-muted text-xs">Paste your LinkedIn people search URL; open it anytime with the link icon (after saving).</p>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">Welcome approach (1)</span>
+                <button
+                  type="button"
+                  onClick={() => copyWelcomeSnippet(welcome1, 'Welcome 1')}
+                  className="border-line flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-white/90 shadow-sm hover:bg-stone-50 dark:border-line-dark dark:bg-stone-800 dark:hover:bg-stone-700"
+                  aria-label="Copy welcome approach 1"
+                >
+                  <Copy className="h-4 w-4" aria-hidden />
+                </button>
+              </div>
+              <textarea value={welcome1} onChange={(e) => setWelcome1(e.target.value)} rows={3} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
+            </div>
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">Welcome approach (2)</span>
+                <button
+                  type="button"
+                  onClick={() => copyWelcomeSnippet(welcome2, 'Welcome 2')}
+                  className="border-line flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-white/90 shadow-sm hover:bg-stone-50 dark:border-line-dark dark:bg-stone-800 dark:hover:bg-stone-700"
+                  aria-label="Copy welcome approach 2"
+                >
+                  <Copy className="h-4 w-4" aria-hidden />
+                </button>
+              </div>
+              <textarea value={welcome2} onChange={(e) => setWelcome2(e.target.value)} rows={3} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
+            </div>
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">Welcome approach (3)</span>
+                <button
+                  type="button"
+                  onClick={() => copyWelcomeSnippet(welcome3, 'Welcome 3')}
+                  className="border-line flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-white/90 shadow-sm hover:bg-stone-50 dark:border-line-dark dark:bg-stone-800 dark:hover:bg-stone-700"
+                  aria-label="Copy welcome approach 3"
+                >
+                  <Copy className="h-4 w-4" aria-hidden />
+                </button>
+              </div>
+              <textarea value={welcome3} onChange={(e) => setWelcome3(e.target.value)} rows={3} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
+            </div>
+          </div>
           <button type="submit" className="bg-accent text-stone-50 w-fit rounded-full px-5 py-2 text-sm font-semibold" disabled={savePos.isPending}>
             Save
           </button>
@@ -885,72 +1093,32 @@ export function PositionDetailPage() {
       </section>
 
       <section>
-        <h2 className="font-display font-semibold">Recruitment stages</h2>
-        <ul className="mt-3 space-y-2">
-          {(stagesQ.data ?? []).map((s, idx) => (
-            <li key={s.id} className="border-line bg-white/60 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/40">
-              <span>
-                {s.name} <span className="text-ink-muted text-xs">(order {s.sort_order})</span>
-              </span>
-              <span className="flex gap-1">
-                <button type="button" className="rounded-lg border px-2 py-1 text-xs dark:border-line-dark" onClick={() => void moveStage(s.id, -1)} disabled={idx === 0}>
-                  Up
-                </button>
-                <button type="button" className="rounded-lg border px-2 py-1 text-xs dark:border-line-dark" onClick={() => void moveStage(s.id, 1)} disabled={idx === (stagesQ.data ?? []).length - 1}>
-                  Down
-                </button>
-              </span>
-            </li>
-          ))}
-        </ul>
-        <form
-          className="mt-3 flex flex-wrap gap-2"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void addStage.mutateAsync()
-          }}
-        >
-          <input
-            value={newStageName}
-            onChange={(e) => setNewStageName(e.target.value)}
-            placeholder="New stage name"
-            className="border-line min-w-[12rem] flex-1 rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-          />
-          <button type="submit" className="bg-ink/90 text-paper rounded-full px-4 py-2 text-sm font-medium dark:bg-stone-200 dark:text-stone-900">
-            Add stage
-          </button>
-        </form>
-      </section>
-
-      <section>
-        <h2 className="font-display font-semibold">Import candidates (Excel)</h2>
-        <p className="text-ink-muted mt-1 text-sm">Upload a spreadsheet with one row per candidate. We detect columns by header names (name, email, phone).</p>
-        <input
-          ref={excelImportRef}
-          type="file"
-          accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-          className="sr-only"
-          onChange={(e) => {
-            void onExcel(e.target.files?.[0] ?? null)
-            e.target.value = ''
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => excelImportRef.current?.click()}
-          className="border-line mt-3 inline-flex w-full max-w-md items-center justify-center gap-2 rounded-xl border bg-white/80 px-4 py-3 text-sm font-semibold shadow-sm dark:border-line-dark dark:bg-stone-900/60 sm:w-auto"
-        >
-          <Upload className="h-4 w-4 shrink-0" aria-hidden />
-          Choose Excel file
-        </button>
-        <p className="text-ink-muted mt-2 text-xs">Supported: .xlsx, .xls. No file is uploaded until you confirm the import.</p>
-        {importError ? <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">{importError}</p> : null}
-      </section>
-
-      <section>
         <h2 className="font-display font-semibold">Candidates</h2>
+        <p className="text-ink-muted mt-2 text-sm">Filter by candidate outcome (multi-select). Default shows active pipeline only.</p>
+        <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Filter candidates by outcome">
+          {(
+            [
+              { id: 'active', label: 'Active' },
+              { id: 'hired', label: 'Hired' },
+              { id: 'rejected', label: 'Rejected' },
+              { id: 'withdrawn', label: 'Withdrawn' },
+            ] as const
+          ).map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => toggleOutcomeFilter(id)}
+              className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                outcomeFilter.has(id) ? 'bg-accent text-white' : 'border-line border bg-white/80 dark:border-line-dark dark:bg-stone-900/50'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         <form
-          className="border-line bg-white/60 mt-3 grid gap-2 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40 sm:grid-cols-2"
+          className="border-line bg-white/60 mt-4 grid gap-2 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40 sm:grid-cols-2"
           onSubmit={(e) => {
             e.preventDefault()
             void addCandidate.mutateAsync()
@@ -995,22 +1163,85 @@ export function PositionDetailPage() {
           }}
         />
 
-        <div className="mt-8">
-          <h3 className="font-display text-base font-semibold tracking-tight">Currently participating</h3>
-          <p className="text-ink-muted mt-1 text-xs">Candidates still in your pipeline and stage flow for this role.</p>
-          <ul className="mt-3 space-y-3">
-            {activeCandidates.length === 0 ? <li className="text-ink-muted text-sm">No active candidates yet.</li> : activeCandidates.map(renderCandidateCard)}
-          </ul>
-        </div>
-
-        {pastCandidates.length > 0 ? (
-          <div className="mt-8">
-            <h3 className="font-display text-base font-semibold tracking-tight">Previously participated</h3>
-            <p className="text-ink-muted mt-1 text-xs">Hired, rejected, or otherwise no longer active on this role.</p>
-            <ul className="mt-3 space-y-3">{pastCandidates.map(renderCandidateCard)}</ul>
-          </div>
-        ) : null}
+        <ul className="mt-4 space-y-3">
+          {filteredCandidates.length === 0 ? (
+            <li className="text-ink-muted text-sm">No candidates match the selected filters.</li>
+          ) : (
+            filteredCandidates.map(renderCandidateCard)
+          )}
+        </ul>
       </section>
+
+      <Modal open={positionSetupOpen} onClose={() => setPositionSetupOpen(false)} title="Role setup" size="lg">
+        <div className="max-h-[min(70vh,32rem)] space-y-8 overflow-y-auto pr-1">
+          <div>
+            <h3 className="font-display font-semibold">Recruitment stages</h3>
+            <ul className="mt-3 space-y-2">
+              {(stagesQ.data ?? []).map((s, idx) => (
+                <li key={s.id} className="border-line bg-white/60 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/40">
+                  <span>
+                    {s.name} <span className="text-ink-muted text-xs">(order {s.sort_order})</span>
+                  </span>
+                  <span className="flex gap-1">
+                    <button type="button" className="rounded-lg border px-2 py-1 text-xs dark:border-line-dark" onClick={() => void moveStage(s.id, -1)} disabled={idx === 0}>
+                      Up
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border px-2 py-1 text-xs dark:border-line-dark"
+                      onClick={() => void moveStage(s.id, 1)}
+                      disabled={idx === (stagesQ.data ?? []).length - 1}
+                    >
+                      Down
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <form
+              className="mt-3 flex flex-wrap gap-2"
+              onSubmit={(e) => {
+                e.preventDefault()
+                void addStage.mutateAsync()
+              }}
+            >
+              <input
+                value={newStageName}
+                onChange={(e) => setNewStageName(e.target.value)}
+                placeholder="New stage name"
+                className="border-line min-w-[12rem] flex-1 rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+              />
+              <button type="submit" className="bg-ink/90 text-paper rounded-full px-4 py-2 text-sm font-medium dark:bg-stone-200 dark:text-stone-900">
+                Add stage
+              </button>
+            </form>
+          </div>
+          <div>
+            <h3 className="font-display font-semibold">Import candidates (Excel)</h3>
+            <p className="text-ink-muted mt-1 text-sm">Upload a spreadsheet with one row per candidate. We detect columns by header names (name, email, phone).</p>
+            <input
+              ref={excelImportRef}
+              type="file"
+              accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              className="sr-only"
+              onChange={(e) => {
+                void onExcel(e.target.files?.[0] ?? null)
+                e.target.value = ''
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => excelImportRef.current?.click()}
+              className="border-line mt-3 inline-flex w-full max-w-md items-center justify-center gap-2 rounded-xl border bg-white/80 px-4 py-3 text-sm font-semibold shadow-sm dark:border-line-dark dark:bg-stone-900/60 sm:w-auto"
+            >
+              <Upload className="h-4 w-4 shrink-0" aria-hidden />
+              Choose Excel file
+            </button>
+            <p className="text-ink-muted mt-2 text-xs">Supported: .xlsx, .xls. No file is uploaded until you confirm the import.</p>
+            {importError ? <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">{importError}</p> : null}
+          </div>
+        </div>
+      </Modal>
 
       <section>
         <h2 className="font-display font-semibold">Tasks for this role</h2>

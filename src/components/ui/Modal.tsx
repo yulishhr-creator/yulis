@@ -8,14 +8,14 @@ type ModalProps = {
   title: string
   children: React.ReactNode
   /** Narrow width for quick edits */
-  size?: 'sm' | 'md'
+  size?: 'sm' | 'md' | 'lg'
 }
 
 export function Modal({ open, onClose, title, children, size = 'md' }: ModalProps) {
   const reduceMotion = useReducedMotion()
   if (!open) return null
 
-  const maxW = size === 'sm' ? 'max-w-sm' : 'max-w-md'
+  const maxW = size === 'sm' ? 'max-w-sm' : size === 'lg' ? 'max-w-2xl' : 'max-w-md'
 
   return createPortal(
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4" role="presentation">
