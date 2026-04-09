@@ -179,18 +179,9 @@ export function buildQuickFabActions(opts: {
     return [trackTime(), createTask(), createPosition(), calendar(), email(), reminder()]
   }
 
-  const assignCandidate = (): QuickFabAction => ({
-    id: 'assign-candidate',
-    title: 'Assign candidate',
-    subtitle: 'Move someone to another open role',
-    icon: UserPlus,
-    iconBgClass: iconUser,
-    onSelect: done(() => navigate('/?assignCandidate=1')),
-  })
-
   // Dashboard home
   if (pathname === '/') {
-    return [createPosition(), createTask(), assignCandidate(), calendar(), email(), reminder()]
+    return [createPosition(), createTask(), calendar(), email(), reminder()]
   }
 
   // Settings, profile, templates, etc.

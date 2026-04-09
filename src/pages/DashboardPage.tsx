@@ -1,7 +1,7 @@
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Check, ChevronDown, Timer, ListFilter, Plus, UserPlus, Users } from 'lucide-react'
+import { Check, ChevronDown, Timer, ListFilter, Plus, Users } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { differenceInCalendarDays } from 'date-fns'
 
@@ -11,8 +11,6 @@ import { formatDue } from '@/lib/dates'
 import { Modal } from '@/components/ui/Modal'
 import { useWorkTimer } from '@/work/WorkTimerContext'
 import { useToast } from '@/hooks/useToast'
-import { logActivityEvent } from '@/lib/activityLog'
-
 function positionStatusPill(status: string): { label: string; className: string } {
   switch (status) {
     case 'pending':
@@ -68,10 +66,6 @@ export function DashboardPage() {
   const [newTaskTitle, setNewTaskTitle] = useState('')
   const [newTaskDue, setNewTaskDue] = useState('')
   const [newTaskPositionId, setNewTaskPositionId] = useState('')
-  const [assignModalOpen, setAssignModalOpen] = useState(false)
-  const [assignCandId, setAssignCandId] = useState('')
-  const [assignTargetPosId, setAssignTargetPosId] = useState('')
-
   const tasksQ = useQuery({
     queryKey: ['dashboard-tasks', uid],
     enabled: Boolean(supabase && uid),
@@ -194,37 +188,6 @@ export function DashboardPage() {
     },
   })
 
-  const assignCandidatesQ = useQuery({
-    queryKey: ['dashboard-assign-candidates', uid],
-    enabled: Boolean(supabase && uid && assignModalOpen),
-    queryFn: async () => {
-      const { data, error } = await supabase!
-        .from('candidates')
-        .select('id, full_name, outcome, position_id, positions ( title, companies ( name ) )')
-        .eq('user_id', uid!)
-        .is('deleted_at', null)
-        .order('full_name')
-      if (error) throw error
-      return data ?? []
-    },
-  })
-
-  const assignPositionsQ = useQuery({
-    queryKey: ['dashboard-assign-positions', uid],
-    enabled: Boolean(supabase && uid && assignModalOpen),
-    queryFn: async () => {
-      const { data, error } = await supabase!
-        .from('positions')
-        .select('id, title, status, companies ( name )')
-        .eq('user_id', uid!)
-        .is('deleted_at', null)
-        .in('status', ['pending', 'in_progress'])
-        .order('title')
-      if (error) throw error
-      return data ?? []
-    },
-  })
-
   const timerPositionsQ = useQuery({
     queryKey: ['dashboard-timer-positions', uid],
     enabled: Boolean(supabase && uid),
@@ -309,21 +272,6 @@ export function DashboardPage() {
     )
   }, [searchParams, setSearchParams])
 
-  useEffect(() => {
-    if (searchParams.get('assignCandidate') !== '1') return
-    setAssignCandId('')
-    setAssignTargetPosId('')
-    setAssignModalOpen(true)
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev)
-        next.delete('assignCandidate')
-        return next
-      },
-      { replace: true },
-    )
-  }, [searchParams, setSearchParams])
-
   const addTaskFromDashboard = useMutation({
     mutationFn: async () => {
       if (!newTaskPositionId.trim()) throw new Error('Choose a position')
@@ -350,108 +298,6 @@ export function DashboardPage() {
     },
     onError: (e: Error) => toastError(e.message),
   })
-
-  const assignCandidateMut = useMutation({
-    mutationFn: async () => {
-      if (!assignCandId.trim() || !assignTargetPosId.trim()) throw new Error('Choose a candidate and a role')
-      const { data: cand, error: cErr } = await supabase!
-        .from('candidates')
-        .select('id, full_name, position_id, positions ( title, companies ( name ) )')
-        .eq('id', assignCandId.trim())
-        .eq('user_id', uid!)
-        .single()
-      if (cErr || !cand) throw new Error('Candidate not found')
-      const oldPid = cand.position_id as string
-      const newPid = assignTargetPosId.trim()
-      if (oldPid === newPid) throw new Error('Pick a different role than the one they’re on now.')
-
-      const { data: st } = await supabase!
-        .from('position_stages')
-        .select('id')
-        .eq('position_id', newPid)
-        .eq('user_id', uid!)
-        .order('sort_order')
-        .limit(1)
-        .maybeSingle()
-
-      const { error: uErr } = await supabase!
-        .from('candidates')
-        .update({ position_id: newPid, position_stage_id: st?.id ?? null })
-        .eq('id', assignCandId.trim())
-        .eq('user_id', uid!)
-      if (uErr) throw uErr
-
-      await supabase!
-        .from('tasks')
-        .update({ position_id: newPid })
-        .eq('candidate_id', assignCandId.trim())
-        .eq('user_id', uid!)
-
-      const { data: newPos } = await supabase!
-        .from('positions')
-        .select('title, companies ( name )')
-        .eq('id', newPid)
-        .single()
-
-      const oldPos = cand.positions as unknown as { title: string; companies: { name: string } | null } | null
-      const newCo = newPos?.companies as unknown as { name: string } | null
-      const oldTitle = oldPos?.title ?? 'Previous role'
-      const newTitle = (newPos?.title as string) ?? 'Role'
-      const newLabel = newCo?.name ? `${newTitle} (${newCo.name})` : newTitle
-
-      return {
-        candidateId: assignCandId.trim(),
-        oldPid,
-        newPid,
-        name: cand.full_name as string,
-        oldTitle,
-        newLabel,
-      }
-    },
-    onSuccess: async (ctx) => {
-      await logActivityEvent(supabase!, uid!, {
-        event_type: 'candidate_reassigned',
-        position_id: ctx.newPid,
-        candidate_id: ctx.candidateId,
-        title: `${ctx.name} joined this role`,
-        subtitle: `From ${ctx.oldTitle}`,
-        metadata: { from_position_id: ctx.oldPid },
-      })
-      await logActivityEvent(supabase!, uid!, {
-        event_type: 'candidate_reassigned',
-        position_id: ctx.oldPid,
-        candidate_id: ctx.candidateId,
-        title: `${ctx.name} moved to another role`,
-        subtitle: ctx.newLabel,
-        metadata: { to_position_id: ctx.newPid },
-      })
-      success('Candidate assigned to role')
-      setAssignModalOpen(false)
-      setAssignCandId('')
-      setAssignTargetPosId('')
-      await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
-      await qc.invalidateQueries({ queryKey: ['dashboard-top-positions'] })
-      await qc.invalidateQueries({ queryKey: ['dashboard-pipeline-stats'] })
-      await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
-      await qc.invalidateQueries({ queryKey: ['position-candidates'] })
-      await qc.invalidateQueries({ queryKey: ['position-activity'] })
-      await qc.invalidateQueries({ queryKey: ['positions'] })
-      await qc.invalidateQueries({ queryKey: ['notification-count'] })
-    },
-    onError: (e: Error) => toastError(e.message),
-  })
-
-  const assignCandRow = useMemo(
-    () => (assignCandidatesQ.data ?? []).find((c) => c.id === assignCandId),
-    [assignCandidatesQ.data, assignCandId],
-  )
-
-  const assignPositionChoices = useMemo(() => {
-    const rows = assignPositionsQ.data ?? []
-    const cur = assignCandRow?.position_id as string | undefined
-    if (!cur) return rows
-    return rows.filter((p) => p.id !== cur)
-  }, [assignPositionsQ.data, assignCandRow])
 
   const pipelineHints = useMemo(() => {
     const rows = topPositionsQ.data ?? []
@@ -553,15 +399,6 @@ export function DashboardPage() {
                 Track time
               </button>
             </motion.div>
-            <motion.div className="min-w-0 flex-1 sm:flex-none" whileHover={reduceMotion ? undefined : { scale: 1.02 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
-              <Link
-                to="/?assignCandidate=1"
-                className="border-[#006384]/35 inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-full border-2 bg-stone-900/5 px-3 py-2 text-xs font-bold text-[#0c4a6e] shadow-sm dark:border-cyan-500/35 dark:bg-stone-800/80 dark:text-cyan-200 sm:w-auto sm:px-4 sm:text-sm"
-              >
-                <UserPlus className="h-3.5 w-3.5 shrink-0 text-[#006384] dark:text-cyan-300 sm:h-4 sm:w-4" aria-hidden />
-                Assign candidate
-              </Link>
-            </motion.div>
           </div>
         </div>
       </motion.section>
@@ -574,7 +411,10 @@ export function DashboardPage() {
           transition={{ duration: 0.35 }}
         >
           <h2 className="sr-only">Task counts</h2>
-          <article className="grid grid-cols-3 gap-0 overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-[0_16px_40px_rgba(48,46,43,0.07)] dark:border-stone-600 dark:bg-stone-900 dark:shadow-[0_16px_40px_rgba(0,0,0,0.25)] md:rounded-3xl">
+          <p className="font-stitch-head text-sm font-semibold tracking-tight text-[#302e2b] dark:text-stone-200">
+            Everything open — sorted by due date.
+          </p>
+          <article className="mt-3 grid grid-cols-3 gap-0 overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-[0_16px_40px_rgba(48,46,43,0.07)] dark:border-stone-600 dark:bg-stone-900 dark:shadow-[0_16px_40px_rgba(0,0,0,0.25)] md:rounded-3xl">
             <div className="flex flex-col items-center justify-center border-r border-stone-200/70 px-2 py-4 text-center dark:border-stone-600 sm:px-4 sm:py-5">
               <span className="font-stitch-label mb-0.5 text-[10px] font-bold tracking-[0.18em] text-[#165c25] uppercase dark:text-emerald-400">
                 To do
@@ -919,92 +759,6 @@ export function DashboardPage() {
               className="rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] py-2.5 text-sm font-bold text-white disabled:opacity-50"
             >
               {addTaskFromDashboard.isPending ? 'Saving…' : 'Save task'}
-            </button>
-          </form>
-        )}
-      </Modal>
-
-      <Modal
-        open={assignModalOpen}
-        onClose={() => {
-          setAssignModalOpen(false)
-          setAssignCandId('')
-          setAssignTargetPosId('')
-        }}
-        title="Assign candidate"
-        size="md"
-      >
-        <p className="text-ink-muted mb-3 text-sm">
-          Move someone to another open role. Their pipeline stage resets to the first stage on the new role.
-        </p>
-        {assignCandidatesQ.isLoading || assignPositionsQ.isLoading ? (
-          <p className="text-sm">Loading…</p>
-        ) : (assignCandidatesQ.data ?? []).length === 0 ? (
-          <p className="text-sm">No candidates yet. Add people from a position first.</p>
-        ) : (assignPositionsQ.data ?? []).length === 0 ? (
-          <p className="text-sm">No open roles. Create or reopen a position first.</p>
-        ) : (
-          <form
-            className="flex flex-col gap-3"
-            onSubmit={(e) => {
-              e.preventDefault()
-              void assignCandidateMut.mutateAsync()
-            }}
-          >
-            <label className="flex flex-col gap-1 text-sm font-medium">
-              Candidate
-              <select
-                value={assignCandId}
-                onChange={(e) => {
-                  setAssignCandId(e.target.value)
-                  setAssignTargetPosId('')
-                }}
-                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                required
-              >
-                <option value="">Select a candidate…</option>
-                {(assignCandidatesQ.data ?? []).map((c) => {
-                  const pos = c.positions as unknown as { title: string; companies: { name: string } | null } | null
-                  const co = pos?.companies?.name
-                  const label = `${c.full_name} · ${pos?.title ?? 'Role'}${co ? ` (${co})` : ''} · ${String(c.outcome).replace('_', ' ')}`
-                  return (
-                    <option key={c.id} value={c.id}>
-                      {label}
-                    </option>
-                  )
-                })}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-sm font-medium">
-              Assign to role
-              <select
-                value={assignTargetPosId}
-                onChange={(e) => setAssignTargetPosId(e.target.value)}
-                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                required
-                disabled={!assignCandId || assignPositionChoices.length === 0}
-              >
-                <option value="">{assignCandId ? 'Select target role…' : 'Pick a candidate first'}</option>
-                {assignPositionChoices.map((row) => {
-                  const co = row.companies as unknown as { name: string } | null
-                  return (
-                    <option key={row.id} value={row.id}>
-                      {row.title}
-                      {co?.name ? ` — ${co.name}` : ''}
-                    </option>
-                  )
-                })}
-              </select>
-            </label>
-            {assignCandId && assignPositionChoices.length === 0 ? (
-              <p className="text-ink-muted text-xs">This candidate is already on every open role. Open another role or pick someone else.</p>
-            ) : null}
-            <button
-              type="submit"
-              disabled={assignCandidateMut.isPending || !assignCandId || !assignTargetPosId || assignPositionChoices.length === 0}
-              className="rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] py-2.5 text-sm font-bold text-white disabled:opacity-50"
-            >
-              {assignCandidateMut.isPending ? 'Saving…' : 'Assign to role'}
             </button>
           </form>
         )}
