@@ -3,11 +3,13 @@ import { useState } from 'react'
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
+import { useToast } from '@/hooks/useToast'
 
 export function EmailTemplatesPage() {
   const { user } = useAuth()
   const supabase = getSupabase()
   const qc = useQueryClient()
+  const { success, error: toastError } = useToast()
   const [name, setName] = useState('')
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
@@ -36,8 +38,10 @@ export function EmailTemplatesPage() {
       setName('')
       setSubject('')
       setBody('')
+      success('Template saved')
       await qc.invalidateQueries({ queryKey: ['email-templates'] })
     },
+    onError: (e: Error) => toastError(e.message),
   })
 
   return (

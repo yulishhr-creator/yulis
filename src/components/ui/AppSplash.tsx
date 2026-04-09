@@ -1,8 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 
-import { AppLogo } from '@/components/ui/AppLogo'
-
 const STORAGE_KEY = 'yulis_splash_seen'
 
 type AppSplashProps = {
@@ -29,7 +27,7 @@ export function AppSplash({ children }: AppSplashProps) {
       }
       return
     }
-    const t = window.setTimeout(() => setShowSplash(false), 1300)
+    const t = window.setTimeout(() => setShowSplash(false), 1000)
     return () => window.clearTimeout(t)
   }, [showSplash, reduceMotion])
 
@@ -72,15 +70,28 @@ export function AppSplash({ children }: AppSplashProps) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
           >
-            <AppLogo size="lg" />
-            <motion.div
-              className="bg-accent h-1 w-24 origin-left rounded-full"
-              initial={{ scaleX: 0 }}
-              animate={{ scaleX: 1 }}
-              transition={{ delay: 0.2, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+            <motion.img
+              src="/lvlup-brand.svg"
+              alt=""
+              className="h-24 w-24 object-contain drop-shadow-md dark:opacity-95"
+              initial={reduceMotion ? false : { opacity: 0, scale: 0.92 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.05, duration: 0.5 }}
             />
+            <div
+              className="border-accent h-10 w-10 animate-spin rounded-full border-2 border-t-transparent dark:border-orange-400 dark:border-t-transparent"
+              aria-hidden
+            />
+            <motion.p
+              className="font-stitch-head text-center text-xl font-extrabold text-[#302e2b] dark:text-stone-100"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.25, duration: 0.5 }}
+            >
+              LvlUp your hiring workflow
+            </motion.p>
             <p className="text-ink-muted max-w-xs text-center text-sm dark:text-stone-400">
-              Exclusive recruiting workspace — tasks, candidates, and clarity in one place.
+              Yuli&apos;s HR — tasks, roles, and candidates in one calm workspace.
             </p>
           </motion.div>
 
@@ -90,7 +101,7 @@ export function AppSplash({ children }: AppSplashProps) {
             animate={{ opacity: 0.7 }}
             transition={{ delay: 0.5 }}
           >
-            Loading experience
+            Loading
           </motion.p>
         </motion.div>
       ) : (

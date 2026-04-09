@@ -1,6 +1,6 @@
 import { Link, NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard,
+  ListTodo,
   Building2,
   Briefcase,
   Settings,
@@ -8,6 +8,8 @@ import {
   User,
   LogOut,
   Bell,
+  CalendarDays,
+  Clock,
 } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
@@ -18,11 +20,15 @@ import { AppLogo } from '@/components/ui/AppLogo'
 import { AnimatedOutlet } from '@/components/layout/AnimatedOutlet'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
+import { useWorkTimer } from '@/work/WorkTimerContext'
+import { useToast } from '@/hooks/useToast'
 
 const nav = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/companies', label: 'Companies', icon: Building2, end: false },
+  { to: '/', label: 'Tasks', icon: ListTodo, end: true },
   { to: '/positions', label: 'Positions', icon: Briefcase, end: false },
+  { to: '/time', label: 'Time', icon: Clock, end: false },
+  { to: '/calendar', label: 'Calendar', icon: CalendarDays, end: false },
+  { to: '/companies', label: 'Clients', icon: Building2, end: false },
   { to: '/notifications', label: 'Notifications', icon: Bell, end: false },
   { to: '/settings', label: 'Settings', icon: Settings, end: false },
 ] as const
@@ -34,12 +40,22 @@ function greeting(): string {
   return 'Good evening'
 }
 
+function formatTimer(sec: number): string {
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  const s = sec % 60
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 export function AppShell() {
   const { user, signOut } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const reduceMotion = useReducedMotion()
   const { data: notificationCount = 0 } = useNotificationCount()
+  const timer = useWorkTimer()
+  const { success, error: toastError } = useToast()
 
   const displayName = user?.user_metadata?.full_name ?? user?.email?.split('@')[0] ?? 'there'
   const metaName = (user?.user_metadata?.full_name as string | undefined) ?? ''
@@ -121,7 +137,7 @@ export function AppShell() {
             Quick
           </div>
           <p className="text-ink-muted mt-2 text-xs leading-relaxed dark:text-stone-500">
-            Tasks first — open <span className="font-semibold text-[#9b3e20] dark:text-orange-300">Alerts</span> for reminders & overdue.
+            Tasks first — the bell counts reminders, overdue tasks, and upcoming calendar items.
           </p>
         </div>
       </aside>
@@ -158,6 +174,15 @@ export function AppShell() {
                     Profile
                   </Link>
                   <Link
+                    to="/calendar"
+                    role="menuitem"
+                    className="hover:bg-[#fd8863]/15 flex items-center gap-2 px-3 py-2.5 text-sm dark:hover:bg-stone-800"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    <CalendarDays className="h-4 w-4 opacity-70" aria-hidden />
+                    Calendar
+                  </Link>
+                  <Link
                     to="/settings"
                     role="menuitem"
                     className="hover:bg-[#fd8863]/15 flex items-center gap-2 px-3 py-2.5 text-sm dark:hover:bg-stone-800"
@@ -188,7 +213,27 @@ export function AppShell() {
             </motion.div>
           </div>
 
-          <div className="flex shrink-0 items-center">
+          <div className="flex shrink-0 items-center gap-2">
+            {timer.open ? (
+              <div className="border-line flex max-w-[min(100%,14rem)] items-center gap-2 rounded-2xl border bg-white/90 px-2 py-1.5 shadow-sm dark:border-line-dark dark:bg-stone-800/90">
+                <Clock className="text-[#9b3e20] h-4 w-4 shrink-0 dark:text-orange-300" aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[10px] font-semibold text-[#302e2b] dark:text-stone-200">{timer.open.positionTitle}</p>
+                  <p className="font-mono text-xs font-bold tabular-nums text-[#006384] dark:text-cyan-300">{formatTimer(timer.elapsedSeconds)}</p>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-2.5 py-1 text-[10px] font-bold text-white uppercase"
+                  onClick={async () => {
+                    const r = await timer.stop()
+                    if (r.error) toastError(r.error)
+                    else success('Time saved')
+                  }}
+                >
+                  Stop
+                </button>
+              </div>
+            ) : null}
             <Link
               to="/notifications"
               className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 shadow-sm transition hover:bg-[#97daff]/30 dark:bg-stone-800/90 dark:hover:bg-cyan-900/40"
@@ -212,7 +257,7 @@ export function AppShell() {
         </main>
       </div>
 
-      <MobileBottomNav badgeCount={notificationCount} />
+      <MobileBottomNav />
     </div>
   )
 }

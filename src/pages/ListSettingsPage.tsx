@@ -24,7 +24,7 @@ export function ListSettingsPage() {
   const { user } = useAuth()
   const supabase = getSupabase()
   const qc = useQueryClient()
-  const { error: toastError } = useToast()
+  const { success, error: toastError } = useToast()
   const [listKey, setListKey] = useState<string>(LIST_CHOICES[0]!.key)
   const [valueToAdd, setValueToAdd] = useState('')
   const [showActiveValues, setShowActiveValues] = useState(true)
@@ -71,6 +71,7 @@ export function ListSettingsPage() {
     },
     onSuccess: async () => {
       setValueToAdd('')
+      success('List value added')
       await qc.invalidateQueries({ queryKey: ['list-items'] })
     },
     onError: (err) => {

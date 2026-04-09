@@ -1,11 +1,16 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Plus, Check, ChevronDown } from 'lucide-react'
+import { Plus, Check, ChevronDown, Timer } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { differenceInCalendarDays } from 'date-fns'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { formatDue } from '@/lib/dates'
+import { Modal } from '@/components/ui/Modal'
+import { useWorkTimer } from '@/work/WorkTimerContext'
+import { useToast } from '@/hooks/useToast'
 
 function positionStatusPill(status: string): { label: string; className: string } {
   switch (status) {
@@ -48,6 +53,11 @@ export function DashboardPage() {
   const reduceMotion = useReducedMotion()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const timer = useWorkTimer()
+  const { success, error: toastError } = useToast()
+  const [trackOpen, setTrackOpen] = useState(false)
+  const [trackPosId, setTrackPosId] = useState('')
+  const [positionsScope, setPositionsScope] = useState<'active' | 'all'>('active')
 
   const tasksQ = useQuery({
     queryKey: ['dashboard-tasks', uid],
@@ -101,26 +111,44 @@ export function DashboardPage() {
   })
 
   const topPositionsQ = useQuery({
-    queryKey: ['dashboard-top-positions', uid],
+    queryKey: ['dashboard-top-positions', uid, positionsScope],
     enabled: Boolean(supabase && uid),
     queryFn: async () => {
-      const { data, error } = await supabase!
+      let q = supabase!
         .from('positions')
         .select(
           `
           id,
           title,
           status,
+          updated_at,
           company_id,
           companies ( name ),
-          candidates ( id, full_name, outcome, position_stage_id, position_stages ( name ) )
+          candidates ( id, full_name, outcome, position_stage_id, updated_at, position_stages ( name ) )
         `,
         )
         .eq('user_id', uid!)
         .is('deleted_at', null)
         .order('updated_at', { ascending: false })
-        .limit(10)
+        .limit(12)
+      if (positionsScope === 'active') q = q.in('status', ['pending', 'in_progress'])
+      const { data, error } = await q
+      if (error) throw error
+      return data ?? []
+    },
+  })
 
+  const timerPositionsQ = useQuery({
+    queryKey: ['dashboard-timer-positions', uid],
+    enabled: Boolean(supabase && uid),
+    queryFn: async () => {
+      const { data, error } = await supabase!
+        .from('positions')
+        .select('id, title, status, companies ( name )')
+        .eq('user_id', uid!)
+        .is('deleted_at', null)
+        .in('status', ['pending', 'in_progress'])
+        .order('title')
       if (error) throw error
       return data ?? []
     },
@@ -128,6 +156,41 @@ export function DashboardPage() {
 
   const tasks = tasksQ.data ?? []
   const kpis = kpisQ.data
+
+  const pipelineHints = useMemo(() => {
+    const rows = topPositionsQ.data ?? []
+    const stuck: string[] = []
+    const stale: string[] = []
+    const now = new Date()
+    for (const p of rows) {
+      const posUpdated = new Date(p.updated_at as string)
+      if (
+        (p.status === 'pending' || p.status === 'in_progress') &&
+        differenceInCalendarDays(now, posUpdated) >= 14
+      ) {
+        stale.push(p.title as string)
+      }
+      const cands =
+        (p.candidates as unknown as Array<{
+          full_name: string
+          outcome: string
+          updated_at: string
+        }>) ?? []
+      for (const c of cands) {
+        if (c.outcome !== 'active') continue
+        if (differenceInCalendarDays(now, new Date(c.updated_at)) >= 7) {
+          stuck.push(`${c.full_name} · ${p.title}`)
+        }
+      }
+    }
+    return { stuck, stale }
+  }, [topPositionsQ.data])
+
+  useEffect(() => {
+    if (!trackOpen) return
+    const rows = timerPositionsQ.data ?? []
+    if (rows.length && !trackPosId) setTrackPosId(rows[0]!.id)
+  }, [trackOpen, timerPositionsQ.data, trackPosId])
 
   const markTaskDone = useMutation({
     mutationFn: async (taskId: string) => {
@@ -177,6 +240,16 @@ export function DashboardPage() {
               >
                 Open alerts
               </Link>
+            </motion.div>
+            <motion.div whileHover={reduceMotion ? undefined : { scale: 1.02 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
+              <button
+                type="button"
+                onClick={() => setTrackOpen(true)}
+                className="border-stitch-on-surface/15 inline-flex items-center gap-2 rounded-full border bg-white/80 px-5 py-2.5 text-sm font-bold text-[#006384] shadow-sm dark:border-stone-600 dark:bg-stone-800 dark:text-cyan-300"
+              >
+                <Timer className="h-4 w-4" aria-hidden />
+                Track time
+              </button>
             </motion.div>
             <motion.div whileHover={reduceMotion ? undefined : { scale: 1.02 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
               <Link
@@ -232,6 +305,33 @@ export function DashboardPage() {
               </span>
             </div>
           </article>
+        </motion.section>
+      ) : null}
+
+      {pipelineHints.stuck.length > 0 || pipelineHints.stale.length > 0 ? (
+        <motion.section
+          className="rounded-2xl border border-amber-200/80 bg-amber-50/50 p-4 dark:border-amber-900/40 dark:bg-amber-950/20"
+          initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <h2 className="font-stitch-head text-lg font-extrabold text-amber-950 dark:text-amber-100">Pipeline health</h2>
+          <p className="text-stitch-muted mt-1 text-xs dark:text-stone-400">
+            Candidates active with no update in 7+ days; open roles with no update in 14+ days.
+          </p>
+          {pipelineHints.stuck.length ? (
+            <ul className="mt-2 list-inside list-disc text-sm text-amber-950 dark:text-amber-50">
+              {pipelineHints.stuck.slice(0, 6).map((s) => (
+                <li key={s}>{s}</li>
+              ))}
+            </ul>
+          ) : null}
+          {pipelineHints.stale.length ? (
+            <ul className="mt-2 list-inside list-disc text-sm text-amber-900/90 dark:text-amber-100/90">
+              {pipelineHints.stale.slice(0, 6).map((s) => (
+                <li key={s}>Stale role: {s}</li>
+              ))}
+            </ul>
+          ) : null}
         </motion.section>
       ) : null}
 
@@ -319,13 +419,82 @@ export function DashboardPage() {
         )}
       </section>
 
+      <Modal open={trackOpen} onClose={() => setTrackOpen(false)} title="Track time on a role">
+        <p className="text-ink-muted mb-3 text-sm">Every session is tied to a position. Stop the header timer when you are done.</p>
+        {timer.open ? (
+          <p className="mb-3 text-sm font-medium text-[#9b3e20] dark:text-orange-300">A timer is already running — stop it first.</p>
+        ) : null}
+        {timerPositionsQ.isLoading ? (
+          <p className="text-sm">Loading roles…</p>
+        ) : (timerPositionsQ.data ?? []).length === 0 ? (
+          <p className="text-sm">No active positions. Create or reopen a role first.</p>
+        ) : (
+          <>
+            <label className="mb-3 flex flex-col gap-1 text-sm">
+              Position
+              <select
+                value={trackPosId}
+                onChange={(e) => setTrackPosId(e.target.value)}
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+              >
+                {(timerPositionsQ.data ?? []).map((row) => {
+                  const co = row.companies as unknown as { name: string } | null
+                  return (
+                    <option key={row.id} value={row.id}>
+                      {row.title}
+                      {co?.name ? ` — ${co.name}` : ''}
+                    </option>
+                  )
+                })}
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={Boolean(timer.open) || !trackPosId}
+              className="w-full rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] py-2.5 text-sm font-bold text-white disabled:opacity-50"
+              onClick={async () => {
+                const row = (timerPositionsQ.data ?? []).find((r) => r.id === trackPosId)
+                const title = row?.title ?? 'Role'
+                const r = await timer.start(trackPosId, title)
+                if (r.error) toastError(r.error)
+                else {
+                  success('Timer started')
+                  setTrackOpen(false)
+                  await qc.invalidateQueries({ queryKey: ['notification-count'] })
+                }
+              }}
+            >
+              Start timer
+            </button>
+          </>
+        )}
+      </Modal>
+
       <details className="group border-stitch-on-surface/10 rounded-3xl border bg-white/50 open:bg-white/90 open:shadow-md dark:border-stone-700 dark:bg-stone-900/40 dark:open:bg-stone-900/70">
         <summary className="font-stitch-head flex cursor-pointer list-none items-center justify-between gap-2 rounded-3xl px-4 py-4 text-lg font-extrabold text-[#302e2b] marker:hidden dark:text-stone-100 [&::-webkit-details-marker]:hidden">
           <span>Pipeline overview</span>
           <ChevronDown className="text-stitch-muted h-5 w-5 shrink-0 transition group-open:rotate-180" aria-hidden />
         </summary>
         <div className="border-stitch-on-surface/10 border-t px-4 pb-4 dark:border-stone-700">
-          <p className="text-stitch-muted py-3 text-sm">Roles and candidates — expand when you need the big picture.</p>
+          <div className="flex flex-wrap items-center justify-between gap-2 py-3">
+            <p className="text-stitch-muted text-sm">Roles and candidates — expand when you need the big picture.</p>
+            <div className="flex gap-2 text-xs font-bold uppercase">
+              <button
+                type="button"
+                className={`rounded-full px-3 py-1 ${positionsScope === 'active' ? 'bg-[#9b3e20] text-white' : 'border border-stone-300 dark:border-stone-600'}`}
+                onClick={() => setPositionsScope('active')}
+              >
+                Active
+              </button>
+              <button
+                type="button"
+                className={`rounded-full px-3 py-1 ${positionsScope === 'all' ? 'bg-[#9b3e20] text-white' : 'border border-stone-300 dark:border-stone-600'}`}
+                onClick={() => setPositionsScope('all')}
+              >
+                All
+              </button>
+            </div>
+          </div>
           {topPositionsQ.isLoading ? (
             <p className="text-stitch-muted text-sm">Loading…</p>
           ) : (topPositionsQ.data ?? []).length === 0 ? (

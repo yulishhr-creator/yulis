@@ -1,12 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
-import { List, Mail, Download, User, FileJson, FileSpreadsheet } from 'lucide-react'
+import { List, Mail, Download, User, FileJson, FileSpreadsheet, Archive } from 'lucide-react'
+import { useState } from 'react'
+import { format } from 'date-fns'
+import JSZip from 'jszip'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { downloadCsv, downloadJson, downloadXlsx } from '@/lib/export'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
+import { useToast } from '@/hooks/useToast'
 
 const items = [
   { to: '/settings/profile', label: 'Profile & avatar', desc: 'Display name, photo, and how you appear in greetings.', icon: User },
@@ -18,6 +22,8 @@ export function SettingsPage() {
   const { user } = useAuth()
   const supabase = getSupabase()
   const reduceMotion = useReducedMotion()
+  const { success, error: toastError } = useToast()
+  const [gdprBusy, setGdprBusy] = useState(false)
 
   const exportQ = useQuery({
     queryKey: ['export-preview', user?.id],
@@ -33,6 +39,52 @@ export function SettingsPage() {
 
   const pos = exportQ.data?.positions as Record<string, unknown>[] | undefined
   const cand = exportQ.data?.candidates as Record<string, unknown>[] | undefined
+
+  async function downloadGdprZip() {
+    if (!supabase || !user) return
+    setGdprBusy(true)
+    try {
+      const uid = user.id
+      const zip = new JSZip()
+      zip.file(
+        'manifest.json',
+        JSON.stringify({ exportedAt: new Date().toISOString(), app: "Yuli's HR", user_id: uid }, null, 2),
+      )
+      const tables = [
+        'companies',
+        'positions',
+        'position_stages',
+        'candidates',
+        'tasks',
+        'reminders',
+        'candidate_import_batches',
+        'email_templates',
+        'list_items',
+        'activity_events',
+        'calendar_events',
+        'work_time_entries',
+        'candidate_share_tokens',
+        'user_oauth_integrations',
+      ] as const
+      for (const name of tables) {
+        const { data, error } = await supabase.from(name).select('*').eq('user_id', uid)
+        if (error) throw new Error(error.message)
+        zip.file(`${name}.json`, JSON.stringify(data ?? [], null, 2))
+      }
+      const blob = await zip.generateAsync({ type: 'blob' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `yulis-my-data-${format(new Date(), 'yyyy-MM-dd')}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+      success('ZIP export started')
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : 'Export failed')
+    } finally {
+      setGdprBusy(false)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-8">
@@ -134,6 +186,30 @@ export function SettingsPage() {
             Candidates XLSX
           </motion.button>
         </div>
+      </motion.section>
+
+      <motion.section
+        className="border-stitch-on-surface/10 rounded-3xl border bg-white/80 p-5 shadow-sm dark:border-stone-700 dark:bg-stone-900/60"
+        initial={reduceMotion ? false : { opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+      >
+        <h2 className="font-stitch-head flex items-center gap-2 text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
+          <Archive className="h-5 w-5 text-[#006384] dark:text-cyan-300" aria-hidden />
+          Download my data (GDPR-style)
+        </h2>
+        <p className="text-stitch-muted mt-1 text-sm">
+          ZIP of JSON files for all tables owned by your account (companies, positions, candidates, tasks, reminders, activity, time
+          entries, and more).
+        </p>
+        <button
+          type="button"
+          disabled={gdprBusy || !user}
+          onClick={() => void downloadGdprZip()}
+          className="mt-4 rounded-full bg-gradient-to-r from-[#006384] to-[#97daff] px-5 py-2.5 text-sm font-bold text-white shadow-md disabled:opacity-50 dark:from-cyan-800 dark:to-cyan-600"
+        >
+          {gdprBusy ? 'Preparing…' : 'Download ZIP'}
+        </button>
       </motion.section>
     </div>
   )

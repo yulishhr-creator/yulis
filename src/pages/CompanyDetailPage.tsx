@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
+import { useToast } from '@/hooks/useToast'
 
 export function CompanyDetailPage() {
   const { id } = useParams()
@@ -12,6 +13,7 @@ export function CompanyDetailPage() {
   const { user } = useAuth()
   const supabase = getSupabase()
   const qc = useQueryClient()
+  const { success, error: toastError } = useToast()
   const isNew = id === 'new'
 
   const [name, setName] = useState('')
@@ -90,9 +92,26 @@ export function CompanyDetailPage() {
       return id!
     },
     onSuccess: async (savedId) => {
+      success('Company saved')
       await qc.invalidateQueries({ queryKey: ['companies'] })
+      await qc.invalidateQueries({ queryKey: ['company', savedId] })
       if (isNew) navigate(`/companies/${savedId}`, { replace: true })
     },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const softDelete = useMutation({
+    mutationFn: async () => {
+      if (isNew || !id) return
+      const { error } = await supabase!.from('companies').update({ deleted_at: new Date().toISOString() }).eq('id', id).eq('user_id', user!.id)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      success('Company archived')
+      await qc.invalidateQueries({ queryKey: ['companies'] })
+      navigate('/companies')
+    },
+    onError: (e: Error) => toastError(e.message),
   })
 
   return (
@@ -165,9 +184,6 @@ export function CompanyDetailPage() {
             className="border-line bg-white/80 focus:ring-accent rounded-xl border px-3 py-2.5 outline-none focus:ring-2 dark:bg-stone-900/50 dark:border-line-dark"
           />
         </label>
-        {save.isError ? (
-          <p className="text-sm text-red-600 dark:text-red-400">{(save.error as Error).message}</p>
-        ) : null}
         <button
           type="submit"
           disabled={save.isPending}
@@ -175,6 +191,20 @@ export function CompanyDetailPage() {
         >
           {save.isPending ? 'Saving…' : 'Save'}
         </button>
+        {!isNew ? (
+          <button
+            type="button"
+            className="mt-4 w-fit rounded-full border border-red-300 px-6 py-2.5 text-sm font-semibold text-red-700 dark:border-red-800 dark:text-red-400"
+            disabled={softDelete.isPending}
+            onClick={() => {
+              if (window.confirm('Archive this company? Positions stay in the database but the client will be hidden from lists.')) {
+                softDelete.mutate()
+              }
+            }}
+          >
+            {softDelete.isPending ? 'Archiving…' : 'Archive company'}
+          </button>
+        ) : null}
       </form>
     </div>
   )

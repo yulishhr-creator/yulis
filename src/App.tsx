@@ -18,6 +18,10 @@ import { EmailTemplatesPage } from '@/pages/EmailTemplatesPage'
 import { ListSettingsPage } from '@/pages/ListSettingsPage'
 import { ProfilePage } from '@/pages/ProfilePage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
+import { WorkingTimePage } from '@/pages/WorkingTimePage'
+import { CalendarPage } from '@/pages/CalendarPage'
+import { PublicSharePage } from '@/pages/PublicSharePage'
+import { WorkTimerProvider } from '@/work/WorkTimerContext'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -37,9 +41,18 @@ export default function App() {
               <Routes>
                 <Route path="/setup" element={<SetupPage />} />
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/p/:token" element={<PublicSharePage />} />
                 <Route element={<ProtectedRoute />}>
-                  <Route element={<AppShell />}>
+                  <Route
+                    element={
+                      <WorkTimerProvider>
+                        <AppShell />
+                      </WorkTimerProvider>
+                    }
+                  >
                     <Route path="/" element={<DashboardPage />} />
+                    <Route path="/time" element={<WorkingTimePage />} />
+                    <Route path="/calendar" element={<CalendarPage />} />
                     <Route path="/companies" element={<CompaniesPage />} />
                     <Route path="/companies/:id" element={<CompanyDetailPage />} />
                     <Route path="/positions" element={<PositionsPage />} />

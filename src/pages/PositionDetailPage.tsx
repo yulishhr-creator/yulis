@@ -1,7 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useParams, useSearchParams } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
+import {
+  CheckCircle,
+  XCircle,
+  PartyPopper,
+  Ban,
+  FileText,
+  Link2,
+  Trash2,
+  ChevronRight,
+} from 'lucide-react'
+import { formatDistanceToNow } from 'date-fns'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
@@ -9,13 +20,27 @@ import { normalizeEmail, normalizePhone } from '@/lib/normalize'
 import { formatDue } from '@/lib/dates'
 import { buildMailto } from '@/lib/mailto'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
+import { Modal } from '@/components/ui/Modal'
+import { useToast } from '@/hooks/useToast'
+import { criticalStageThreshold, logActivityEvent } from '@/lib/activityLog'
+
+type StageRow = { id: string; name: string; sort_order: number }
+type ActivityRow = {
+  id: string
+  event_type: string
+  title: string
+  subtitle: string | null
+  created_at: string
+  candidate_id: string | null
+}
 
 export function PositionDetailPage() {
   const { id } = useParams()
   const { user } = useAuth()
   const supabase = getSupabase()
   const qc = useQueryClient()
-  const [search] = useSearchParams()
+  const { success, error: toastError } = useToast()
+  const [search, setSearch] = useSearchParams()
   const highlightCandidate = search.get('candidate')
 
   const posQ = useQuery({
@@ -44,7 +69,7 @@ export function PositionDetailPage() {
         .eq('user_id', user!.id)
         .order('sort_order')
       if (error) throw error
-      return data ?? []
+      return (data ?? []) as StageRow[]
     },
   })
 
@@ -79,6 +104,22 @@ export function PositionDetailPage() {
     },
   })
 
+  const activityQ = useQuery({
+    queryKey: ['position-activity', id, user?.id],
+    enabled: Boolean(supabase && user && id),
+    queryFn: async () => {
+      const { data, error } = await supabase!
+        .from('activity_events')
+        .select('id, event_type, title, subtitle, created_at, candidate_id')
+        .eq('position_id', id!)
+        .eq('user_id', user!.id)
+        .order('created_at', { ascending: false })
+        .limit(80)
+      if (error) throw error
+      return (data ?? []) as ActivityRow[]
+    },
+  })
+
   const position = posQ.data
   const company = position?.companies as unknown as { id: string; name: string; contact_email: string | null } | undefined
 
@@ -88,6 +129,11 @@ export function PositionDetailPage() {
   const [status, setStatus] = useState('pending')
   const [planned, setPlanned] = useState('')
   const [actual, setActual] = useState('')
+  const [criticalN, setCriticalN] = useState('3')
+  const [activityFilter, setActivityFilter] = useState<'all' | 'milestones'>('all')
+  const [noteText, setNoteText] = useState('')
+  const [shareOpen, setShareOpen] = useState(false)
+  const [shareUrl, setShareUrl] = useState<string | null>(null)
 
   useEffect(() => {
     if (!position) return
@@ -97,10 +143,22 @@ export function PositionDetailPage() {
     setStatus(position.status ?? 'pending')
     setPlanned(position.planned_fee_ils != null ? String(position.planned_fee_ils) : '')
     setActual(position.actual_fee_ils != null ? String(position.actual_fee_ils) : '')
+    const c = (position as { critical_stage_sort_order?: number | null }).critical_stage_sort_order
+    setCriticalN(c != null ? String(c) : '3')
   }, [position])
+
+  const invalidateAll = async () => {
+    await qc.invalidateQueries({ queryKey: ['position', id] })
+    await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
+    await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+    await qc.invalidateQueries({ queryKey: ['positions'] })
+    await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
+    await qc.invalidateQueries({ queryKey: ['notification-count'] })
+  }
 
   const savePos = useMutation({
     mutationFn: async () => {
+      const crit = criticalN.trim() ? Number(criticalN) : null
       const { error } = await supabase!
         .from('positions')
         .update({
@@ -110,23 +168,63 @@ export function PositionDetailPage() {
           status,
           planned_fee_ils: planned ? Number(planned) : null,
           actual_fee_ils: actual ? Number(actual) : null,
+          critical_stage_sort_order: crit != null && !Number.isNaN(crit) ? crit : null,
         })
         .eq('id', id!)
         .eq('user_id', user!.id)
       if (error) throw error
     },
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ['position', id] })
-      await qc.invalidateQueries({ queryKey: ['positions'] })
-      await qc.invalidateQueries({ queryKey: ['dashboard'] })
+      success('Position saved')
+      await invalidateAll()
     },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const setPositionTerminal = useMutation({
+    mutationFn: async (next: 'success' | 'cancelled') => {
+      const prev = position?.status ?? 'pending'
+      const { error } = await supabase!
+        .from('positions')
+        .update({ status: next })
+        .eq('id', id!)
+        .eq('user_id', user!.id)
+      if (error) throw error
+      return { prev, next }
+    },
+    onSuccess: async ({ prev, next }) => {
+      setStatus(next)
+      success(next === 'success' ? 'Marked fulfilled' : 'Marked withdrawn')
+      await logActivityEvent(supabase!, user!.id, {
+        event_type: 'position_status_changed',
+        position_id: id!,
+        title: next === 'success' ? 'Position fulfilled' : 'Position withdrawn',
+        subtitle: `${prev} → ${next}`,
+        metadata: { from: prev, to: next },
+      })
+      await invalidateAll()
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const reopenPosition = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase!.from('positions').update({ status: 'in_progress' }).eq('id', id!).eq('user_id', user!.id)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      setStatus('in_progress')
+      success('Position reopened')
+      await invalidateAll()
+    },
+    onError: (e: Error) => toastError(e.message),
   })
 
   const [newStageName, setNewStageName] = useState('')
 
   const addStage = useMutation({
     mutationFn: async () => {
-      const order = (stagesQ.data?.length ?? 0)
+      const order = stagesQ.data?.length ?? 0
       const { error } = await supabase!.from('position_stages').insert({
         user_id: user!.id,
         position_id: id!,
@@ -137,8 +235,10 @@ export function PositionDetailPage() {
     },
     onSuccess: async () => {
       setNewStageName('')
+      success('Stage added')
       await qc.invalidateQueries({ queryKey: ['position-stages', id] })
     },
+    onError: (e: Error) => toastError(e.message),
   })
 
   async function moveStage(stageId: string, dir: -1 | 1) {
@@ -170,35 +270,47 @@ export function PositionDetailPage() {
           return false
         })
         if (hit) {
-          const ok = window.confirm(
-            `This matches imported candidate “${hit.full_name}”. Create another record anyway?`,
-          )
+          const ok = window.confirm(`This matches imported candidate “${hit.full_name}”. Create another record anyway?`)
           if (!ok) throw new Error('cancelled')
         }
       }
       const firstStage = stagesQ.data?.[0]?.id ?? null
-      const { error } = await supabase!.from('candidates').insert({
-        user_id: user!.id,
-        position_id: id!,
-        position_stage_id: firstStage,
-        full_name: cName.trim() || 'Unnamed',
-        email: cEmail.trim() || null,
-        phone: cPhone.trim() || null,
-        source: cSource,
-        outcome: 'active',
-        email_normalized: en,
-        phone_normalized: pn,
-      })
+      const { data, error } = await supabase!
+        .from('candidates')
+        .insert({
+          user_id: user!.id,
+          position_id: id!,
+          position_stage_id: firstStage,
+          full_name: cName.trim() || 'Unnamed',
+          email: cEmail.trim() || null,
+          phone: cPhone.trim() || null,
+          source: cSource,
+          outcome: 'active',
+          email_normalized: en,
+          phone_normalized: pn,
+        })
+        .select('id, full_name')
+        .single()
       if (error) throw error
+      return data
     },
-    onSuccess: async () => {
+    onSuccess: async (data) => {
       setCName('')
       setCEmail('')
       setCPhone('')
+      success('Candidate added')
+      await logActivityEvent(supabase!, user!.id, {
+        event_type: 'candidate_created',
+        position_id: id!,
+        candidate_id: data.id,
+        title: `New candidate: ${data.full_name}`,
+      })
       await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
+      await qc.invalidateQueries({ queryKey: ['position-activity', id] })
     },
-    onError: (e) => {
-      if ((e as Error).message === 'cancelled') return
+    onError: (e: Error) => {
+      if (e.message === 'cancelled') return
+      toastError(e.message)
     },
   })
 
@@ -251,6 +363,17 @@ export function PositionDetailPage() {
     }
     await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
     if (ok === 0) setImportError('Could not import rows — check column headers (name, email, phone).')
+    else {
+      success(`Imported ${ok} candidate(s)`)
+      await logActivityEvent(supabase, user.id, {
+        event_type: 'candidate_created',
+        position_id: id,
+        title: `Imported ${ok} candidates`,
+        subtitle: file.name,
+        metadata: { batch: true, count: ok },
+      })
+      await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+    }
   }
 
   const [taskTitle, setTaskTitle] = useState('')
@@ -270,18 +393,242 @@ export function PositionDetailPage() {
     onSuccess: async () => {
       setTaskTitle('')
       setTaskDue('')
+      success('Task added')
       await qc.invalidateQueries({ queryKey: ['position-tasks', id] })
       await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
     },
+    onError: (e: Error) => toastError(e.message),
   })
+
+  const deleteTask = useMutation({
+    mutationFn: async (taskId: string) => {
+      const { error } = await supabase!.from('tasks').delete().eq('id', taskId).eq('user_id', user!.id)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      success('Task removed')
+      await qc.invalidateQueries({ queryKey: ['position-tasks', id] })
+      await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const updateCandidateStage = useMutation({
+    mutationFn: async ({ candidateId, stageId }: { candidateId: string; stageId: string | null }) => {
+      const cand = (candidatesQ.data ?? []).find((c) => c.id === candidateId)
+      const oldStageId = cand?.position_stage_id as string | null
+      const stages = stagesQ.data ?? []
+      const oldS = oldStageId ? stages.find((s) => s.id === oldStageId) : null
+      const newS = stageId ? stages.find((s) => s.id === stageId) : null
+      const { error } = await supabase!
+        .from('candidates')
+        .update({ position_stage_id: stageId })
+        .eq('id', candidateId)
+        .eq('user_id', user!.id)
+      if (error) throw error
+      return { candidateId, oldS, newS, candName: cand?.full_name ?? 'Candidate' }
+    },
+    onSuccess: async ({ candidateId, oldS, newS, candName }) => {
+      success('Stage updated')
+      const fromName = oldS?.name ?? '—'
+      const toName = newS?.name ?? '—'
+      await logActivityEvent(supabase!, user!.id, {
+        event_type: 'candidate_stage_changed',
+        position_id: id!,
+        candidate_id: candidateId,
+        title: `${candName}: stage change`,
+        subtitle: `${fromName} → ${toName}`,
+        metadata: {
+          from_stage_id: oldS?.id,
+          to_stage_id: newS?.id,
+          from_sort_order: oldS?.sort_order,
+          to_sort_order: newS?.sort_order,
+        },
+      })
+      const N = criticalStageThreshold(position as { critical_stage_sort_order?: number | null })
+      if (newS && newS.sort_order >= N) {
+        await logActivityEvent(supabase!, user!.id, {
+          event_type: 'candidate_reached_critical_stage',
+          position_id: id!,
+          candidate_id: candidateId,
+          title: `${candName} reached stage ${N}+`,
+          subtitle: newS.name,
+          metadata: { sort_order: newS.sort_order, threshold: N },
+        })
+      }
+      await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
+      await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const updateCandidateOutcome = useMutation({
+    mutationFn: async ({
+      candidateId,
+      outcome,
+      closeTasks,
+    }: {
+      candidateId: string
+      outcome: 'hired' | 'rejected'
+      closeTasks: boolean
+    }) => {
+      const cand = (candidatesQ.data ?? []).find((c) => c.id === candidateId)
+      const prev = cand?.outcome ?? 'active'
+      const { error } = await supabase!.from('candidates').update({ outcome }).eq('id', candidateId).eq('user_id', user!.id)
+      if (error) throw error
+      if (closeTasks) {
+        await supabase!.from('tasks').update({ status: 'done' }).eq('candidate_id', candidateId).eq('user_id', user!.id).neq('status', 'done')
+      }
+      return { candidateId, prev, outcome, name: cand?.full_name ?? 'Candidate', closeTasks }
+    },
+    onSuccess: async ({ candidateId, prev, outcome, name }) => {
+      success(outcome === 'hired' ? 'Marked hired' : 'Marked rejected')
+      await logActivityEvent(supabase!, user!.id, {
+        event_type: 'candidate_outcome_changed',
+        position_id: id!,
+        candidate_id: candidateId,
+        title: `${name}: ${outcome}`,
+        subtitle: `${prev} → ${outcome}`,
+        metadata: { from: prev, to: outcome },
+      })
+      await invalidateAll()
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const softDeleteCandidate = useMutation({
+    mutationFn: async (candidateId: string) => {
+      const { error } = await supabase!.from('candidates').update({ deleted_at: new Date().toISOString() }).eq('id', candidateId).eq('user_id', user!.id)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      success('Candidate archived')
+      if (highlightCandidate) setSearch({}, { replace: true })
+      await invalidateAll()
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const addNote = useMutation({
+    mutationFn: async () => {
+      if (!noteText.trim()) throw new Error('Enter a note')
+      await logActivityEvent(supabase!, user!.id, {
+        event_type: 'note_added',
+        position_id: id!,
+        candidate_id: highlightCandidate || null,
+        title: 'Note',
+        subtitle: noteText.trim(),
+      })
+    },
+    onSuccess: async () => {
+      setNoteText('')
+      success('Note saved')
+      await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const createShareToken = useMutation({
+    mutationFn: async (candidateId: string) => {
+      const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+      const { error } = await supabase!.from('candidate_share_tokens').insert({
+        user_id: user!.id,
+        candidate_id: candidateId,
+        token,
+        expires_at: new Date(Date.now() + 7 * 864e5).toISOString(),
+      })
+      if (error) throw error
+      return token
+    },
+    onSuccess: (token) => {
+      const url = `${window.location.origin}/p/${token}`
+      setShareUrl(url)
+      setShareOpen(true)
+      void navigator.clipboard.writeText(url).catch(() => {})
+      success('Share link copied')
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  async function uploadResume(candidateId: string, file: File | null) {
+    if (!file || !supabase || !user) return
+    const path = `${user.id}/${candidateId}/${Date.now()}-${file.name.replace(/[^\w.-]/g, '_')}`
+    const { error: upErr } = await supabase.storage.from('candidate-docs').upload(path, file)
+    if (upErr) {
+      toastError(upErr.message)
+      return
+    }
+    const { error } = await supabase.from('candidates').update({ resume_storage_path: path }).eq('id', candidateId).eq('user_id', user.id)
+    if (error) {
+      toastError(error.message)
+      return
+    }
+    success('Resume uploaded')
+    await logActivityEvent(supabase, user.id, {
+      event_type: 'candidate_file_uploaded',
+      position_id: id!,
+      candidate_id: candidateId,
+      title: 'Resume uploaded',
+      subtitle: file.name,
+      metadata: { file_kind: 'resume', path },
+    })
+    await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
+    await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+  }
+
+  const filteredActivity = useMemo(() => {
+    const rows = activityQ.data ?? []
+    if (activityFilter === 'milestones') {
+      return rows.filter((r) =>
+        ['candidate_reached_critical_stage', 'candidate_created', 'position_status_changed', 'candidate_outcome_changed'].includes(r.event_type),
+      )
+    }
+    return rows
+  }, [activityQ.data, activityFilter])
+
+  const terminalPosition = status === 'success' || status === 'cancelled'
 
   if (posQ.isLoading || !position) {
     return <p className="text-ink-muted text-sm">Loading…</p>
   }
 
   return (
-    <div className="flex flex-col gap-10">
+    <div className="flex flex-col gap-8">
       <ScreenHeader title={position.title} subtitle={company?.name} backTo="/positions" />
+
+      {!terminalPosition ? (
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm('Mark this role fulfilled (placed / done)?')) void setPositionTerminal.mutateAsync('success')
+            }}
+            className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-md hover:bg-emerald-700"
+          >
+            <PartyPopper className="h-5 w-5" aria-hidden />
+            Fulfilled
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm('Mark role withdrawn (client pulled the req)?')) void setPositionTerminal.mutateAsync('cancelled')
+            }}
+            className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-3 text-sm font-bold text-white shadow-md hover:bg-red-700"
+          >
+            <Ban className="h-5 w-5" aria-hidden />
+            Withdrawn
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="border-line rounded-full border bg-white/80 px-3 py-1 text-sm font-semibold dark:bg-stone-800">
+            {status === 'success' ? 'Fulfilled' : 'Withdrawn'}
+          </span>
+          <button type="button" onClick={() => void reopenPosition.mutateAsync()} className="text-accent text-sm font-semibold underline">
+            Reopen role
+          </button>
+        </div>
+      )}
 
       <section className="border-line bg-white/60 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40">
         <h2 className="font-display font-semibold">Position details</h2>
@@ -296,16 +643,40 @@ export function PositionDetailPage() {
             Title
             <input value={title} onChange={(e) => setTitle(e.target.value)} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
           </label>
-          <label className="text-sm font-medium">
-            Status
-            <select value={status} onChange={(e) => setStatus(e.target.value)} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50">
-              {['pending', 'in_progress', 'success', 'cancelled'].map((s) => (
-                <option key={s} value={s}>
-                  {s.replace('_', ' ')}
-                </option>
-              ))}
-            </select>
-          </label>
+          <details className="rounded-xl border border-stone-200/80 bg-stone-50/50 p-3 dark:border-stone-600 dark:bg-stone-900/30">
+            <summary className="cursor-pointer text-sm font-semibold">Advanced status & fees</summary>
+            <div className="mt-3 flex flex-col gap-3">
+              <label className="text-sm font-medium">
+                Status (manual)
+                <select value={status} onChange={(e) => setStatus(e.target.value)} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50">
+                  {['pending', 'in_progress', 'success', 'cancelled'].map((s) => (
+                    <option key={s} value={s}>
+                      {s.replace('_', ' ')}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm font-medium">
+                Critical stage threshold (sort order ≥ this = milestone)
+                <input
+                  value={criticalN}
+                  onChange={(e) => setCriticalN(e.target.value)}
+                  inputMode="numeric"
+                  className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-sm font-medium">
+                  Planned fee (ILS)
+                  <input value={planned} onChange={(e) => setPlanned(e.target.value)} inputMode="decimal" className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
+                </label>
+                <label className="text-sm font-medium">
+                  Actual fee (ILS)
+                  <input value={actual} onChange={(e) => setActual(e.target.value)} inputMode="decimal" className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
+                </label>
+              </div>
+            </div>
+          </details>
           <label className="text-sm font-medium">
             Requirements
             <textarea value={requirements} onChange={(e) => setRequirements(e.target.value)} rows={4} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
@@ -314,20 +685,63 @@ export function PositionDetailPage() {
             Welcome approach (1)
             <textarea value={welcome1} onChange={(e) => setWelcome1(e.target.value)} rows={3} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
           </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="text-sm font-medium">
-              Planned fee (ILS)
-              <input value={planned} onChange={(e) => setPlanned(e.target.value)} inputMode="decimal" className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
-            </label>
-            <label className="text-sm font-medium">
-              Actual fee (ILS)
-              <input value={actual} onChange={(e) => setActual(e.target.value)} inputMode="decimal" className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
-            </label>
-          </div>
           <button type="submit" className="bg-accent text-stone-50 w-fit rounded-full px-5 py-2 text-sm font-semibold" disabled={savePos.isPending}>
             Save
           </button>
         </form>
+      </section>
+
+      <section className="border-line bg-white/60 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-display font-semibold">Position activity</h2>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setActivityFilter('all')}
+              className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${activityFilter === 'all' ? 'bg-accent text-white' : 'border-line border'}`}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              onClick={() => setActivityFilter('milestones')}
+              className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${activityFilter === 'milestones' ? 'bg-accent text-white' : 'border-line border'}`}
+            >
+              Milestones
+            </button>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <input
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder="Log a quick note (email sent, call, …)"
+            className="border-line min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/50"
+          />
+          <button type="button" onClick={() => void addNote.mutateAsync()} className="rounded-full bg-ink/90 px-4 py-2 text-sm font-medium text-white dark:bg-stone-200 dark:text-stone-900">
+            Add note
+          </button>
+        </div>
+        <ul className="mt-4 max-h-80 space-y-2 overflow-y-auto">
+          {activityQ.isLoading ? (
+            <li className="text-ink-muted text-sm">Loading…</li>
+          ) : filteredActivity.length === 0 ? (
+            <li className="text-ink-muted text-sm">No activity yet.</li>
+          ) : (
+            filteredActivity.map((a) => (
+              <li key={a.id} className="border-line flex gap-2 rounded-xl border bg-white/70 px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/50">
+                <ActivityIcon type={a.event_type} />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{a.title}</p>
+                  {a.subtitle ? <p className="text-ink-muted text-xs">{a.subtitle}</p> : null}
+                  <p className="text-ink-muted mt-0.5 text-[10px] uppercase tracking-wide">
+                    {formatDistanceToNow(new Date(a.created_at), { addSuffix: true })}
+                  </p>
+                </div>
+              </li>
+            ))
+          )}
+        </ul>
       </section>
 
       <section>
@@ -335,17 +749,14 @@ export function PositionDetailPage() {
         <ul className="mt-3 space-y-2">
           {(stagesQ.data ?? []).map((s, idx) => (
             <li key={s.id} className="border-line bg-white/60 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/40">
-              <span>{s.name}</span>
+              <span>
+                {s.name} <span className="text-ink-muted text-xs">(order {s.sort_order})</span>
+              </span>
               <span className="flex gap-1">
                 <button type="button" className="rounded-lg border px-2 py-1 text-xs dark:border-line-dark" onClick={() => void moveStage(s.id, -1)} disabled={idx === 0}>
                   Up
                 </button>
-                <button
-                  type="button"
-                  className="rounded-lg border px-2 py-1 text-xs dark:border-line-dark"
-                  onClick={() => void moveStage(s.id, 1)}
-                  disabled={idx === (stagesQ.data ?? []).length - 1}
-                >
+                <button type="button" className="rounded-lg border px-2 py-1 text-xs dark:border-line-dark" onClick={() => void moveStage(s.id, 1)} disabled={idx === (stagesQ.data ?? []).length - 1}>
                   Down
                 </button>
               </span>
@@ -374,12 +785,7 @@ export function PositionDetailPage() {
       <section>
         <h2 className="font-display font-semibold">Import candidates (Excel)</h2>
         <p className="text-ink-muted mt-1 text-sm">Columns should include name, email, phone (headers detected automatically).</p>
-        <input
-          type="file"
-          accept=".xlsx,.xls"
-          className="mt-2 text-sm"
-          onChange={(e) => void onExcel(e.target.files?.[0] ?? null)}
-        />
+        <input type="file" accept=".xlsx,.xls" className="mt-2 text-sm" onChange={(e) => void onExcel(e.target.files?.[0] ?? null)} />
         {importError ? <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">{importError}</p> : null}
       </section>
 
@@ -416,20 +822,107 @@ export function PositionDetailPage() {
           </button>
         </form>
 
-        <ul className="mt-4 space-y-2">
+        <ul className="mt-4 space-y-3">
           {(candidatesQ.data ?? []).map((c) => {
             const st = c.position_stages as unknown as { name: string } | null
             const hl = highlightCandidate === c.id
+            const active = c.outcome === 'active'
             return (
               <li
                 key={c.id}
                 id={`cand-${c.id}`}
-                className={`border-line bg-white/60 flex flex-wrap items-baseline justify-between gap-2 rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/40 ${hl ? 'ring-accent ring-2' : ''}`}
+                className={`border-line rounded-xl border bg-white/60 p-3 dark:border-line-dark dark:bg-stone-900/40 ${hl ? 'ring-accent ring-2' : ''}`}
               >
-                <span className="font-medium">{c.full_name}</span>
-                <span className="text-ink-muted text-xs">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <Link to={`?candidate=${c.id}`} className="font-medium text-[#9b3e20] hover:underline dark:text-orange-300">
+                    {c.full_name}
+                    <ChevronRight className="ml-1 inline h-4 w-4 opacity-50" aria-hidden />
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm(`Archive ${c.full_name}?`)) void softDeleteCandidate.mutateAsync(c.id)
+                    }}
+                    className="text-ink-muted hover:text-red-600 flex items-center gap-1 text-xs"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                    Archive
+                  </button>
+                </div>
+                <p className="text-ink-muted text-xs">
                   {c.source} · {st?.name ?? '—'} · {c.outcome}
-                </span>
+                </p>
+                <label className="mt-2 block text-xs font-medium">
+                  Stage
+                  <select
+                    value={c.position_stage_id ?? ''}
+                    onChange={(e) => void updateCandidateStage.mutateAsync({ candidateId: c.id, stageId: e.target.value || null })}
+                    className="border-line mt-1 w-full rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
+                  >
+                    <option value="">—</option>
+                    {(stagesQ.data ?? []).map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs dark:border-line-dark">
+                    <FileText className="h-3.5 w-3.5" aria-hidden />
+                    Resume
+                    <input type="file" accept=".pdf,.doc,.docx" className="hidden" onChange={(e) => void uploadResume(c.id, e.target.files?.[0] ?? null)} />
+                  </label>
+                  <button type="button" onClick={() => void createShareToken.mutateAsync(c.id)} className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs dark:border-line-dark">
+                    <Link2 className="h-3.5 w-3.5" aria-hidden />
+                    Share link
+                  </button>
+                </div>
+                {hl && active ? (
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const close = window.confirm('Also mark open tasks for this candidate as done?')
+                        void updateCandidateOutcome.mutateAsync({ candidateId: c.id, outcome: 'hired', closeTasks: close })
+                      }}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-sm font-bold text-white"
+                    >
+                      <CheckCircle className="h-5 w-5" aria-hidden />
+                      Hired
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!window.confirm(`Reject ${c.full_name}?`)) return
+                        const close = window.confirm('Mark open tasks for this candidate as done?')
+                        void updateCandidateOutcome.mutateAsync({ candidateId: c.id, outcome: 'rejected', closeTasks: close })
+                      }}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white"
+                    >
+                      <XCircle className="h-5 w-5" aria-hidden />
+                      Rejected
+                    </button>
+                  </div>
+                ) : null}
+                {hl && !active ? (
+                  <p className="mt-2 text-sm font-medium text-stone-600 dark:text-stone-400">Outcome: {c.outcome}</p>
+                ) : null}
+                {hl ? (
+                  <div className="mt-3 border-t border-stone-200/80 pt-3 dark:border-stone-600">
+                    <h3 className="text-xs font-bold uppercase tracking-wide text-stone-500">Candidate activity</h3>
+                    <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-sm">
+                      {(activityQ.data ?? [])
+                        .filter((a) => a.candidate_id === c.id)
+                        .map((a) => (
+                          <li key={a.id} className="text-ink-muted text-xs">
+                            <span className="text-ink font-medium">{a.title}</span>
+                            {a.subtitle ? ` — ${a.subtitle}` : null} · {formatDistanceToNow(new Date(a.created_at), { addSuffix: true })}
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                ) : null}
               </li>
             )
           })}
@@ -459,9 +952,14 @@ export function PositionDetailPage() {
         </form>
         <ul className="mt-3 space-y-2">
           {(tasksQ.data ?? []).map((t) => (
-            <li key={t.id} className="border-line bg-white/60 rounded-xl border px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/40">
-              {t.title} · {t.status}
-              {t.due_at ? <span className="text-ink-muted"> · due {formatDue(t.due_at)}</span> : null}
+            <li key={t.id} className="border-line bg-white/60 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/40">
+              <span>
+                {t.title} · {t.status}
+                {t.due_at ? <span className="text-ink-muted"> · due {formatDue(t.due_at)}</span> : null}
+              </span>
+              <button type="button" onClick={() => void deleteTask.mutateAsync(t.id)} className="text-red-600 text-xs font-semibold">
+                Remove
+              </button>
             </li>
           ))}
         </ul>
@@ -469,7 +967,7 @@ export function PositionDetailPage() {
 
       <section>
         <h2 className="font-display font-semibold">Email</h2>
-        <p className="text-ink-muted mt-1 text-sm">Opens your mail client with company or candidate prefilled (Gmail API connect comes in Settings).</p>
+        <p className="text-ink-muted mt-1 text-sm">Opens your mail client with company or candidate prefilled.</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {company?.contact_email ? (
             <a
@@ -485,6 +983,19 @@ export function PositionDetailPage() {
           ) : null}
         </div>
       </section>
+
+      <Modal open={shareOpen} onClose={() => setShareOpen(false)} title="Share link" size="sm">
+        <p className="text-ink-muted text-sm">Anyone with this link can view a summary (expires in 7 days).</p>
+        <p className="mt-2 break-all rounded-lg bg-stone-100 p-2 text-xs dark:bg-stone-800">{shareUrl}</p>
+      </Modal>
     </div>
   )
+}
+
+function ActivityIcon({ type }: { type: string }) {
+  const cls = 'mt-0.5 h-8 w-8 shrink-0 rounded-lg bg-stone-100 p-1.5 dark:bg-stone-800'
+  if (type === 'candidate_outcome_changed' || type === 'position_status_changed') return <PartyPopper className={cls} aria-hidden />
+  if (type === 'candidate_reached_critical_stage') return <CheckCircle className={cls} aria-hidden />
+  if (type === 'candidate_file_uploaded') return <FileText className={cls} aria-hidden />
+  return <ChevronRight className={cls} aria-hidden />
 }
