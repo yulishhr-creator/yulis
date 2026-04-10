@@ -215,8 +215,8 @@ export function AppShell() {
               <p className="from-[#9b3e20] to-[#006384] bg-gradient-to-r bg-clip-text font-stitch-head truncate text-sm font-extrabold text-transparent sm:text-base dark:from-orange-300 dark:to-cyan-300">
                 {greeting()}, {displayName}
               </p>
-              <p className="truncate text-[9px] font-medium tracking-wide text-stone-400/55 dark:text-stone-500/70 sm:text-[10px]">
-                Keep pushing forward.
+              <p className="truncate text-[10px] font-semibold tracking-wide text-[#5c5348] sm:text-[11px] dark:text-stone-400">
+                Keep pushing forward
               </p>
             </motion.div>
           </div>

@@ -1,6 +1,8 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 
+import { SplashFuturisticLoader } from '@/components/ui/SplashFuturisticLoader'
+
 const STORAGE_KEY = 'yulis_splash_seen'
 
 const SPLASH_HEADLINES = ['Achieving True Unagi...', 'Always Aware'] as const
@@ -21,7 +23,7 @@ function hasSeenSplash(): boolean {
   }
 }
 
-/** One splash per browser session — spinner GIF + cycling headlines on first load. */
+/** One splash per browser session — orbital loader + cycling Unagi headlines on first load. */
 export function AppSplash({ children }: AppSplashProps) {
   const reduceMotion = useReducedMotion()
   const [showSplash, setShowSplash] = useState(() => !hasSeenSplash())
@@ -72,14 +74,7 @@ export function AppSplash({ children }: AppSplashProps) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
           >
-            <img
-              src="/splash-spinner.gif"
-              alt=""
-              width={72}
-              height={72}
-              className="h-[4.5rem] w-[4.5rem] object-contain"
-              decoding="async"
-            />
+            <SplashFuturisticLoader />
 
             <div className="flex min-h-[5rem] max-w-md items-center justify-center">
               <AnimatePresence mode="wait">
