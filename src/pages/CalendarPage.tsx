@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   addMonths,
   eachDayOfInterval,
@@ -20,6 +20,8 @@ import { getSupabase } from '@/lib/supabase'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/hooks/useToast'
 
+type One<T> = T | T[] | null
+
 type CalendarEventRow = {
   id: string
   title: string
@@ -31,12 +33,24 @@ type CalendarEventRow = {
   position_id: string | null
   candidate_id: string | null
   company_id: string | null
+  positions: One<{ title: string }>
+  candidates: One<{ full_name: string; position_id: string }>
+  companies: One<{ name: string }>
+}
+
+function one<T>(v: T | T[] | null | undefined): T | null {
+  if (v == null) return null
+  return Array.isArray(v) ? (v[0] ?? null) : v
 }
 
 type RelKind = 'none' | 'position' | 'candidate' | 'company'
 
-const EVENT_SELECT =
-  'id, title, subtitle, starts_at, ends_at, reminder_at, is_important, position_id, candidate_id, company_id'
+const EVENT_SELECT = `id, title, subtitle, starts_at, ends_at, reminder_at, is_important, position_id, candidate_id, company_id,
+  positions ( title ),
+  candidates ( full_name, position_id ),
+  companies ( name )`
+
+const CAL_STALE_MS = 60_000
 
 function titleDayPreview(title: string, maxChars = 22): string {
   const t = title.trim()
@@ -82,9 +96,13 @@ export function CalendarPage() {
   const gridStart = startOfWeek(monthStart, { weekStartsOn: 0 })
   const gridEnd = endOfWeek(monthEnd, { weekStartsOn: 0 })
 
+  const showForm = search.get('new') === '1' || editingId !== null
+
   const eventsQ = useQuery({
     queryKey: ['calendar-events', uid, gridStart.toISOString(), gridEnd.toISOString()],
     enabled: Boolean(supabase && uid),
+    staleTime: CAL_STALE_MS,
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('calendar_events')
@@ -101,6 +119,7 @@ export function CalendarPage() {
   const upcomingQ = useQuery({
     queryKey: ['calendar-events', 'upcoming', uid],
     enabled: Boolean(supabase && uid),
+    staleTime: CAL_STALE_MS,
     queryFn: async () => {
       const from = startOfDay(new Date()).toISOString()
       const { data, error } = await supabase!
@@ -117,7 +136,7 @@ export function CalendarPage() {
 
   const relationsQ = useQuery({
     queryKey: ['calendar-relations', uid],
-    enabled: Boolean(supabase && uid),
+    enabled: Boolean(supabase && uid && showForm),
     queryFn: async () => {
       const [pos, cand, comp] = await Promise.all([
         supabase!
@@ -150,7 +169,6 @@ export function CalendarPage() {
     },
   })
 
-  const showForm = search.get('new') === '1' || editingId !== null
   const dateFromUrl = search.get('date')
 
   useEffect(() => {
@@ -300,18 +318,22 @@ export function CalendarPage() {
   const upcomingRest = upcomingAll.filter((e) => !e.is_important)
 
   function relationLabel(ev: CalendarEventRow): { label: string; to?: string } | null {
+    const company = one(ev.companies)
+    const position = one(ev.positions)
+    const candidate = one(ev.candidates)
     if (ev.company_id) {
-      const c = companies.find((x) => x.id === ev.company_id)
-      return c ? { label: c.name, to: `/companies/${ev.company_id}` } : { label: 'Company' }
+      return company ?
+          { label: company.name, to: `/companies/${ev.company_id}` }
+        : { label: 'Company' }
     }
     if (ev.position_id) {
-      const p = positions.find((x) => x.id === ev.position_id)
-      return p ? { label: p.title, to: `/positions/${ev.position_id}` } : { label: 'Position' }
+      return position ?
+          { label: position.title, to: `/positions/${ev.position_id}` }
+        : { label: 'Position' }
     }
     if (ev.candidate_id) {
-      const c = candidates.find((x) => x.id === ev.candidate_id)
-      const to = c?.position_id ? `/positions/${c.position_id}` : undefined
-      return c ? { label: c.full_name, to } : { label: 'Candidate' }
+      const to = candidate?.position_id ? `/positions/${candidate.position_id}` : undefined
+      return candidate ? { label: candidate.full_name, to } : { label: 'Candidate' }
     }
     return null
   }
@@ -384,140 +406,151 @@ export function CalendarPage() {
 
       {showForm ? (
         <form
-          className="border-line flex flex-col gap-3 rounded-2xl border bg-white/80 p-4 dark:border-line-dark dark:bg-stone-900/50"
+          className="border-line rounded-2xl border bg-white/80 p-4 dark:border-line-dark dark:bg-stone-900/50 sm:p-5"
           onSubmit={(e) => {
             e.preventDefault()
             saveEvent.mutate()
           }}
         >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="font-semibold">{editingId ? 'Edit event' : 'New event'}</p>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setIsImportant((v) => !v)}
-                className="rounded-xl p-2 text-stone-500 transition hover:bg-stone-100 dark:hover:bg-stone-800"
-                aria-label={isImportant ? 'Unmark important' : 'Mark important'}
-                aria-pressed={isImportant}
-              >
-                <Star
-                  className={`h-5 w-5 ${isImportant ? 'fill-amber-400 text-amber-500' : ''}`}
-                />
-              </button>
+          <div className="mb-4 flex flex-col gap-3 border-b border-stone-200/80 pb-4 dark:border-stone-600 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-semibold">{editingId ? 'Edit event' : 'New event'}</p>
+              <p className="text-ink-muted mt-0.5 max-w-xl text-xs">
+                Two columns on wider screens — times, reminder, and optional CRM link.
+              </p>
             </div>
-          </div>
-          <p className="text-ink-muted text-xs">
-            Subject, time, optional note, reminder, and link to a position, candidate, or company.
-          </p>
-          <label className="flex flex-col gap-1 text-sm">
-            Subject
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-              placeholder="e.g. Meet with Dr. Schwartz"
-              required
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            Short description <span className="text-ink-muted font-normal">(optional)</span>
-            <input
-              value={subtitle}
-              onChange={(e) => setSubtitle(e.target.value)}
-              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-              placeholder="A few words…"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            Date &amp; time
-            <input
-              type="datetime-local"
-              value={startsAt}
-              onChange={(e) => setStartsAt(e.target.value)}
-              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-              required
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            End <span className="text-ink-muted font-normal">(optional)</span>
-            <input
-              type="datetime-local"
-              value={endsAt}
-              onChange={(e) => setEndsAt(e.target.value)}
-              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            Reminder <span className="text-ink-muted font-normal">(optional)</span>
-            <input
-              type="datetime-local"
-              value={reminderAt}
-              onChange={(e) => setReminderAt(e.target.value)}
-              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-            />
-          </label>
-          <div className="flex flex-col gap-1 text-sm">
-            <span>
-              Related to <span className="text-ink-muted font-normal">(optional)</span>
-            </span>
-            <select
-              value={relKind}
-              onChange={(e) => {
-                const v = e.target.value as RelKind
-                setRelKind(v)
-                setRelId('')
-              }}
-              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+            <button
+              type="button"
+              onClick={() => setIsImportant((v) => !v)}
+              className="self-start rounded-xl p-2 text-stone-500 transition hover:bg-stone-100 sm:self-center dark:hover:bg-stone-800"
+              aria-label={isImportant ? 'Unmark important' : 'Mark important'}
+              aria-pressed={isImportant}
             >
-              <option value="none">None</option>
-              <option value="position">Position</option>
-              <option value="candidate">Candidate</option>
-              <option value="company">Company</option>
-            </select>
-            {relKind === 'position' ? (
+              <Star className={`h-5 w-5 ${isImportant ? 'fill-amber-400 text-amber-500' : ''}`} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-x-4 sm:gap-y-3">
+            <label className="flex min-w-0 flex-col gap-1 text-sm">
+              Subject
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                placeholder="e.g. Meet with Dr. Schwartz"
+                required
+              />
+            </label>
+            <label className="flex min-w-0 flex-col gap-1 text-sm">
+              Short description <span className="text-ink-muted font-normal">(optional)</span>
+              <input
+                value={subtitle}
+                onChange={(e) => setSubtitle(e.target.value)}
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                placeholder="A few words…"
+              />
+            </label>
+            <label className="flex min-w-0 flex-col gap-1 text-sm">
+              Starts
+              <input
+                type="datetime-local"
+                value={startsAt}
+                onChange={(e) => setStartsAt(e.target.value)}
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                required
+              />
+            </label>
+            <label className="flex min-w-0 flex-col gap-1 text-sm">
+              End <span className="text-ink-muted font-normal">(optional)</span>
+              <input
+                type="datetime-local"
+                value={endsAt}
+                onChange={(e) => setEndsAt(e.target.value)}
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+              />
+            </label>
+            <label className="flex min-w-0 flex-col gap-1 text-sm">
+              Reminder <span className="text-ink-muted font-normal">(optional)</span>
+              <input
+                type="datetime-local"
+                value={reminderAt}
+                onChange={(e) => setReminderAt(e.target.value)}
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+              />
+            </label>
+            <div className="flex min-w-0 flex-col gap-1 text-sm">
+              <span>
+                Related to <span className="text-ink-muted font-normal">(optional)</span>
+              </span>
               <select
-                value={relId}
-                onChange={(e) => setRelId(e.target.value)}
-                className="border-line mt-1 rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                value={relKind}
+                onChange={(e) => {
+                  const v = e.target.value as RelKind
+                  setRelKind(v)
+                  setRelId('')
+                }}
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
               >
-                <option value="">Select position…</option>
-                {positions.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title}
-                  </option>
-                ))}
+                <option value="none">None</option>
+                <option value="position">Position</option>
+                <option value="candidate">Candidate</option>
+                <option value="company">Company</option>
               </select>
+            </div>
+            {relKind === 'position' ? (
+              <label className="flex min-w-0 flex-col gap-1 text-sm sm:col-span-2">
+                Position
+                <select
+                  value={relId}
+                  onChange={(e) => setRelId(e.target.value)}
+                  className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                >
+                  <option value="">Select position…</option>
+                  {positions.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
             ) : null}
             {relKind === 'candidate' ? (
-              <select
-                value={relId}
-                onChange={(e) => setRelId(e.target.value)}
-                className="border-line mt-1 rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-              >
-                <option value="">Select candidate…</option>
-                {candidates.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.full_name}
-                  </option>
-                ))}
-              </select>
+              <label className="flex min-w-0 flex-col gap-1 text-sm sm:col-span-2">
+                Candidate
+                <select
+                  value={relId}
+                  onChange={(e) => setRelId(e.target.value)}
+                  className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                >
+                  <option value="">Select candidate…</option>
+                  {candidates.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.full_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
             ) : null}
             {relKind === 'company' ? (
-              <select
-                value={relId}
-                onChange={(e) => setRelId(e.target.value)}
-                className="border-line mt-1 rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-              >
-                <option value="">Select company…</option>
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <label className="flex min-w-0 flex-col gap-1 text-sm sm:col-span-2">
+                Company
+                <select
+                  value={relId}
+                  onChange={(e) => setRelId(e.target.value)}
+                  className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                >
+                  <option value="">Select company…</option>
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
             ) : null}
           </div>
-          <div className="flex flex-wrap gap-2">
+
+          <div className="mt-4 flex flex-wrap gap-2 border-t border-stone-200/80 pt-4 dark:border-stone-600">
             <button
               type="submit"
               disabled={saveEvent.isPending}
