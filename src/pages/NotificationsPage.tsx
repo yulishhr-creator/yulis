@@ -1,7 +1,7 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Bell, CalendarClock, Trash2, AlertTriangle, CalendarDays } from 'lucide-react'
+import { Bell, CalendarClock, Trash2, AlertTriangle, CalendarDays, Star } from 'lucide-react'
 import { format } from 'date-fns'
 import { useState } from 'react'
 
@@ -10,6 +10,97 @@ import { getSupabase } from '@/lib/supabase'
 import { formatDue } from '@/lib/dates'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { useToast } from '@/hooks/useToast'
+
+type One<T> = T | T[] | null
+
+type NotificationCalendarEventRow = {
+  id: string
+  title: string
+  subtitle: string | null
+  starts_at: string
+  ends_at: string | null
+  reminder_at: string | null
+  is_important: boolean
+  position_id: string | null
+  candidate_id: string | null
+  company_id: string | null
+  positions: One<{ title: string }>
+  candidates: One<{ full_name: string; position_id: string }>
+  companies: One<{ name: string }>
+}
+
+function one<T>(v: T | T[] | null | undefined): T | null {
+  if (v == null) return null
+  return Array.isArray(v) ? (v[0] ?? null) : v
+}
+
+function NotificationCalendarEventCard({
+  ev,
+  i,
+  reduceMotion,
+}: {
+  ev: NotificationCalendarEventRow
+  i: number
+  reduceMotion: boolean | null
+}) {
+  const company = one(ev.companies)
+  const position = one(ev.positions)
+  const candidate = one(ev.candidates)
+  const rel =
+    ev.company_id && company
+      ? { label: company.name, to: `/companies/${ev.company_id}` as const }
+      : ev.position_id && position
+        ? { label: position.title, to: `/positions/${ev.position_id}` as const }
+        : ev.candidate_id && candidate
+          ? {
+              label: candidate.full_name,
+              to:
+                candidate.position_id ?
+                  (`/positions/${candidate.position_id}` as const)
+                : undefined,
+            }
+          : null
+
+  return (
+    <motion.li
+      initial={reduceMotion ? false : { opacity: 0, x: -8 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: reduceMotion ? 0 : i * 0.04 }}
+      className="border-stitch-on-surface/10 rounded-2xl border-b-4 border-b-[#006384]/60 bg-white p-4 shadow-[0_16px_36px_rgba(48,46,43,0.08)] dark:border-stone-700 dark:bg-stone-900"
+    >
+      <div className="flex items-start gap-2">
+        {ev.is_important ? (
+          <Star className="mt-0.5 h-4 w-4 shrink-0 fill-amber-400 text-amber-500" aria-label="Important" />
+        ) : (
+          <span className="w-4 shrink-0" aria-hidden />
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="font-stitch-head text-stitch-on-surface font-bold dark:text-stone-100">{ev.title}</p>
+          {ev.subtitle ? <p className="text-stitch-muted mt-1 text-sm dark:text-stone-400">{ev.subtitle}</p> : null}
+          <p className="text-[#006384] mt-2 text-xs font-semibold tabular-nums dark:text-cyan-300">
+            {format(new Date(ev.starts_at), 'EEE, MMM d · HH:mm')}
+            {ev.ends_at ? ` – ${format(new Date(ev.ends_at), 'HH:mm')}` : ''}
+          </p>
+          {ev.reminder_at ? (
+            <p className="text-stitch-muted mt-1 flex items-center gap-1 text-xs dark:text-stone-400">
+              <CalendarClock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              Reminder {format(new Date(ev.reminder_at), 'EEE, MMM d · HH:mm')}
+            </p>
+          ) : null}
+          {rel ? (
+            <p className="mt-2 text-xs">
+              {rel.to ?
+                <Link to={rel.to} className="font-semibold text-[#006384] underline-offset-2 hover:underline dark:text-cyan-300">
+                  {rel.label}
+                </Link>
+              : <span className="text-stitch-muted dark:text-stone-400">{rel.label}</span>}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </motion.li>
+  )
+}
 
 export function NotificationsPage() {
   const { user } = useAuth()
@@ -46,7 +137,12 @@ export function NotificationsPage() {
       const horizon = new Date(Date.now() + 14 * 864e5).toISOString()
       const { data, error } = await supabase!
         .from('calendar_events')
-        .select('id, title, subtitle, starts_at, ends_at')
+        .select(
+          `id, title, subtitle, starts_at, ends_at, reminder_at, is_important, position_id, candidate_id, company_id,
+           positions ( title ),
+           candidates ( full_name, position_id ),
+           companies ( name )`,
+        )
         .eq('user_id', uid!)
         .gte('starts_at', now)
         .lte('starts_at', horizon)
@@ -123,6 +219,8 @@ export function NotificationsPage() {
   const reminders = remindersQ.data ?? []
   const overdue = overdueQ.data ?? []
   const upcomingEvents = upcomingEventsQ.data ?? []
+  const upcomingImportant = upcomingEvents.filter((e) => e.is_important)
+  const upcomingRest = upcomingEvents.filter((e) => !e.is_important)
 
   return (
     <div className="flex flex-col gap-8">
@@ -243,31 +341,41 @@ export function NotificationsPage() {
           Upcoming calendar events
         </h2>
         <p className="text-ink-muted mb-3 text-xs dark:text-stone-500">
-          Scheduled on your calendar (next 14 days). These are not reminders — add a reminder separately if you want a nudge.
+          Scheduled on your calendar (next 14 days). You can set an event reminder on the calendar; standalone reminders below stay separate.
         </p>
         {upcomingEventsQ.isLoading ? (
           <p className="text-stitch-muted text-sm">Loading…</p>
         ) : upcomingEvents.length === 0 ? (
           <p className="text-stitch-muted text-sm">No upcoming events in the next two weeks. Add one from Quick actions → Add Calendar Event.</p>
         ) : (
-          <ul className="space-y-3">
-            {upcomingEvents.map((ev, i) => (
-              <motion.li
-                key={ev.id}
-                initial={reduceMotion ? false : { opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: reduceMotion ? 0 : i * 0.04 }}
-                className="border-stitch-on-surface/10 rounded-2xl border-b-4 border-b-[#006384]/60 bg-white p-4 shadow-[0_16px_36px_rgba(48,46,43,0.08)] dark:border-stone-700 dark:bg-stone-900"
-              >
-                <p className="font-stitch-head text-stitch-on-surface font-bold dark:text-stone-100">{ev.title}</p>
-                {ev.subtitle ? <p className="text-stitch-muted mt-1 text-sm dark:text-stone-400">{ev.subtitle}</p> : null}
-                <p className="text-[#006384] mt-2 text-xs font-semibold tabular-nums dark:text-cyan-300">
-                  {format(new Date(ev.starts_at), 'EEE, MMM d · HH:mm')}
-                  {ev.ends_at ? ` – ${format(new Date(ev.ends_at), 'HH:mm')}` : ''}
-                </p>
-              </motion.li>
-            ))}
-          </ul>
+          <div className="space-y-6">
+            {upcomingImportant.length > 0 ? (
+              <div>
+                <h3 className="text-stitch-muted mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#9b3e20] dark:text-orange-400">
+                  Important events
+                </h3>
+                <ul className="space-y-3">
+                  {upcomingImportant.map((ev, i) => (
+                    <NotificationCalendarEventCard key={ev.id} ev={ev} i={i} reduceMotion={reduceMotion} />
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            <div>
+              <h3 className="text-stitch-muted mb-2 text-[11px] font-bold uppercase tracking-[0.18em] dark:text-stone-500">
+                Upcoming events
+              </h3>
+              {upcomingRest.length === 0 ? (
+                <p className="text-stitch-muted text-sm">No other events in the next two weeks.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {upcomingRest.map((ev, i) => (
+                    <NotificationCalendarEventCard key={ev.id} ev={ev} i={i} reduceMotion={reduceMotion} />
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
         )}
       </section>
 
