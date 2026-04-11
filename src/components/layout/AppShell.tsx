@@ -29,11 +29,66 @@ import { useWorkTimer } from '@/work/WorkTimerContext'
 import { useToast } from '@/hooks/useToast'
 
 const nav = [
-  { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
-  { to: '/positions', label: 'Positions', icon: Briefcase, end: false },
-  { to: '/candidates', label: 'Candidates', icon: Users, end: false },
-  { to: '/companies', label: 'Clients', icon: Building2, end: false },
-  { to: '/settings', label: 'Settings', icon: Settings, end: false },
+  {
+    to: '/',
+    label: 'Overview',
+    icon: LayoutDashboard,
+    end: true,
+    activeRow:
+      'from-lume-coral/30 to-lume-sky/22 ring-orange-500/20 dark:from-orange-500/25 dark:to-cyan-500/18 dark:ring-orange-400/30',
+    idleIcon:
+      'from-lume-coral/18 to-lume-sky/12 text-[#8b3a18] dark:from-orange-500/20 dark:to-cyan-500/12 dark:text-orange-200/90',
+    activeIcon:
+      'from-white to-orange-50/95 text-[#7a3318] shadow-inner dark:from-stone-800 dark:to-orange-950/60 dark:text-orange-100',
+  },
+  {
+    to: '/positions',
+    label: 'Positions',
+    icon: Briefcase,
+    end: false,
+    activeRow:
+      'from-lume-violet/28 to-fuchsia-500/20 ring-violet-500/25 dark:from-violet-500/22 dark:to-fuchsia-500/15 dark:ring-violet-400/35',
+    idleIcon:
+      'from-violet-500/16 to-fuchsia-500/10 text-violet-900/85 dark:from-violet-500/18 dark:to-fuchsia-500/12 dark:text-violet-200/90',
+    activeIcon:
+      'from-white to-violet-50/95 text-violet-900 shadow-inner dark:from-stone-800 dark:to-violet-950/50 dark:text-violet-100',
+  },
+  {
+    to: '/candidates',
+    label: 'Candidates',
+    icon: Users,
+    end: false,
+    activeRow:
+      'from-lume-jade/26 to-emerald-400/18 ring-teal-500/20 dark:from-teal-500/20 dark:to-emerald-500/14 dark:ring-teal-400/30',
+    idleIcon:
+      'from-teal-500/16 to-emerald-500/10 text-teal-900/85 dark:from-teal-500/18 dark:to-emerald-500/12 dark:text-teal-200/90',
+    activeIcon:
+      'from-white to-teal-50/95 text-teal-900 shadow-inner dark:from-stone-800 dark:to-teal-950/50 dark:text-teal-100',
+  },
+  {
+    to: '/companies',
+    label: 'Clients',
+    icon: Building2,
+    end: false,
+    activeRow:
+      'from-lume-sky/28 to-blue-500/18 ring-sky-500/25 dark:from-sky-500/22 dark:to-blue-500/14 dark:ring-sky-400/35',
+    idleIcon:
+      'from-sky-500/16 to-blue-500/10 text-sky-900/85 dark:from-sky-500/18 dark:to-blue-500/12 dark:text-sky-200/90',
+    activeIcon:
+      'from-white to-sky-50/95 text-sky-900 shadow-inner dark:from-stone-800 dark:to-sky-950/50 dark:text-sky-100',
+  },
+  {
+    to: '/settings',
+    label: 'Settings',
+    icon: Settings,
+    end: false,
+    activeRow:
+      'from-lume-gold/25 to-amber-600/15 ring-amber-500/20 dark:from-amber-500/18 dark:to-stone-600/20 dark:ring-amber-400/28',
+    idleIcon:
+      'from-amber-500/14 to-stone-400/10 text-amber-900/80 dark:from-amber-500/16 dark:to-stone-500/12 dark:text-amber-200/85',
+    activeIcon:
+      'from-white to-amber-50/95 text-amber-950 shadow-inner dark:from-stone-800 dark:to-amber-950/40 dark:text-amber-100',
+  },
 ] as const
 
 function greeting(): string {
@@ -132,9 +187,30 @@ export function AppShell() {
 
   return (
     <div className="bg-paper text-ink relative min-h-dvh min-w-[960px] overflow-x-auto dark:bg-paper-dark dark:text-stone-100">
-      <div className="pointer-events-none fixed inset-0 -z-10">
-        <div className="absolute top-0 right-0 h-[min(55vh,480px)] w-[min(60vw,480px)] rounded-full bg-gradient-to-bl from-[#fd8863]/20 via-[#97daff]/12 to-transparent blur-3xl dark:from-orange-500/15 dark:via-cyan-500/10" />
-        <div className="absolute bottom-0 left-0 h-[min(45vh,400px)] w-[min(50vw,400px)] rounded-full bg-gradient-to-tr from-[#b4fdb4]/15 via-transparent to-[#fd8863]/10 blur-3xl dark:from-emerald-500/10" />
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div
+          className="animate-aurora-drift absolute top-[-10%] right-[-5%] h-[min(62vh,520px)] w-[min(68vw,560px)] rounded-full bg-gradient-to-bl from-lume-coral/32 via-lume-violet/18 to-lume-sky/14 blur-3xl dark:from-orange-500/22 dark:via-violet-500/14 dark:to-cyan-500/12"
+          aria-hidden
+        />
+        <div
+          className="animate-aurora-drift absolute bottom-[-8%] left-[-8%] h-[min(50vh,440px)] w-[min(55vw,420px)] rounded-full bg-gradient-to-tr from-lume-jade/22 via-lume-rose/12 to-lume-gold/18 blur-3xl [animation-delay:-9s] dark:from-teal-500/14 dark:via-rose-500/10 dark:to-amber-500/12"
+          aria-hidden
+        />
+        <div
+          className="absolute top-1/3 left-1/3 h-[min(40vh,320px)] w-[min(45vw,380px)] -translate-x-1/2 rounded-full bg-gradient-to-r from-fuchsia-400/10 via-transparent to-lume-sky/12 blur-3xl dark:from-fuchsia-500/8 dark:to-cyan-500/10"
+          aria-hidden
+        />
+        <div
+          className="absolute inset-0 opacity-[0.45] dark:opacity-[0.35]"
+          style={{
+            backgroundImage: `
+              radial-gradient(ellipse 90% 55% at 50% -15%, rgba(249, 115, 77, 0.14), transparent 55%),
+              radial-gradient(ellipse 70% 45% at 100% 40%, rgba(167, 139, 250, 0.1), transparent 50%),
+              radial-gradient(ellipse 65% 50% at 0% 85%, rgba(45, 212, 191, 0.09), transparent 48%)
+            `,
+          }}
+          aria-hidden
+        />
       </div>
 
       <a
@@ -149,7 +225,7 @@ export function AppShell() {
       {/* Primary navigation — desktop workspace */}
       <aside
         id="app-sidebar"
-        className={`border-line bg-paper/95 fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r backdrop-blur-xl transition-transform duration-300 ease-out dark:border-line-dark dark:bg-paper-dark/95 ${
+        className={`border-line fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r bg-gradient-to-b from-white/92 via-paper/96 to-lume-sky/5 backdrop-blur-xl transition-transform duration-300 ease-out dark:border-line-dark dark:from-stone-950/92 dark:via-paper-dark/96 dark:to-violet-950/20 ${
           sidebarOpen ? 'translate-x-0' : 'pointer-events-none -translate-x-full'
         }`}
         aria-hidden={!sidebarOpen}
@@ -184,7 +260,7 @@ export function AppShell() {
         ) : null}
 
         <nav className="flex flex-1 flex-col gap-1 p-3" aria-label="Main">
-          {nav.map(({ to, label, icon: Icon, end }) => (
+          {nav.map(({ to, label, icon: Icon, end, activeRow, idleIcon, activeIcon }) => (
             <NavLink
               key={to}
               to={to}
@@ -192,18 +268,16 @@ export function AppShell() {
               className={({ isActive }) =>
                 `group relative flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                   isActive
-                    ? 'bg-gradient-to-r from-[#fd8863]/25 to-[#97daff]/20 text-stitch-on-surface shadow-sm ring-1 ring-[#9b3e20]/20 dark:from-orange-500/20 dark:to-cyan-500/15 dark:text-stone-100 dark:ring-orange-400/25'
-                    : 'text-ink-muted hover:bg-white/70 hover:text-ink dark:text-stone-400 dark:hover:bg-stone-800/80 dark:hover:text-stone-100'
+                    ? `bg-gradient-to-r text-stitch-on-surface shadow-sm ring-1 dark:text-stone-100 ${activeRow}`
+                    : 'text-ink-muted hover:bg-white/75 hover:text-ink dark:text-stone-400 dark:hover:bg-stone-800/85 dark:hover:text-stone-100'
                 }`
               }
             >
               {({ isActive }) => (
                 <>
                   <motion.span
-                    className={`relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all ${
-                      isActive
-                        ? 'bg-white/90 text-ink shadow-inner dark:bg-stone-800 dark:text-stone-100'
-                        : 'bg-white/50 text-ink-muted group-hover:bg-stone-200/60 group-hover:text-ink dark:bg-stone-900/50 dark:group-hover:bg-stone-800 dark:group-hover:text-stone-100'
+                    className={`relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br transition-all ${
+                      isActive ? activeIcon : `${idleIcon} group-hover:brightness-105 dark:group-hover:brightness-110`
                     }`}
                     whileHover={reduceMotion ? undefined : { scale: 1.06, rotate: -3 }}
                     whileTap={reduceMotion ? undefined : { scale: 0.96 }}
@@ -226,7 +300,7 @@ export function AppShell() {
       </aside>
 
       <div className={`transition-[padding] duration-300 ease-out ${sidebarOpen ? 'pl-64' : 'pl-0'}`}>
-        <header className="border-line bg-paper/80 sticky top-0 z-30 flex items-center justify-between gap-3 border-b px-6 py-3 backdrop-blur-xl dark:border-line-dark dark:bg-paper-dark/80">
+        <header className="border-line sticky top-0 z-30 flex items-center justify-between gap-3 border-b bg-gradient-to-r from-white/88 via-paper/90 to-lume-violet/8 px-6 py-3 backdrop-blur-xl dark:border-line-dark dark:from-stone-950/88 dark:via-paper-dark/92 dark:to-violet-950/25">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             {!sidebarOpen ? (
               <button

@@ -37,7 +37,7 @@ export function ScreenHeader({ title, subtitle, backTo, right }: ScreenHeaderPro
       </button>
       <div className="min-w-0 flex-1">
         {title ? (
-          <h1 className="text-stitch-on-surface text-2xl font-extrabold tracking-tight md:text-3xl dark:text-stone-100">
+          <h1 className="text-page-title text-2xl font-extrabold tracking-tight md:text-3xl">
             {title}
           </h1>
         ) : null}

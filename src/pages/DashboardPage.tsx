@@ -357,15 +357,15 @@ export function DashboardPage() {
     <div className="flex flex-col gap-8 md:gap-10">
       {/* Stitch-style hero — task focus */}
       <motion.section
-        className="border-stitch-on-surface/10 relative overflow-hidden rounded-3xl border bg-gradient-to-br from-[#fd8863]/18 via-white to-[#97daff]/20 p-6 shadow-[0_24px_60px_rgba(155,62,32,0.12)] md:p-10 dark:from-orange-500/15 dark:via-stone-900 dark:to-cyan-900/20 dark:shadow-none"
+        className="border-stitch-on-surface/10 relative overflow-hidden rounded-3xl border bg-gradient-to-br from-lume-coral/22 via-white to-lume-violet/16 p-6 shadow-[0_24px_60px_rgba(155,62,32,0.14),0_0_0_1px_rgba(167,139,250,0.08)] md:p-10 dark:from-orange-500/18 dark:via-stone-900 dark:to-violet-900/25 dark:shadow-[0_0_0_1px_rgba(167,139,250,0.12)]"
         initial={reduceMotion ? false : { opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45 }}
       >
-        <div className="pointer-events-none absolute -right-16 -bottom-16 h-48 w-48 rounded-full bg-[#fd8863]/20 blur-3xl dark:bg-orange-500/20" />
-        <div className="pointer-events-none absolute top-0 left-1/2 h-32 w-32 -translate-x-1/2 rounded-full bg-[#97daff]/30 blur-2xl dark:bg-cyan-500/15" />
+        <div className="pointer-events-none absolute -right-16 -bottom-16 h-48 w-48 rounded-full bg-lume-coral/25 blur-3xl dark:bg-orange-500/22" />
+        <div className="pointer-events-none absolute top-0 left-1/2 h-32 w-32 -translate-x-1/2 rounded-full bg-lume-violet/25 blur-2xl dark:bg-violet-500/18" />
         <div className="relative z-10">
-          <h1 className="text-stitch-on-surface text-2xl font-extrabold tracking-tight md:text-3xl dark:text-stone-100">
+          <h1 className="text-page-title text-2xl font-extrabold tracking-tight md:text-3xl">
             {pipelineStatsQ.isLoading ? (
               <>You&apos;re currently working on…</>
             ) : (
@@ -390,7 +390,7 @@ export function DashboardPage() {
             Everything open — sorted by due date.
           </p>
           <article className="mt-3 grid grid-cols-3 gap-0 overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-[0_16px_40px_rgba(48,46,43,0.07)] dark:border-stone-600 dark:bg-stone-900 dark:shadow-[0_16px_40px_rgba(0,0,0,0.25)] md:rounded-3xl">
-            <div className="flex flex-col items-center justify-center border-r border-stone-200/70 px-4 py-5 text-center dark:border-stone-600">
+            <div className="flex flex-col items-center justify-center border-r border-stone-200/70 bg-gradient-to-b from-amber-50/90 to-white px-4 py-5 text-center dark:border-stone-600 dark:from-amber-950/35 dark:to-stone-900">
               <span className="text-ink-muted mb-0.5 text-[10px] font-bold tracking-[0.18em] uppercase dark:text-stone-400">
                 To do
               </span>
@@ -399,7 +399,7 @@ export function DashboardPage() {
                 {kpis.todo === 1 ? '1 waiting' : `${kpis.todo} waiting`}
               </span>
             </div>
-            <div className="flex flex-col items-center justify-center border-r border-stone-200/70 px-4 py-5 text-center dark:border-stone-600">
+            <div className="flex flex-col items-center justify-center border-r border-stone-200/70 bg-gradient-to-b from-sky-50/95 to-white px-4 py-5 text-center dark:border-stone-600 dark:from-sky-950/30 dark:to-stone-900">
               <span className="text-ink-muted mb-0.5 text-[10px] font-bold tracking-[0.18em] uppercase dark:text-stone-400">
                 In progress
               </span>
@@ -408,7 +408,7 @@ export function DashboardPage() {
                 {kpis.inProgress === 0 ? 'None active' : `${kpis.inProgress} active`}
               </span>
             </div>
-            <div className="flex flex-col items-center justify-center px-4 py-5 text-center">
+            <div className="flex flex-col items-center justify-center bg-gradient-to-b from-rose-50/90 to-white px-4 py-5 text-center dark:from-rose-950/30 dark:to-stone-900">
               <span className="text-ink-muted mb-0.5 text-[10px] font-bold tracking-[0.18em] uppercase dark:text-stone-400">
                 Overdue
               </span>
@@ -454,7 +454,7 @@ export function DashboardPage() {
             id="tasks-heading"
             className="text-stitch-on-surface flex items-center gap-2 text-xl font-extrabold md:text-2xl dark:text-stone-100"
           >
-            <span className="bg-stone-100 text-stitch-on-surface flex h-9 w-9 items-center justify-center rounded-xl dark:bg-stone-800 dark:text-stone-100">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-lume-jade/25 to-lume-sky/20 text-teal-900 shadow-sm dark:from-teal-500/25 dark:to-cyan-500/20 dark:text-teal-100">
               <Check className="h-5 w-5 stroke-[2.5]" aria-hidden />
             </span>
             Your tasks

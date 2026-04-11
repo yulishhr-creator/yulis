@@ -39,7 +39,7 @@ export function WeekProgressCard() {
 
   return (
     <div className="border-line border-t p-3 dark:border-line-dark">
-      <div className="rounded-2xl border border-stone-200/90 bg-white px-3 pt-3 pb-3.5 shadow-md shadow-stone-200/50 dark:border-stone-600/80 dark:bg-stone-900/90 dark:shadow-black/30">
+      <div className="rounded-2xl border border-stone-200/90 bg-gradient-to-b from-white to-orange-50/30 px-3 pt-3 pb-3.5 shadow-md shadow-orange-200/25 dark:border-stone-600/80 dark:from-stone-900 dark:to-violet-950/40 dark:shadow-violet-950/20">
         <div className="mb-1 grid grid-cols-7">
           {DAYS.map((_, i) => (
             <div key={i} className="flex justify-center" aria-hidden>

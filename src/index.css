@@ -3,20 +3,29 @@
 @theme {
   --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
 
-  --color-paper: #fbf5f0;
-  --color-paper-dark: #1c1b18;
+  --color-paper: #faf6f2;
+  --color-paper-dark: #16151c;
   --color-ink: #1a1814;
   --color-ink-muted: #5c5650;
-  --color-accent: #c45c26;
-  --color-accent-soft: #f0e4d8;
-  --color-line: #e8e2d9;
-  --color-line-dark: #3d3a35;
+  --color-accent: #d4562a;
+  --color-accent-soft: #f5e8de;
+  --color-line: #e4ddd4;
+  --color-line-dark: #3a3842;
   --color-stitch-on-surface: #302e2b;
   --color-stitch-muted: #5e5b57;
+
+  /* Distinct hues for nav, badges, and accents (Tailwind utilities: bg-lume-*, text-lume-*, etc.) */
+  --color-lume-coral: #f9734d;
+  --color-lume-sky: #38bdf8;
+  --color-lume-violet: #a78bfa;
+  --color-lume-jade: #2dd4bf;
+  --color-lume-gold: #fbbf24;
+  --color-lume-rose: #fb7185;
 
   --animate-fade-up: fade-up 0.7s ease-out both;
   --animate-fade-up-delay: fade-up 0.7s ease-out 0.12s both;
   --animate-fade-up-delay-2: fade-up 0.7s ease-out 0.24s both;
+  --animate-aurora-drift: aurora-drift 28s ease-in-out infinite alternate;
 }
 
 @keyframes fade-up {
@@ -36,11 +45,27 @@
   }
 }
 
+@keyframes aurora-drift {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: translate(2%, -1.5%) scale(1.04);
+    opacity: 0.92;
+  }
+  100% {
+    transform: translate(-1.5%, 1%) scale(1.02);
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   @theme {
     --animate-fade-up: none;
     --animate-fade-up-delay: none;
     --animate-fade-up-delay-2: none;
+    --animate-aurora-drift: none;
   }
 }
 
@@ -56,4 +81,31 @@ body {
 
 #root {
   min-height: 100dvh;
+}
+
+/* Page titles — vivid but readable */
+.text-page-title {
+  background: linear-gradient(
+    115deg,
+    #7a3318 0%,
+    #d4562a 28%,
+    #c026d3 55%,
+    #0e7490 88%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.dark .text-page-title {
+  background: linear-gradient(
+    115deg,
+    #fdba74 0%,
+    #fb923c 25%,
+    #e879f9 55%,
+    #67e8f9 90%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
