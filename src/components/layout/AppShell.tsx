@@ -4,7 +4,6 @@ import {
   Building2,
   Briefcase,
   Settings,
-  Sparkles,
   User,
   LogOut,
   Bell,
@@ -23,6 +22,7 @@ import { UserAvatar } from '@/components/ui/UserAvatar'
 import { QuickActionsHeaderTrigger, QuickActionsSidebarTrigger } from '@/components/layout/QuickActionsMenu'
 import { QuickActionsModal } from '@/components/layout/QuickActionsModal'
 import { WeatherVibes } from '@/components/layout/WeatherVibes'
+import { WeekProgressCard } from '@/components/layout/WeekProgressCard'
 import { PwaInstallPrompt } from '@/components/pwa/PwaInstallPrompt'
 import { useWorkTimer } from '@/work/WorkTimerContext'
 import { useToast } from '@/hooks/useToast'
@@ -167,15 +167,7 @@ export function AppShell() {
           <QuickActionsSidebarTrigger onOpen={() => setQuickActionsOpen(true)} />
         </div>
 
-        <div className="border-line relative border-t p-3 dark:border-line-dark">
-          <div className="text-ink-muted flex items-center gap-2 text-[10px] font-semibold tracking-widest uppercase dark:text-stone-500">
-            <Sparkles className="text-[#9b3e20] h-3.5 w-3.5 dark:text-orange-400" aria-hidden />
-            Quick
-          </div>
-          <p className="text-ink-muted mt-2 text-xs leading-relaxed dark:text-stone-500">
-            The bell counts overdue tasks, upcoming calendar events (next 48h), and reminders — events and reminders are separate.
-          </p>
-        </div>
+        <WeekProgressCard />
       </aside>
 
       <div className={`transition-[padding] duration-300 ease-out ${sidebarOpen ? 'pl-64' : 'pl-0'}`}>
