@@ -153,7 +153,7 @@ function PositionCard({
         >
           <GripVertical className="h-4 w-4" />
         </div>
-        <div className="min-w-0 flex-1 px-3 py-3">
+        <div className="min-w-0 flex-1 px-3 py-2.5">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <Link
               to={`/positions/${p.id}`}
@@ -170,26 +170,32 @@ function PositionCard({
               {daysSince}d
             </span>
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
+          <div className="text-ink-muted mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs dark:text-stone-500">
             <span className="text-sm font-medium text-stone-800 dark:text-stone-200">{co?.name ?? '—'}</span>
+            <span aria-hidden className="select-none">
+              ·
+            </span>
             <span
-              className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[11px] font-bold tracking-wide uppercase ${pill.className}`}
+              className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${pill.className}`}
             >
               {pill.label}
             </span>
+            <span aria-hidden className="select-none">
+              ·
+            </span>
+            <button
+              type="button"
+              draggable={false}
+              onClick={() => setExpanded((v) => !v)}
+              className="text-ink-muted hover:text-ink inline-flex items-center gap-1 font-bold tracking-wide uppercase transition dark:text-stone-500 dark:hover:text-stone-300"
+              aria-expanded={expanded}
+            >
+              {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden />}
+              {cands.length === 0 ? 'No candidates' : `${cands.length} candidate${cands.length === 1 ? '' : 's'}`}
+            </button>
           </div>
-          <button
-            type="button"
-            draggable={false}
-            onClick={() => setExpanded((v) => !v)}
-            className="text-ink-muted hover:text-ink mt-3 flex w-full items-center gap-1.5 text-left text-xs font-bold tracking-wide uppercase dark:text-stone-500 dark:hover:text-stone-300"
-            aria-expanded={expanded}
-          >
-            {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden />}
-            {cands.length === 0 ? 'No candidates' : `${cands.length} candidate${cands.length === 1 ? '' : 's'}`}
-          </button>
           {expanded && cands.length > 0 ? (
-            <ul className="mt-2 space-y-2 border-t border-stone-200/70 pt-2 dark:border-stone-600">
+            <ul className="mt-1.5 space-y-1.5 border-t border-stone-200/70 pt-1.5 dark:border-stone-600">
               {cands.map((c) => {
                 const st = candidateStageName(c.position_stages)
                 const out = candidateOutcomePill(c.outcome)
