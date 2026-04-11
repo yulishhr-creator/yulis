@@ -20,7 +20,7 @@ import { useAuth } from '@/auth/useAuth'
 import { useNotificationCount } from '@/hooks/useNotificationCount'
 import { AnimatedOutlet } from '@/components/layout/AnimatedOutlet'
 import { UserAvatar } from '@/components/ui/UserAvatar'
-import { QuickActionsHeaderTrigger, QuickActionsSidebarTrigger } from '@/components/layout/QuickActionsMenu'
+import { QuickActionsSidebarTrigger } from '@/components/layout/QuickActionsMenu'
 import { QuickActionsModal } from '@/components/layout/QuickActionsModal'
 import { WeatherVibes } from '@/components/layout/WeatherVibes'
 import { WeekProgressCard } from '@/components/layout/WeekProgressCard'
@@ -174,13 +174,12 @@ export function AppShell() {
               <button
                 type="button"
                 onClick={() => setSidebarOpen(false)}
-                className="border-line text-ink-muted hover:bg-[#ec6f9d]/10 hover:text-[#5a2b7e] dark:hover:bg-pink-500/10 dark:hover:text-pink-200 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-white/80 transition dark:border-line-dark dark:bg-stone-900/80"
+                className="border-line text-ink-muted hover:bg-[#ec6f9d]/10 hover:text-[#5a2b7e] dark:hover:bg-pink-500/10 dark:hover:text-pink-200 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border bg-white/80 transition dark:border-line-dark dark:bg-stone-900/80"
                 aria-label="Collapse sidebar"
               >
-                <ChevronLeft className="h-5 w-5" aria-hidden />
+                <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
               </button>
             </div>
-            <WeatherVibes embedded />
           </div>
         ) : null}
 
@@ -233,19 +232,19 @@ export function AppShell() {
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
-                className="border-line text-ink-muted hover:ring-[#ec6f9d]/30 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border bg-white/90 shadow-sm transition hover:shadow-md dark:border-line-dark dark:bg-stone-900/90 dark:hover:ring-pink-500/25"
+                className="border-line text-ink-muted hover:ring-[#ec6f9d]/30 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-white/90 shadow-sm transition hover:shadow-md dark:border-line-dark dark:bg-stone-900/90 dark:hover:ring-pink-500/25"
                 aria-label="Open sidebar"
                 aria-controls="app-sidebar"
                 aria-expanded={sidebarOpen}
               >
-                <PanelLeft className="h-5 w-5" aria-hidden />
+                <PanelLeft className="h-4 w-4" aria-hidden />
               </button>
             ) : null}
             {!sidebarOpen ? accountMenuEl : null}
+            <WeatherVibes />
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            <QuickActionsHeaderTrigger onOpen={() => setQuickActionsOpen(true)} />
             <Link
               to="/time"
               className={`flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 shadow-sm transition hover:bg-[#fd8863]/25 dark:bg-stone-800/90 dark:hover:bg-orange-900/30 ${
