@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { differenceInCalendarDays } from 'date-fns'
-import { Search, UserPlus } from 'lucide-react'
+import { differenceInCalendarDays, formatDistanceToNow } from 'date-fns'
+import { Mail, Phone, Search, UserPlus } from 'lucide-react'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
@@ -11,6 +11,7 @@ import { candidateOutcomePill } from '@/lib/candidateOutcomePill'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/hooks/useToast'
+import { formatDateTime } from '@/lib/dates'
 
 type Outcome = 'active' | 'rejected' | 'withdrawn' | 'hired'
 
@@ -19,6 +20,7 @@ type CandidateRow = {
   full_name: string
   outcome: string
   created_at: string
+  updated_at: string
   position_id: string
   email: string | null
   phone: string | null
@@ -81,7 +83,7 @@ export function CandidatesPage() {
         .from('candidates')
         .select(
           `
-          id, full_name, email, phone, outcome, created_at, position_id,
+          id, full_name, email, phone, outcome, created_at, updated_at, position_id,
           position_stages ( name ),
           positions ( id, title, status, companies ( name ) )
         `,
@@ -164,6 +166,7 @@ export function CandidatesPage() {
       await qc.invalidateQueries({ queryKey: ['position-tasks', oldPid] })
       await qc.invalidateQueries({ queryKey: ['position-tasks', newPid] })
       await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
+      await qc.invalidateQueries({ queryKey: ['candidate-detail'] })
     },
     onError: (e: Error) => toastError(e.message),
   })
@@ -297,66 +300,91 @@ export function CandidatesPage() {
         <ul className="space-y-2">
           {filteredRows.map((c) => {
             const pos = c.positions
-            const stage = c.position_stages?.name
+            const stage = c.position_stages?.name?.trim()
             const company = pos?.companies?.name
             const days = differenceInCalendarDays(new Date(), new Date(c.created_at))
             const out = candidateOutcomePill(c.outcome)
+            const updatedRel = formatDistanceToNow(new Date(c.updated_at), { addSuffix: true })
             return (
               <li
                 key={c.id}
-                className="border-line rounded-2xl border bg-white/80 px-4 py-3 shadow-sm dark:border-line-dark dark:bg-stone-900/50"
+                className="border-line flex overflow-hidden rounded-2xl border bg-white/80 shadow-sm transition dark:border-line-dark dark:bg-stone-900/50"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-2">
-                    <Link
-                      to={`/positions/${c.position_id}?candidate=${c.id}`}
-                      className="text-ink font-semibold hover:underline dark:text-stone-100"
-                    >
-                      {c.full_name}
-                    </Link>
+                <Link
+                  to={`/candidates/${c.id}`}
+                  className="text-ink-muted min-w-0 flex-1 px-4 py-3 transition hover:bg-stone-50/90 dark:hover:bg-stone-800/50"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-ink text-lg font-bold tracking-tight dark:text-stone-100">{c.full_name}</span>
                     <span
                       className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase ${out.className}`}
                     >
                       {out.label}
                     </span>
                   </div>
+                  <p className="mt-1 text-sm">
+                    {pos ? (
+                      <>
+                        <span className="text-ink font-medium dark:text-stone-200">{pos.title}</span>
+                        {company ? (
+                          <>
+                            <span className="opacity-60"> · </span>
+                            <span className="font-medium dark:text-stone-400">{company}</span>
+                          </>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span>Role unavailable</span>
+                    )}
+                  </p>
+                  <div className="mt-2 flex flex-col gap-1 text-xs sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1">
+                    {c.email ? (
+                      <span className="inline-flex min-w-0 items-center gap-1">
+                        <Mail className="h-3.5 w-3.5 shrink-0 opacity-50" aria-hidden />
+                        <span className="truncate">{c.email}</span>
+                      </span>
+                    ) : null}
+                    {c.phone ? (
+                      <span className="inline-flex min-w-0 items-center gap-1">
+                        <Phone className="h-3.5 w-3.5 shrink-0 opacity-50" aria-hidden />
+                        <span className="truncate">{c.phone}</span>
+                      </span>
+                    ) : null}
+                    {!c.email && !c.phone ? <span className="text-stitch-muted">No email or phone on file</span> : null}
+                  </div>
+                  <p className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    <span
+                      className="border-violet-400/80 bg-violet-100 text-violet-950 inline-flex max-w-full items-center rounded-full border-2 px-2.5 py-0.5 text-[11px] font-extrabold tracking-wide uppercase shadow-sm dark:border-violet-500/70 dark:bg-violet-950/90 dark:text-violet-100"
+                      title="Pipeline stage"
+                    >
+                      {stage ? stage : '—'}
+                    </span>
+                    <span className="text-stitch-muted" aria-hidden>
+                      ·
+                    </span>
+                    <span title={formatDateTime(c.updated_at)} className="font-medium">
+                      Updated {updatedRel}
+                    </span>
+                    <span className="text-stitch-muted" aria-hidden>
+                      ·
+                    </span>
+                    <span>{days}d on role</span>
+                  </p>
+                </Link>
+                <div className="border-line flex shrink-0 flex-col border-l dark:border-line-dark">
                   <button
                     type="button"
                     onClick={() => {
                       setAssignFor(c)
                       setAssignPositionId('')
                     }}
-                    className="border-line text-ink-muted hover:bg-[#9b3e20]/10 hover:text-[#9b3e20] dark:hover:bg-orange-500/15 dark:hover:text-orange-300 inline-flex shrink-0 items-center gap-1.5 rounded-xl border bg-white/90 px-2.5 py-1.5 text-xs font-semibold dark:border-line-dark dark:bg-stone-800/80"
+                    className="text-ink-muted hover:bg-[#9b3e20]/10 hover:text-[#9b3e20] dark:hover:bg-orange-500/15 dark:hover:text-orange-300 flex h-full min-h-[4.5rem] flex-col items-center justify-center gap-1 px-3 text-xs font-semibold transition"
                     aria-label={`Assign ${c.full_name} to another role`}
                   >
-                    <UserPlus className="h-3.5 w-3.5" aria-hidden />
+                    <UserPlus className="h-4 w-4" aria-hidden />
                     Assign
                   </button>
                 </div>
-                <p className="text-stitch-muted mt-1 text-sm">
-                  {pos ? (
-                    <>
-                      <span className="text-ink dark:text-stone-200">{pos.title}</span>
-                      {company ? (
-                        <>
-                          <span className="text-stitch-muted"> · </span>
-                          <span className="text-ink-muted font-medium dark:text-stone-400">{company}</span>
-                        </>
-                      ) : null}
-                    </>
-                  ) : (
-                    'Role unavailable'
-                  )}
-                </p>
-                <p className="text-stitch-muted mt-2 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="border-line bg-stone-50/90 text-ink inline-flex max-w-full items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold dark:border-line-dark dark:bg-stone-800/80 dark:text-stone-200">
-                    {stage?.trim() ? stage : '—'}
-                  </span>
-                  <span className="text-stitch-muted">·</span>
-                  <span>
-                    {days}d on role
-                  </span>
-                </p>
               </li>
             )
           })}

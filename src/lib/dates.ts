@@ -7,3 +7,13 @@ export function formatDue(iso: string | null): string {
     return 'no due date'
   }
 }
+
+/** Full date + time for “last updated” style labels. */
+export function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  try {
+    return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+  } catch {
+    return '—'
+  }
+}

@@ -23,6 +23,7 @@ import { NotificationsPage } from '@/pages/NotificationsPage'
 import { WorkingTimePage } from '@/pages/WorkingTimePage'
 import { CalendarPage } from '@/pages/CalendarPage'
 import { CandidatesPage } from '@/pages/CandidatesPage'
+import { CandidateDetailPage } from '@/pages/CandidateDetailPage'
 import { PublicSharePage } from '@/pages/PublicSharePage'
 import { WorkTimerProvider } from '@/work/WorkTimerContext'
 
@@ -59,6 +60,7 @@ export default function App() {
                     <Route path="/companies" element={<CompaniesPage />} />
                     <Route path="/companies/:id" element={<CompanyDetailPage />} />
                     <Route path="/candidates" element={<CandidatesPage />} />
+                    <Route path="/candidates/:id" element={<CandidateDetailPage />} />
                     <Route path="/positions" element={<PositionsPage />} />
                     <Route path="/positions/:id" element={<PositionDetailPage />} />
                     <Route path="/settings/positions/:id/fees" element={<PositionFeesPage />} />
