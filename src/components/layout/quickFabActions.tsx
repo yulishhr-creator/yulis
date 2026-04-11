@@ -1,6 +1,7 @@
 import type { NavigateFunction } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
 import {
+  ArrowRightLeft,
   Bell,
   Briefcase,
   Building2,
@@ -8,8 +9,6 @@ import {
   ClipboardList,
   Clock,
   Mail,
-  Settings,
-  UserPlus,
 } from 'lucide-react'
 
 export type QuickFabAction = {
@@ -17,63 +16,78 @@ export type QuickFabAction = {
   title: string
   subtitle?: string
   icon: LucideIcon
+  /** Tile wrapper: gradient background; icon renders white on top */
   iconBgClass: string
   onSelect: () => void
 }
 
-const iconTile =
-  'rounded-xl bg-stone-200/70 text-stitch-on-surface dark:bg-stone-700 dark:text-stone-200'
-const iconBriefcase = iconTile
-const iconBuilding = iconTile
-const iconTask = iconTile
-const iconCal = iconTile
-const iconMail = iconTile
-const iconBell = iconTile
-const iconClock = iconTile
-const iconUser = iconTile
-const iconGear = iconTile
+/** Vibrant tiles (match accent system: coral, cyan, violet — readable on light + dark UI). */
+const iconAssign =
+  'rounded-xl bg-gradient-to-br from-violet-600 to-fuchsia-500 text-white shadow-md shadow-violet-500/35 dark:from-violet-500 dark:to-fuchsia-600 dark:shadow-violet-900/40'
+const iconClient =
+  'rounded-xl bg-gradient-to-br from-sky-500 to-cyan-600 text-white shadow-md shadow-sky-500/30 dark:from-sky-400 dark:to-cyan-700 dark:shadow-cyan-900/30'
+const iconBriefcase =
+  'rounded-xl bg-gradient-to-br from-amber-600 to-[#fd8863] text-white shadow-md shadow-orange-500/30 dark:from-amber-500 dark:to-orange-500 dark:shadow-orange-900/35'
+const iconTask =
+  'rounded-xl bg-gradient-to-br from-emerald-600 to-teal-500 text-white shadow-md shadow-emerald-500/25 dark:from-emerald-500 dark:to-teal-600 dark:shadow-emerald-900/30'
+const iconCal =
+  'rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30 dark:from-blue-500 dark:to-indigo-700 dark:shadow-blue-900/35'
+const iconMail =
+  'rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 text-white shadow-md shadow-rose-500/25 dark:from-rose-400 dark:to-pink-700 dark:shadow-rose-900/30'
+const iconBell =
+  'rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-md shadow-amber-500/25 dark:from-amber-400 dark:to-amber-700'
+const iconClock =
+  'rounded-xl bg-gradient-to-br from-slate-600 to-slate-800 text-white shadow-md shadow-slate-500/25 dark:from-slate-500 dark:to-slate-900 dark:shadow-black/40'
 
-function mergeSearch(pathname: string, currentSearch: string, patch: Record<string, string>) {
-  const raw = currentSearch.startsWith('?') ? currentSearch.slice(1) : currentSearch
-  const p = new URLSearchParams(raw)
-  for (const [k, v] of Object.entries(patch)) p.set(k, v)
-  const q = p.toString()
-  return { pathname, search: q ? `?${q}` : '' }
-}
-
-/** Actions for the bottom + menu, ordered for the current route (mobile). */
+/**
+ * Same quick actions on every screen (sidebar + modal).
+ * Order: Assign Candidate → Create Client → …
+ */
 export function buildQuickFabActions(opts: {
-  pathname: string
-  search: string
   navigate: NavigateFunction
   closeModal: () => void
-  /** True when viewing a single position (UUID path). */
-  onPositionDetail: boolean
-  positionDetailPath?: string
 }): QuickFabAction[] {
-  const { pathname, search, navigate, closeModal, onPositionDetail, positionDetailPath } = opts
+  const { navigate, closeModal } = opts
 
   const done = (fn: () => void) => () => {
     closeModal()
     fn()
   }
 
-  const createTask = (subtitle?: string): QuickFabAction => ({
-    id: 'task',
-    title: 'Create Task',
-    subtitle: subtitle ?? 'Choose role on the next screen',
-    icon: ClipboardList,
-    iconBgClass: iconTask,
-    onSelect: done(() => navigate('/?addTask=1')),
+  const assignCandidate = (): QuickFabAction => ({
+    id: 'assign-candidate',
+    title: 'Assign Candidate',
+    subtitle: 'Move someone to another active role',
+    icon: ArrowRightLeft,
+    iconBgClass: iconAssign,
+    onSelect: done(() => navigate('/candidates?assign=1')),
   })
 
-  const createPosition = (subtitle?: string): QuickFabAction => ({
+  const createClient = (): QuickFabAction => ({
+    id: 'create-client',
+    title: 'Create Client',
+    subtitle: 'New company profile',
+    icon: Building2,
+    iconBgClass: iconClient,
+    onSelect: done(() => navigate('/companies/new')),
+  })
+
+  const createPosition = (): QuickFabAction => ({
     id: 'position',
     title: 'Create new Position',
-    subtitle: subtitle ?? 'New role for a client',
+    subtitle: 'New role for a client',
     icon: Briefcase,
     iconBgClass: iconBriefcase,
     onSelect: done(() => navigate('/positions?create=1')),
+  })
+
+  const createTask = (): QuickFabAction => ({
+    id: 'task',
+    title: 'Create Task',
+    subtitle: 'Choose role on the next screen',
+    icon: ClipboardList,
+    iconBgClass: iconTask,
+    onSelect: done(() => navigate('/?addTask=1')),
   })
 
   const calendar = (): QuickFabAction => ({
@@ -112,80 +126,14 @@ export function buildQuickFabActions(opts: {
     onSelect: done(() => navigate('/?trackTime=1')),
   })
 
-  const addCompany = (): QuickFabAction => ({
-    id: 'add-company',
-    title: 'Add company',
-    subtitle: 'New client profile',
-    icon: Building2,
-    iconBgClass: iconBuilding,
-    onSelect: done(() => navigate('/companies/new')),
-  })
-
-  // Single position: role-specific shortcuts first
-  if (onPositionDetail && positionDetailPath) {
-    return [
-      {
-        id: 'add-candidate',
-        title: 'Add candidate',
-        subtitle: 'Scrolls to the form on this role',
-        icon: UserPlus,
-        iconBgClass: iconUser,
-        onSelect: done(() => navigate(mergeSearch(positionDetailPath, search, { addCandidate: '1' }))),
-      },
-      createTask('Company & role filled from this page'),
-      {
-        id: 'role-setup',
-        title: 'Role setup',
-        subtitle: 'Recruitment stages & Excel import',
-        icon: Settings,
-        iconBgClass: iconGear,
-        onSelect: done(() => navigate(mergeSearch(positionDetailPath, search, { setup: '1' }))),
-      },
-      createPosition(),
-      calendar(),
-      email(),
-      reminder(),
-    ]
-  }
-
-  // Companies list
-  if (pathname === '/companies') {
-    return [addCompany(), email(), createTask(), createPosition(), calendar(), reminder()]
-  }
-
-  // New or existing company form
-  if (pathname.startsWith('/companies/')) {
-    return [createTask(), createPosition(), calendar(), email(), reminder(), addCompany()]
-  }
-
-  // Positions list (not detail)
-  if (pathname === '/positions') {
-    return [
-      createPosition('Start the create-role flow'),
-      createTask(),
-      calendar(),
-      email(),
-      reminder(),
-    ]
-  }
-
-  if (pathname === '/calendar') {
-    return [calendar(), createTask(), createPosition(), email(), reminder()]
-  }
-
-  if (pathname === '/notifications') {
-    return [reminder(), createTask(), createPosition(), calendar(), email()]
-  }
-
-  if (pathname === '/time') {
-    return [trackTime(), createTask(), createPosition(), calendar(), email(), reminder()]
-  }
-
-  // Dashboard home
-  if (pathname === '/') {
-    return [createPosition(), createTask(), calendar(), email(), reminder()]
-  }
-
-  // Settings, profile, templates, etc.
-  return [createTask(), createPosition(), calendar(), email(), reminder()]
+  return [
+    assignCandidate(),
+    createClient(),
+    createPosition(),
+    createTask(),
+    calendar(),
+    email(),
+    reminder(),
+    trackTime(),
+  ]
 }

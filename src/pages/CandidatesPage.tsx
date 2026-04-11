@@ -1,6 +1,6 @@
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { differenceInCalendarDays, formatDistanceToNow } from 'date-fns'
 import { Mail, Phone, Search, UserPlus } from 'lucide-react'
 
@@ -70,10 +70,31 @@ export function CandidatesPage() {
   const uid = user?.id
   const qc = useQueryClient()
   const { success, error: toastError } = useToast()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const showAssignHint = searchParams.get('assign') === '1'
   const [outcomeFilter, setOutcomeFilter] = useState<'all' | Outcome>('active')
   const [search, setSearch] = useState('')
   const [assignFor, setAssignFor] = useState<CandidateRow | null>(null)
   const [assignPositionId, setAssignPositionId] = useState('')
+
+  function dismissAssignHint() {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('assign')
+        return next
+      },
+      { replace: true },
+    )
+  }
+
+  useEffect(() => {
+    if (!showAssignHint) return
+    const id = window.requestAnimationFrame(() => {
+      document.getElementById('candidate-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    return () => cancelAnimationFrame(id)
+  }, [showAssignHint])
 
   const q = useQuery({
     queryKey: ['all-candidates', uid, outcomeFilter],
@@ -258,6 +279,24 @@ export function CandidatesPage() {
         backTo="/"
       />
 
+      {showAssignHint ? (
+        <div
+          className="border-line flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-violet-200/90 bg-gradient-to-r from-violet-100/90 to-fuchsia-100/70 px-4 py-3 dark:border-violet-800/60 dark:from-violet-950/80 dark:to-fuchsia-950/50"
+          role="status"
+        >
+          <p className="text-sm font-medium text-violet-950 dark:text-violet-100">
+            Use <span className="font-extrabold">Assign</span> on a row to move that candidate to another active role.
+          </p>
+          <button
+            type="button"
+            className="shrink-0 rounded-full border border-violet-300 bg-white/90 px-3 py-1 text-xs font-bold text-violet-900 dark:border-violet-600 dark:bg-violet-900/40 dark:text-violet-100"
+            onClick={dismissAssignHint}
+          >
+            OK
+          </button>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap gap-2">
         {(['all', 'active', 'rejected', 'withdrawn', 'hired'] as const).map((k) => (
           <button
@@ -297,7 +336,7 @@ export function CandidatesPage() {
       ) : filteredRows.length === 0 ? (
         <p className="text-ink-muted text-sm">No candidates match your search.</p>
       ) : (
-        <ul className="space-y-2">
+        <ul id="candidate-list" className="space-y-2">
           {filteredRows.map((c) => {
             const pos = c.positions
             const stage = c.position_stages?.name?.trim()

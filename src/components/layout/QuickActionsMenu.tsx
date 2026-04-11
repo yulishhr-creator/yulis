@@ -19,7 +19,7 @@ export function QuickActionsSidebarTrigger({ onOpen }: QuickActionsSidebarTrigge
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#9b3e20] to-[#fd8863] text-white shadow-sm shadow-[#9b3e20]/20 dark:from-orange-600 dark:to-orange-400">
         <Plus className="h-[18px] w-[18px] stroke-[2.25]" aria-hidden />
       </span>
-      <span>Quick actions</span>
+      <span>Actions</span>
     </motion.button>
   )
 }
@@ -43,7 +43,7 @@ export function QuickActionsHeaderTrigger({ onOpen }: QuickActionsHeaderTriggerP
       <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#5a2b7e]/90 to-[#ec6f9d]/80 text-white shadow-sm dark:from-violet-700 dark:to-pink-500">
         <Sparkles className="h-4 w-4" aria-hidden />
       </span>
-      <span className="hidden text-[#302e2b] sm:inline dark:text-stone-200">Actions (Quick)</span>
+      <span className="hidden text-[#302e2b] sm:inline dark:text-stone-200">Actions</span>
     </motion.button>
   )
 }
