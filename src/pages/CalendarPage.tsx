@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   addMonths,
   eachDayOfInterval,
@@ -20,8 +20,6 @@ import { getSupabase } from '@/lib/supabase'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/hooks/useToast'
 
-type One<T> = T | T[] | null
-
 type CalendarEventRow = {
   id: string
   title: string
@@ -33,24 +31,12 @@ type CalendarEventRow = {
   position_id: string | null
   candidate_id: string | null
   company_id: string | null
-  positions: One<{ title: string }>
-  candidates: One<{ full_name: string; position_id: string }>
-  companies: One<{ name: string }>
-}
-
-function one<T>(v: T | T[] | null | undefined): T | null {
-  if (v == null) return null
-  return Array.isArray(v) ? (v[0] ?? null) : v
 }
 
 type RelKind = 'none' | 'position' | 'candidate' | 'company'
 
-const EVENT_SELECT = `id, title, subtitle, starts_at, ends_at, reminder_at, is_important, position_id, candidate_id, company_id,
-  positions ( title ),
-  candidates ( full_name, position_id ),
-  companies ( name )`
-
-const CAL_STALE_MS = 60_000
+const EVENT_SELECT =
+  'id, title, subtitle, starts_at, ends_at, reminder_at, is_important, position_id, candidate_id, company_id'
 
 function titleDayPreview(title: string, maxChars = 22): string {
   const t = title.trim()
