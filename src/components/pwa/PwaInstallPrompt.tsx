@@ -114,11 +114,11 @@ export function PwaInstallPrompt() {
       className="border-line bg-paper/98 fixed right-6 bottom-6 left-auto z-[55] w-full max-w-sm rounded-2xl border p-4 shadow-2xl backdrop-blur-md dark:border-line-dark dark:bg-paper-dark/98"
     >
       <div className="flex items-start gap-3">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#fd8863]/35 to-[#97daff]/40 text-[#9b3e20] dark:from-orange-500/30 dark:to-cyan-500/25 dark:text-orange-300">
+        <span className="bg-stone-200/80 text-stitch-on-surface flex h-11 w-11 shrink-0 items-center justify-center rounded-xl dark:bg-stone-700 dark:text-stone-200">
           <Download className="h-5 w-5" aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 id="pwa-install-title" className="text-base font-extrabold text-[#302e2b] dark:text-stone-100">
+          <h2 id="pwa-install-title" className="text-ink text-base font-semibold dark:text-stone-100">
             {banner === 'chromium' ? 'Install as app?' : 'Add Yulis to your Home Screen'}
           </h2>
           <p id="pwa-install-desc" className="text-stitch-muted mt-1 text-sm leading-relaxed dark:text-stone-400">
