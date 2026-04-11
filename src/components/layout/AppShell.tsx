@@ -10,16 +10,19 @@ import {
   Bell,
   CalendarDays,
   Clock,
+  ChevronLeft,
+  PanelLeft,
 } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
 import { useNotificationCount } from '@/hooks/useNotificationCount'
-import { AppLogo } from '@/components/ui/AppLogo'
 import { AnimatedOutlet } from '@/components/layout/AnimatedOutlet'
 import { UserAvatar } from '@/components/ui/UserAvatar'
-import { QuickActionsMenu } from '@/components/layout/QuickActionsMenu'
+import { QuickActionsHeaderTrigger, QuickActionsSidebarTrigger } from '@/components/layout/QuickActionsMenu'
+import { QuickActionsModal } from '@/components/layout/QuickActionsModal'
+import { WeatherVibes } from '@/components/layout/WeatherVibes'
 import { PwaInstallPrompt } from '@/components/pwa/PwaInstallPrompt'
 import { useWorkTimer } from '@/work/WorkTimerContext'
 import { useToast } from '@/hooks/useToast'
@@ -30,7 +33,6 @@ const nav = [
   { to: '/time', label: 'Time', icon: Clock, end: false },
   { to: '/calendar', label: 'Calendar', icon: CalendarDays, end: false },
   { to: '/companies', label: 'Clients', icon: Building2, end: false },
-  { to: '/notifications', label: 'Notifications', icon: Bell, end: false },
   { to: '/settings', label: 'Settings', icon: Settings, end: false },
 ] as const
 
@@ -54,6 +56,8 @@ export function AppShell() {
   const location = useLocation()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [quickActionsOpen, setQuickActionsOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const reduceMotion = useReducedMotion()
   const { data: notificationCount = 0 } = useNotificationCount()
@@ -86,13 +90,37 @@ export function AppShell() {
         Skip to content
       </a>
 
+      <QuickActionsModal open={quickActionsOpen} onClose={() => setQuickActionsOpen(false)} />
+
       {/* Primary navigation — desktop workspace */}
-      <aside className="border-line bg-paper/95 fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r backdrop-blur-xl dark:border-line-dark dark:bg-paper-dark/95">
-        <div className="border-line flex items-center gap-2 border-b px-4 py-4 dark:border-line-dark">
-          <Link to="/" className="min-w-0">
-            <AppLogo size="sm" />
+      <aside
+        id="app-sidebar"
+        className={`border-line bg-paper/95 fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r backdrop-blur-xl transition-transform duration-300 ease-out dark:border-line-dark dark:bg-paper-dark/95 ${
+          sidebarOpen ? 'translate-x-0' : 'pointer-events-none -translate-x-full'
+        }`}
+        aria-hidden={!sidebarOpen}
+      >
+        <div className="border-line flex items-center gap-2 border-b px-3 py-3 dark:border-line-dark">
+          <Link to="/" className="min-w-0 flex-1" title="LvlUp Talent Solutions">
+            <img
+              src="/lvlup-logo.png"
+              alt="LvlUp Talent Solutions"
+              className="h-10 max-h-10 w-auto max-w-[min(100%,11rem)] object-contain object-left"
+              width={176}
+              height={40}
+            />
           </Link>
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(false)}
+            className="border-line text-ink-muted hover:bg-[#ec6f9d]/10 hover:text-[#5a2b7e] dark:hover:bg-pink-500/10 dark:hover:text-pink-200 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-white/80 transition dark:border-line-dark dark:bg-stone-900/80"
+            aria-label="Collapse sidebar"
+          >
+            <ChevronLeft className="h-5 w-5" aria-hidden />
+          </button>
         </div>
+
+        <WeatherVibes />
 
         <nav className="flex flex-1 flex-col gap-1 p-3" aria-label="Main">
           {nav.map(({ to, label, icon: Icon, end }) => (
@@ -129,11 +157,6 @@ export function AppShell() {
                     <Icon className="h-[18px] w-[18px]" aria-hidden />
                   </motion.span>
                   <span className="relative z-10 flex-1">{label}</span>
-                  {to === '/notifications' && notificationCount > 0 ? (
-                    <span className="bg-red-500 text-[10px] font-extrabold text-white relative z-10 min-w-[1.25rem] rounded-full px-1.5 py-0.5 text-center">
-                      {notificationCount > 99 ? '99+' : notificationCount}
-                    </span>
-                  ) : null}
                 </>
               )}
             </NavLink>
@@ -141,7 +164,7 @@ export function AppShell() {
         </nav>
 
         <div className="border-line border-t px-3 pt-2 pb-1 dark:border-line-dark">
-          <QuickActionsMenu />
+          <QuickActionsSidebarTrigger onOpen={() => setQuickActionsOpen(true)} />
         </div>
 
         <div className="border-line relative border-t p-3 dark:border-line-dark">
@@ -155,9 +178,21 @@ export function AppShell() {
         </div>
       </aside>
 
-      <div className="pl-64">
+      <div className={`transition-[padding] duration-300 ease-out ${sidebarOpen ? 'pl-64' : 'pl-0'}`}>
         <header className="border-line bg-paper/80 sticky top-0 z-30 flex items-center justify-between gap-3 border-b px-6 py-3 backdrop-blur-xl dark:border-line-dark dark:bg-paper-dark/80">
           <div className="flex min-w-0 flex-1 items-center gap-3">
+            {!sidebarOpen ? (
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                className="border-line text-ink-muted hover:ring-[#ec6f9d]/30 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border bg-white/90 shadow-sm transition hover:shadow-md dark:border-line-dark dark:bg-stone-900/90 dark:hover:ring-pink-500/25"
+                aria-label="Open sidebar"
+                aria-controls="app-sidebar"
+                aria-expanded={sidebarOpen}
+              >
+                <PanelLeft className="h-5 w-5" aria-hidden />
+              </button>
+            ) : null}
             <div className="relative shrink-0" ref={menuRef}>
               <button
                 type="button"
@@ -226,6 +261,7 @@ export function AppShell() {
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
+            <QuickActionsHeaderTrigger onOpen={() => setQuickActionsOpen(true)} />
             <Link
               to={location.pathname === '/calendar' ? '/' : '/calendar'}
               className={`flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 shadow-sm transition hover:bg-[#97daff]/30 dark:bg-stone-800/90 dark:hover:bg-cyan-900/40 ${

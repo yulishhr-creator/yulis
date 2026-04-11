@@ -15,10 +15,10 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'lvlup-brand.svg'],
+      includeAssets: ['favicon.svg', 'lvlup-brand.svg', 'lvlup-logo.png'],
       manifest: {
-        name: "Yuli's HR — Outsmart",
-        short_name: 'Yulis',
+        name: 'LvlUp Talent Solutions',
+        short_name: 'LvlUp',
         description: 'Recruiting workspace for tasks, roles, and candidates.',
         theme_color: '#9b3e20',
         background_color: '#faf8f5',
