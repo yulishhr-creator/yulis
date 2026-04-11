@@ -417,30 +417,30 @@ export function DashboardPage() {
             Everything open — sorted by due date.
           </p>
           <article className="mt-3 grid grid-cols-3 gap-0 overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-[0_16px_40px_rgba(48,46,43,0.07)] dark:border-stone-600 dark:bg-stone-900 dark:shadow-[0_16px_40px_rgba(0,0,0,0.25)] md:rounded-3xl">
-            <div className="flex flex-col items-center justify-center border-r border-stone-200/70 px-2 py-4 text-center dark:border-stone-600 sm:px-4 sm:py-5">
+            <div className="flex flex-col items-center justify-center border-r border-stone-200/70 px-4 py-5 text-center dark:border-stone-600">
               <span className="font-stitch-label mb-0.5 text-[10px] font-bold tracking-[0.18em] text-[#165c25] uppercase dark:text-emerald-400">
                 To do
               </span>
-              <p className="font-stitch-head text-stitch-on-surface text-2xl font-extrabold tabular-nums sm:text-3xl dark:text-stone-100">{kpis.todo}</p>
-              <span className="text-stitch-muted mt-1 hidden text-[11px] font-medium sm:inline dark:text-stone-500">
+              <p className="font-stitch-head text-stitch-on-surface text-3xl font-extrabold tabular-nums dark:text-stone-100">{kpis.todo}</p>
+              <span className="text-stitch-muted mt-1 text-[11px] font-medium dark:text-stone-500">
                 {kpis.todo === 1 ? '1 waiting' : `${kpis.todo} waiting`}
               </span>
             </div>
-            <div className="flex flex-col items-center justify-center border-r border-stone-200/70 px-2 py-4 text-center dark:border-stone-600 sm:px-4 sm:py-5">
+            <div className="flex flex-col items-center justify-center border-r border-stone-200/70 px-4 py-5 text-center dark:border-stone-600">
               <span className="font-stitch-label mb-0.5 text-[10px] font-bold tracking-[0.18em] text-[#004d68] uppercase dark:text-cyan-400">
                 In progress
               </span>
-              <p className="font-stitch-head text-stitch-on-surface text-2xl font-extrabold tabular-nums sm:text-3xl dark:text-stone-100">{kpis.inProgress}</p>
-              <span className="text-stitch-muted mt-1 hidden text-[11px] font-medium sm:inline dark:text-stone-500">
+              <p className="font-stitch-head text-stitch-on-surface text-3xl font-extrabold tabular-nums dark:text-stone-100">{kpis.inProgress}</p>
+              <span className="text-stitch-muted mt-1 text-[11px] font-medium dark:text-stone-500">
                 {kpis.inProgress === 0 ? 'None active' : `${kpis.inProgress} active`}
               </span>
             </div>
-            <div className="flex flex-col items-center justify-center px-2 py-4 text-center sm:px-4 sm:py-5">
+            <div className="flex flex-col items-center justify-center px-4 py-5 text-center">
               <span className="font-stitch-label mb-0.5 text-[10px] font-bold tracking-[0.18em] text-[#9f0519] uppercase dark:text-red-400">
                 Overdue
               </span>
-              <p className="font-stitch-head text-stitch-on-surface text-2xl font-extrabold tabular-nums sm:text-3xl dark:text-stone-100">{kpis.overdue}</p>
-              <span className="text-stitch-muted mt-1 hidden text-[11px] font-medium sm:inline dark:text-stone-500">
+              <p className="font-stitch-head text-stitch-on-surface text-3xl font-extrabold tabular-nums dark:text-stone-100">{kpis.overdue}</p>
+              <span className="text-stitch-muted mt-1 text-[11px] font-medium dark:text-stone-500">
                 {kpis.overdue > 0 ? `${kpis.overdue} past due` : 'On schedule'}
               </span>
             </div>

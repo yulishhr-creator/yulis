@@ -57,7 +57,7 @@ export function LoginPage() {
 
   return (
     <div className="relative flex min-h-dvh overflow-hidden">
-      <div className="from-paper via-accent-soft/30 to-amber-100/40 relative hidden flex-1 flex-col justify-between bg-gradient-to-br p-10 lg:flex dark:from-paper-dark dark:via-stone-900 dark:to-stone-950">
+      <div className="from-paper via-accent-soft/30 to-amber-100/40 relative flex flex-1 flex-col justify-between bg-gradient-to-br p-10 dark:from-paper-dark dark:via-stone-900 dark:to-stone-950">
         <div className="pointer-events-none absolute inset-0">
           <motion.div
             className="bg-accent/20 absolute top-1/4 left-1/4 h-72 w-72 rounded-full blur-3xl"
@@ -105,7 +105,7 @@ export function LoginPage() {
         <p className="text-ink-muted relative z-10 text-xs tracking-widest uppercase dark:text-stone-500">Yuli’s Exclusive Outsmart HR</p>
       </div>
 
-      <div className="relative flex flex-1 flex-col items-center justify-center px-6 py-12 dark:bg-paper-dark">
+      <div className="relative flex min-w-[28rem] flex-1 flex-col items-center justify-center px-10 py-12 dark:bg-paper-dark">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-accent/5 via-transparent to-transparent dark:from-orange-500/5" />
         <motion.div
           className="border-line bg-white/85 relative z-10 w-full max-w-md rounded-3xl border p-8 shadow-[0_25px_80px_-20px_rgba(196,92,38,0.25)] backdrop-blur-md dark:border-line-dark dark:bg-stone-900/85 dark:shadow-[0_25px_80px_-20px_rgba(0,0,0,0.5)]"
@@ -113,9 +113,6 @@ export function LoginPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
         >
-          <div className="lg:hidden mb-6 flex justify-center">
-            <AppLogo size="md" />
-          </div>
           <p className="text-accent text-center text-xs font-semibold tracking-[0.25em] uppercase dark:text-orange-300">
             {mode === 'signin' ? 'Welcome back' : 'Join the workspace'}
           </p>

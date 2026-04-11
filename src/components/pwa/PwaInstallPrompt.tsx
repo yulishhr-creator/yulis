@@ -111,7 +111,7 @@ export function PwaInstallPrompt() {
       role="dialog"
       aria-labelledby="pwa-install-title"
       aria-describedby="pwa-install-desc"
-      className="border-line bg-paper/98 fixed right-3 left-3 z-[55] max-w-md rounded-2xl border p-4 shadow-2xl backdrop-blur-md dark:border-line-dark dark:bg-paper-dark/98 lg:right-6 lg:bottom-6 lg:left-auto lg:w-full lg:max-w-sm bottom-[max(7rem,calc(6.75rem+env(safe-area-inset-bottom,0px)+0.5rem))]"
+      className="border-line bg-paper/98 fixed right-6 bottom-6 left-auto z-[55] w-full max-w-sm rounded-2xl border p-4 shadow-2xl backdrop-blur-md dark:border-line-dark dark:bg-paper-dark/98"
     >
       <div className="flex items-start gap-3">
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#fd8863]/35 to-[#97daff]/40 text-[#9b3e20] dark:from-orange-500/30 dark:to-cyan-500/25 dark:text-orange-300">

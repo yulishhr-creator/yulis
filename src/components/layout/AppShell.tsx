@@ -19,7 +19,7 @@ import { useNotificationCount } from '@/hooks/useNotificationCount'
 import { AppLogo } from '@/components/ui/AppLogo'
 import { AnimatedOutlet } from '@/components/layout/AnimatedOutlet'
 import { UserAvatar } from '@/components/ui/UserAvatar'
-import { MobileBottomNav } from '@/components/layout/MobileBottomNav'
+import { QuickActionsMenu } from '@/components/layout/QuickActionsMenu'
 import { PwaInstallPrompt } from '@/components/pwa/PwaInstallPrompt'
 import { useWorkTimer } from '@/work/WorkTimerContext'
 import { useToast } from '@/hooks/useToast'
@@ -73,7 +73,7 @@ export function AppShell() {
   }, [])
 
   return (
-    <div className="bg-paper text-ink relative min-h-dvh overflow-x-hidden dark:bg-paper-dark dark:text-stone-100">
+    <div className="bg-paper text-ink relative min-h-dvh min-w-[960px] overflow-x-auto dark:bg-paper-dark dark:text-stone-100">
       <div className="pointer-events-none fixed inset-0 -z-10">
         <div className="absolute top-0 right-0 h-[min(55vh,480px)] w-[min(60vw,480px)] rounded-full bg-gradient-to-bl from-[#fd8863]/20 via-[#97daff]/12 to-transparent blur-3xl dark:from-orange-500/15 dark:via-cyan-500/10" />
         <div className="absolute bottom-0 left-0 h-[min(45vh,400px)] w-[min(50vw,400px)] rounded-full bg-gradient-to-tr from-[#b4fdb4]/15 via-transparent to-[#fd8863]/10 blur-3xl dark:from-emerald-500/10" />
@@ -86,8 +86,8 @@ export function AppShell() {
         Skip to content
       </a>
 
-      {/* Desktop / tablet: sidebar */}
-      <aside className="border-line bg-paper/95 fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r backdrop-blur-xl lg:flex dark:border-line-dark dark:bg-paper-dark/95">
+      {/* Primary navigation — desktop workspace */}
+      <aside className="border-line bg-paper/95 fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r backdrop-blur-xl dark:border-line-dark dark:bg-paper-dark/95">
         <div className="border-line flex items-center gap-2 border-b px-4 py-4 dark:border-line-dark">
           <Link to="/" className="min-w-0">
             <AppLogo size="sm" />
@@ -140,6 +140,10 @@ export function AppShell() {
           ))}
         </nav>
 
+        <div className="border-line border-t px-3 pt-2 pb-1 dark:border-line-dark">
+          <QuickActionsMenu />
+        </div>
+
         <div className="border-line relative border-t p-3 dark:border-line-dark">
           <div className="text-ink-muted flex items-center gap-2 text-[10px] font-semibold tracking-widest uppercase dark:text-stone-500">
             <Sparkles className="text-[#9b3e20] h-3.5 w-3.5 dark:text-orange-400" aria-hidden />
@@ -151,9 +155,9 @@ export function AppShell() {
         </div>
       </aside>
 
-      <div className="lg:pl-64">
-        <header className="border-line bg-paper/80 sticky top-0 z-30 flex items-center justify-between gap-3 border-b px-3 py-3 backdrop-blur-xl sm:px-4 dark:border-line-dark dark:bg-paper-dark/80">
-          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+      <div className="pl-64">
+        <header className="border-line bg-paper/80 sticky top-0 z-30 flex items-center justify-between gap-3 border-b px-6 py-3 backdrop-blur-xl dark:border-line-dark dark:bg-paper-dark/80">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <div className="relative shrink-0" ref={menuRef}>
               <button
                 type="button"
@@ -212,10 +216,10 @@ export function AppShell() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35 }}
             >
-              <p className="from-[#9b3e20] to-[#006384] bg-gradient-to-r bg-clip-text font-stitch-head truncate text-sm font-extrabold text-transparent sm:text-base dark:from-orange-300 dark:to-cyan-300">
+              <p className="from-[#9b3e20] to-[#006384] bg-gradient-to-r bg-clip-text font-stitch-head truncate text-base font-extrabold text-transparent dark:from-orange-300 dark:to-cyan-300">
                 {greeting()}, {displayName}
               </p>
-              <p className="truncate text-[10px] font-semibold tracking-wide text-[#5c5348] sm:text-[11px] dark:text-stone-400">
+              <p className="truncate text-[11px] font-semibold tracking-wide text-[#5c5348] dark:text-stone-400">
                 Keep pushing forward
               </p>
             </motion.div>
@@ -268,14 +272,13 @@ export function AppShell() {
 
         <main
           id="main"
-          className="pb-app-main-mobile mx-auto max-w-6xl px-4 pt-6 md:px-8 md:pt-8"
+          className="mx-auto max-w-6xl px-8 pb-10 pt-8"
         >
           <AnimatedOutlet />
         </main>
       </div>
 
       <PwaInstallPrompt />
-      <MobileBottomNav />
     </div>
   )
 }
