@@ -254,7 +254,7 @@ export function CandidatesPage() {
 
       <ScreenHeader
         title="Candidates"
-        subtitle="Everyone in your pipeline — open a role to edit details or import."
+        subtitle="Tap a card for the full profile (tabs). Assign keeps them on another active role without leaving this list."
         backTo="/"
       />
 

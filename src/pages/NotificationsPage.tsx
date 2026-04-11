@@ -1,7 +1,7 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Bell, CalendarClock, Trash2, AlertTriangle, CalendarDays, Star } from 'lucide-react'
+import { Bell, CalendarClock, Trash2, AlertTriangle, CalendarDays, Star, Check } from 'lucide-react'
 import { format } from 'date-fns'
 import { useState } from 'react'
 
@@ -34,14 +34,25 @@ function one<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : v
 }
 
+const notifActionBtn =
+  'text-stitch-muted hover:bg-stitch-on-surface/5 shrink-0 rounded-xl p-2 transition disabled:opacity-40 dark:hover:bg-stone-800/80'
+
 function NotificationCalendarEventCard({
   ev,
   i,
   reduceMotion,
+  onClearReminder,
+  onDelete,
+  clearPending,
+  deletePending,
 }: {
   ev: NotificationCalendarEventRow
   i: number
   reduceMotion: boolean | null
+  onClearReminder: () => void
+  onDelete: () => void
+  clearPending: boolean
+  deletePending: boolean
 }) {
   const company = one(ev.companies)
   const position = one(ev.positions)
@@ -96,6 +107,27 @@ function NotificationCalendarEventCard({
               : <span className="text-stitch-muted dark:text-stone-400">{rel.label}</span>}
             </p>
           ) : null}
+        </div>
+        <div className="flex shrink-0 flex-col gap-0.5">
+          <button
+            type="button"
+            onClick={() => void onClearReminder()}
+            disabled={clearPending || deletePending}
+            className={`${notifActionBtn} hover:text-emerald-600 dark:hover:text-emerald-400`}
+            title={ev.reminder_at ? 'Clear event reminder' : 'Clear reminder (none set)'}
+            aria-label="Clear event reminder"
+          >
+            <Check className="h-5 w-5" strokeWidth={2.5} />
+          </button>
+          <button
+            type="button"
+            onClick={() => void onDelete()}
+            disabled={clearPending || deletePending}
+            className={`${notifActionBtn} hover:text-red-600 dark:hover:text-red-400`}
+            aria-label="Delete calendar event"
+          >
+            <Trash2 className="h-5 w-5" />
+          </button>
         </div>
       </div>
     </motion.li>
@@ -211,7 +243,68 @@ export function NotificationsPage() {
       await qc.invalidateQueries({ queryKey: ['notifications-reminders'] })
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
       await qc.invalidateQueries({ queryKey: ['dashboard-reminders'] })
-      success('Reminder dismissed')
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const completeOverdueTask = useMutation({
+    mutationFn: async (taskId: string) => {
+      const { error } = await supabase!.from('tasks').update({ status: 'done' }).eq('id', taskId).eq('user_id', uid!)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      success('Task completed')
+      await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
+      await qc.invalidateQueries({ queryKey: ['position-tasks'] })
+      await qc.invalidateQueries({ queryKey: ['notifications-overdue-tasks'] })
+      await qc.invalidateQueries({ queryKey: ['notification-count'] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const deleteOverdueTask = useMutation({
+    mutationFn: async (taskId: string) => {
+      const { error } = await supabase!.from('tasks').delete().eq('id', taskId).eq('user_id', uid!)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      success('Task deleted')
+      await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
+      await qc.invalidateQueries({ queryKey: ['position-tasks'] })
+      await qc.invalidateQueries({ queryKey: ['notifications-overdue-tasks'] })
+      await qc.invalidateQueries({ queryKey: ['notification-count'] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const clearCalendarEventReminder = useMutation({
+    mutationFn: async (eventId: string) => {
+      const { error } = await supabase!
+        .from('calendar_events')
+        .update({ reminder_at: null })
+        .eq('id', eventId)
+        .eq('user_id', uid!)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      success('Reminder cleared')
+      await qc.invalidateQueries({ queryKey: ['calendar-events'] })
+      await qc.invalidateQueries({ queryKey: ['notification-count'] })
+      await qc.invalidateQueries({ queryKey: ['notifications-calendar-events'] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const deleteCalendarEvent = useMutation({
+    mutationFn: async (eventId: string) => {
+      const { error } = await supabase!.from('calendar_events').delete().eq('id', eventId).eq('user_id', uid!)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      success('Event deleted')
+      await qc.invalidateQueries({ queryKey: ['calendar-events'] })
+      await qc.invalidateQueries({ queryKey: ['notification-count'] })
+      await qc.invalidateQueries({ queryKey: ['notifications-calendar-events'] })
     },
     onError: (e: Error) => toastError(e.message),
   })
@@ -297,145 +390,224 @@ export function NotificationsPage() {
         </form>
       ) : null}
 
-      <section aria-labelledby="overdue-heading">
-        <h2
-          id="overdue-heading"
-          className="text-ink-muted mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] uppercase dark:text-stone-400"
-        >
-          <AlertTriangle className="h-4 w-4" aria-hidden />
-          Overdue tasks
-        </h2>
-        {overdueQ.isLoading ? (
-          <p className="text-stitch-muted text-sm">Loading…</p>
-        ) : overdue.length === 0 ? (
-          <p className="text-stitch-muted rounded-2xl border border-emerald-200/80 bg-emerald-50/80 px-4 py-3 text-sm dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-stone-400">
-            You’re all caught up — no overdue tasks with a due date.
-          </p>
-        ) : (
-          <ul className="space-y-3">
-            {overdue.map((t, i) => {
-              const pos = t.positions as unknown as { title: string } | null
-              return (
-                <motion.li
-                  key={t.id}
-                  initial={reduceMotion ? false : { opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: reduceMotion ? 0 : i * 0.04 }}
-                >
-                  <Link
-                    to={`/positions/${t.position_id}`}
-                    className="border-stitch-on-surface/10 flex flex-col gap-1 rounded-2xl border-b-4 border-b-red-400 bg-white p-4 shadow-[0_16px_36px_rgba(48,46,43,0.08)] dark:border-stone-700 dark:bg-stone-900"
-                  >
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:items-start lg:gap-6">
+        <section aria-labelledby="overdue-heading" className="min-w-0">
+          <h2
+            id="overdue-heading"
+            className="text-ink-muted mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] uppercase dark:text-stone-400"
+          >
+            <AlertTriangle className="h-4 w-4" aria-hidden />
+            Overdue tasks
+          </h2>
+          {overdueQ.isLoading ? (
+            <p className="text-stitch-muted text-sm">Loading…</p>
+          ) : overdue.length === 0 ? (
+            <p className="text-stitch-muted rounded-2xl border border-emerald-200/80 bg-emerald-50/80 px-4 py-3 text-sm dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-stone-400">
+              You’re all caught up — no overdue tasks with a due date.
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {overdue.map((t, i) => {
+                const pos = t.positions as unknown as { title: string } | null
+                const pid = t.position_id
+                const taskBusyId =
+                  completeOverdueTask.isPending ? completeOverdueTask.variables
+                  : deleteOverdueTask.isPending ? deleteOverdueTask.variables
+                  : undefined
+                const rowBusy = taskBusyId === t.id
+                const body = (
+                  <>
                     <span className="text-stitch-on-surface font-bold dark:text-stone-100">{t.title}</span>
                     <span className="text-stitch-muted text-sm dark:text-stone-400">
                       {pos?.title ?? 'Position'} · was due {formatDue(t.due_at)}
                     </span>
-                  </Link>
-                </motion.li>
-              )
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section aria-labelledby="calendar-events-heading">
-        <h2
-          id="calendar-events-heading"
-          className="text-ink-muted mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] uppercase dark:text-stone-400"
-        >
-          <CalendarDays className="h-4 w-4" aria-hidden />
-          Upcoming calendar events
-        </h2>
-        <p className="text-ink-muted mb-3 text-xs dark:text-stone-500">
-          Scheduled on your calendar (next 14 days). You can set an event reminder on the calendar; standalone reminders below stay separate.
-        </p>
-        {upcomingEventsQ.isLoading ? (
-          <p className="text-stitch-muted text-sm">Loading…</p>
-        ) : upcomingEvents.length === 0 ? (
-          <p className="text-stitch-muted text-sm">No upcoming events in the next two weeks. Add one from Quick actions → Add Calendar Event.</p>
-        ) : (
-          <div className="space-y-6">
-            {upcomingImportant.length > 0 ? (
-              <div>
-                <h3 className="text-ink-muted mb-2 text-[11px] font-bold tracking-[0.18em] uppercase dark:text-stone-400">
-                  Important events
-                </h3>
-                <ul className="space-y-3">
-                  {upcomingImportant.map((ev, i) => (
-                    <NotificationCalendarEventCard key={ev.id} ev={ev} i={i} reduceMotion={reduceMotion} />
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            <div>
-              <h3 className="text-stitch-muted mb-2 text-[11px] font-bold uppercase tracking-[0.18em] dark:text-stone-500">
-                Upcoming events
-              </h3>
-              {upcomingRest.length === 0 ? (
-                <p className="text-stitch-muted text-sm">No other events in the next two weeks.</p>
-              ) : (
-                <ul className="space-y-3">
-                  {upcomingRest.map((ev, i) => (
-                    <NotificationCalendarEventCard key={ev.id} ev={ev} i={i} reduceMotion={reduceMotion} />
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section aria-labelledby="reminders-heading">
-        <h2
-          id="reminders-heading"
-          className="text-ink-muted mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] uppercase dark:text-stone-400"
-        >
-          <Bell className="h-4 w-4" aria-hidden />
-          Reminders
-        </h2>
-        <p className="text-ink-muted mb-3 text-xs dark:text-stone-500">
-          Lightweight to-dos or notes with an optional time — they do not appear as blocks on the calendar grid.
-        </p>
-        {remindersQ.isLoading ? (
-          <p className="text-stitch-muted text-sm">Loading…</p>
-        ) : reminders.length === 0 ? (
-          <p className="text-stitch-muted text-sm">No reminders yet. Set one from the + menu → Set Reminder.</p>
-        ) : (
-          <ul className="space-y-3">
-            {reminders.map((r, i) => (
-              <motion.li
-                key={r.id}
-                initial={reduceMotion ? false : { opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: reduceMotion ? 0 : i * 0.04 }}
-                className="border-stitch-on-surface/10 flex flex-col gap-2 rounded-2xl border-b-4 border-b-[#97daff] bg-white p-4 shadow-[0_16px_36px_rgba(48,46,43,0.08)] dark:border-stone-700 dark:bg-stone-900"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-stitch-on-surface font-bold dark:text-stone-100">{r.title}</p>
-                    {r.body ? <p className="text-stitch-muted mt-1 text-sm dark:text-stone-400">{r.body}</p> : null}
-                    {r.due_at ? (
-                      <p className="text-[#006384] mt-2 flex items-center gap-1 text-xs font-semibold dark:text-cyan-300">
-                        <CalendarClock className="h-3.5 w-3.5" aria-hidden />
-                        {formatDue(r.due_at)}
-                      </p>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void removeReminder.mutateAsync(r.id)}
-                    disabled={removeReminder.isPending}
-                    className="text-stitch-muted hover:text-red-600 shrink-0 rounded-xl p-2 transition dark:hover:text-red-400"
-                    aria-label="Dismiss reminder"
+                  </>
+                )
+                return (
+                  <motion.li
+                    key={t.id}
+                    initial={reduceMotion ? false : { opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: reduceMotion ? 0 : i * 0.04 }}
                   >
-                    <Trash2 className="h-5 w-5" />
-                  </button>
+                    <div className="border-stitch-on-surface/10 flex min-h-[4.5rem] items-stretch overflow-hidden rounded-2xl border-b-4 border-b-red-400 bg-white shadow-[0_16px_36px_rgba(48,46,43,0.08)] dark:border-stone-700 dark:bg-stone-900">
+                      {pid ?
+                        <Link
+                          to={`/positions/${pid}`}
+                          className="flex min-w-0 flex-1 flex-col justify-center gap-1 border-r border-stone-100 p-4 text-inherit no-underline transition hover:bg-stone-50/80 dark:border-stone-700 dark:hover:bg-stone-800/40"
+                        >
+                          {body}
+                        </Link>
+                      : <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 border-r border-stone-100 p-4 dark:border-stone-700">
+                          {body}
+                        </div>
+                      }
+                      <div className="flex shrink-0 flex-col justify-center gap-0.5 px-1 py-2">
+                        <button
+                          type="button"
+                          onClick={() => void completeOverdueTask.mutateAsync(t.id)}
+                          disabled={rowBusy}
+                          className={`${notifActionBtn} hover:text-emerald-600 dark:hover:text-emerald-400`}
+                          aria-label="Mark task done"
+                        >
+                          <Check className="h-5 w-5" strokeWidth={2.5} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void deleteOverdueTask.mutateAsync(t.id)}
+                          disabled={rowBusy}
+                          className={`${notifActionBtn} hover:text-red-600 dark:hover:text-red-400`}
+                          aria-label="Delete task"
+                        >
+                          <Trash2 className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </div>
+                  </motion.li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
+
+        <section aria-labelledby="calendar-events-heading" className="min-w-0">
+          <h2
+            id="calendar-events-heading"
+            className="text-ink-muted mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] uppercase dark:text-stone-400"
+          >
+            <CalendarDays className="h-4 w-4" aria-hidden />
+            Upcoming calendar events
+          </h2>
+          <p className="text-ink-muted mb-3 text-xs dark:text-stone-500">
+            Scheduled on your calendar (next 14 days). You can set an event reminder on the calendar; standalone reminders stay in the third column.
+          </p>
+          {upcomingEventsQ.isLoading ? (
+            <p className="text-stitch-muted text-sm">Loading…</p>
+          ) : upcomingEvents.length === 0 ? (
+            <p className="text-stitch-muted text-sm">
+              No upcoming events in the next two weeks. Add one from Quick actions → Add Calendar Event.
+            </p>
+          ) : (
+            <div className="space-y-6">
+              {upcomingImportant.length > 0 ?
+                <div>
+                  <h3 className="text-ink-muted mb-2 text-[11px] font-bold tracking-[0.18em] uppercase dark:text-stone-400">
+                    Important events
+                  </h3>
+                  <ul className="space-y-3">
+                    {upcomingImportant.map((ev, i) => (
+                      <NotificationCalendarEventCard
+                        key={ev.id}
+                        ev={ev}
+                        i={i}
+                        reduceMotion={reduceMotion}
+                        onClearReminder={() => void clearCalendarEventReminder.mutateAsync(ev.id)}
+                        onDelete={() => void deleteCalendarEvent.mutateAsync(ev.id)}
+                        clearPending={
+                          clearCalendarEventReminder.isPending && clearCalendarEventReminder.variables === ev.id
+                        }
+                        deletePending={deleteCalendarEvent.isPending && deleteCalendarEvent.variables === ev.id}
+                      />
+                    ))}
+                  </ul>
                 </div>
-              </motion.li>
-            ))}
-          </ul>
-        )}
-      </section>
+              : null}
+              <div>
+                <h3 className="text-stitch-muted mb-2 text-[11px] font-bold uppercase tracking-[0.18em] dark:text-stone-500">
+                  Upcoming events
+                </h3>
+                {upcomingRest.length === 0 ?
+                  <p className="text-stitch-muted text-sm">No other events in the next two weeks.</p>
+                : <ul className="space-y-3">
+                    {upcomingRest.map((ev, i) => (
+                      <NotificationCalendarEventCard
+                        key={ev.id}
+                        ev={ev}
+                        i={i}
+                        reduceMotion={reduceMotion}
+                        onClearReminder={() => void clearCalendarEventReminder.mutateAsync(ev.id)}
+                        onDelete={() => void deleteCalendarEvent.mutateAsync(ev.id)}
+                        clearPending={
+                          clearCalendarEventReminder.isPending && clearCalendarEventReminder.variables === ev.id
+                        }
+                        deletePending={deleteCalendarEvent.isPending && deleteCalendarEvent.variables === ev.id}
+                      />
+                    ))}
+                  </ul>
+                }
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section aria-labelledby="reminders-heading" className="min-w-0">
+          <h2
+            id="reminders-heading"
+            className="text-ink-muted mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] uppercase dark:text-stone-400"
+          >
+            <Bell className="h-4 w-4" aria-hidden />
+            Reminders
+          </h2>
+          <p className="text-ink-muted mb-3 text-xs dark:text-stone-500">
+            Lightweight to-dos or notes with an optional time — they do not appear as blocks on the calendar grid.
+          </p>
+          {remindersQ.isLoading ? (
+            <p className="text-stitch-muted text-sm">Loading…</p>
+          ) : reminders.length === 0 ? (
+            <p className="text-stitch-muted text-sm">No reminders yet. Set one from the + menu → Set Reminder.</p>
+          ) : (
+            <ul className="space-y-3">
+              {reminders.map((r, i) => {
+                const remBusy = removeReminder.isPending && removeReminder.variables === r.id
+                return (
+                  <motion.li
+                    key={r.id}
+                    initial={reduceMotion ? false : { opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: reduceMotion ? 0 : i * 0.04 }}
+                    className="border-stitch-on-surface/10 flex items-stretch overflow-hidden rounded-2xl border-b-4 border-b-[#97daff] bg-white shadow-[0_16px_36px_rgba(48,46,43,0.08)] dark:border-stone-700 dark:bg-stone-900"
+                  >
+                    <div className="min-w-0 flex-1 border-r border-stone-100 p-4 dark:border-stone-700">
+                      <p className="text-stitch-on-surface font-bold dark:text-stone-100">{r.title}</p>
+                      {r.body ? <p className="text-stitch-muted mt-1 text-sm dark:text-stone-400">{r.body}</p> : null}
+                      {r.due_at ?
+                        <p className="text-[#006384] mt-2 flex items-center gap-1 text-xs font-semibold dark:text-cyan-300">
+                          <CalendarClock className="h-3.5 w-3.5" aria-hidden />
+                          {formatDue(r.due_at)}
+                        </p>
+                      : null}
+                    </div>
+                    <div className="flex shrink-0 flex-col justify-center gap-0.5 px-1 py-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void removeReminder.mutateAsync(r.id).then(() => success('Reminder done'))
+                        }
+                        disabled={remBusy}
+                        className={`${notifActionBtn} hover:text-emerald-600 dark:hover:text-emerald-400`}
+                        aria-label="Mark reminder done"
+                      >
+                        <Check className="h-5 w-5" strokeWidth={2.5} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void removeReminder.mutateAsync(r.id).then(() => success('Reminder deleted'))
+                        }
+                        disabled={remBusy}
+                        className={`${notifActionBtn} hover:text-red-600 dark:hover:text-red-400`}
+                        aria-label="Delete reminder"
+                      >
+                        <Trash2 className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </motion.li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
+      </div>
     </div>
   )
 }
