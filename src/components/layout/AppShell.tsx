@@ -1,6 +1,6 @@
-import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import {
-  ListTodo,
+  LayoutDashboard,
   Building2,
   Briefcase,
   Settings,
@@ -11,6 +11,7 @@ import {
   Clock,
   ChevronLeft,
   PanelLeft,
+  Users,
 } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
@@ -28,10 +29,9 @@ import { useWorkTimer } from '@/work/WorkTimerContext'
 import { useToast } from '@/hooks/useToast'
 
 const nav = [
-  { to: '/', label: 'Tasks', icon: ListTodo, end: true },
+  { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
   { to: '/positions', label: 'Positions', icon: Briefcase, end: false },
-  { to: '/time', label: 'Time', icon: Clock, end: false },
-  { to: '/calendar', label: 'Calendar', icon: CalendarDays, end: false },
+  { to: '/candidates', label: 'Candidates', icon: Users, end: false },
   { to: '/companies', label: 'Clients', icon: Building2, end: false },
   { to: '/settings', label: 'Settings', icon: Settings, end: false },
 ] as const
@@ -54,7 +54,6 @@ function formatTimer(sec: number): string {
 export function AppShell() {
   const { user, signOut } = useAuth()
   const location = useLocation()
-  const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [quickActionsOpen, setQuickActionsOpen] = useState(false)
@@ -128,12 +127,6 @@ export function AppShell() {
               key={to}
               to={to}
               end={end}
-              onClick={(e) => {
-                if (to === '/calendar' && location.pathname === '/calendar') {
-                  e.preventDefault()
-                  navigate('/')
-                }
-              }}
               className={({ isActive }) =>
                 `group relative flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                   isActive
@@ -254,6 +247,15 @@ export function AppShell() {
 
           <div className="flex shrink-0 items-center gap-2">
             <QuickActionsHeaderTrigger onOpen={() => setQuickActionsOpen(true)} />
+            <Link
+              to="/time"
+              className={`flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 shadow-sm transition hover:bg-[#fd8863]/25 dark:bg-stone-800/90 dark:hover:bg-orange-900/30 ${
+                location.pathname === '/time' ? 'ring-2 ring-[#9b3e20]/45 dark:ring-orange-400/50' : ''
+              }`}
+              aria-label="Working time"
+            >
+              <Clock className="text-[#9b3e20] h-5 w-5 dark:text-orange-300" aria-hidden />
+            </Link>
             <Link
               to={location.pathname === '/calendar' ? '/' : '/calendar'}
               className={`flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 shadow-sm transition hover:bg-[#97daff]/30 dark:bg-stone-800/90 dark:hover:bg-cyan-900/40 ${
