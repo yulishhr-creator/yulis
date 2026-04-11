@@ -15,8 +15,9 @@ import {
   Copy,
   ExternalLink,
   Settings,
+  Banknote,
 } from 'lucide-react'
-import { formatDistanceToNow } from 'date-fns'
+import { differenceInCalendarDays, formatDistanceToNow } from 'date-fns'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
@@ -26,8 +27,7 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/hooks/useToast'
 import { criticalStageThreshold, logActivityEvent } from '@/lib/activityLog'
-import { RequirementsMultiSelect } from '@/components/RequirementsMultiSelect'
-import { normalizeRequirementItemValues } from '@/lib/requirementValues'
+import { normalizeRequirementsText } from '@/lib/requirementValues'
 
 type StageRow = { id: string; name: string; sort_order: number }
 type ActivityRow = {
@@ -47,6 +47,25 @@ export function PositionDetailPage() {
   const { success, error: toastError } = useToast()
   const [search, setSearch] = useSearchParams()
   const highlightCandidate = search.get('candidate')
+
+  type TabId = 'details' | 'candidates' | 'requirements' | 'approaches'
+  const tab = useMemo<TabId>(() => {
+    if (highlightCandidate) return 'candidates'
+    const v = search.get('tab')
+    if (v === 'details' || v === 'candidates' || v === 'requirements' || v === 'approaches') return v
+    return 'details'
+  }, [search, highlightCandidate])
+
+  const setTab = (tid: TabId) => {
+    setSearch(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.set('tab', tid)
+        return next
+      },
+      { replace: true },
+    )
+  }
   const resumeFileRef = useRef<HTMLInputElement>(null)
   const excelImportRef = useRef<HTMLInputElement>(null)
   const [resumePickForId, setResumePickForId] = useState<string | null>(null)
@@ -142,7 +161,7 @@ export function PositionDetailPage() {
   const company = position?.companies as unknown as { id: string; name: string; contact_email: string | null } | undefined
 
   const [title, setTitle] = useState('')
-  const [requirementItemValues, setRequirementItemValues] = useState<string[]>([])
+  const [requirements, setRequirements] = useState('')
   const [welcome1, setWelcome1] = useState('')
   const [welcome2, setWelcome2] = useState('')
   const [welcome3, setWelcome3] = useState('')
@@ -150,9 +169,6 @@ export function PositionDetailPage() {
   const [positionSetupOpen, setPositionSetupOpen] = useState(false)
   const [outcomeFilter, setOutcomeFilter] = useState<Set<string>>(() => new Set(['active']))
   const [status, setStatus] = useState('pending')
-  const [planned, setPlanned] = useState('')
-  const [actual, setActual] = useState('')
-  const [criticalN, setCriticalN] = useState('3')
   const [activityFilter, setActivityFilter] = useState<'all' | 'milestones'>('all')
   const [noteText, setNoteText] = useState('')
   const [shareOpen, setShareOpen] = useState(false)
@@ -161,16 +177,12 @@ export function PositionDetailPage() {
   useEffect(() => {
     if (!position) return
     setTitle(position.title ?? '')
-    setRequirementItemValues(normalizeRequirementItemValues((position as { requirement_item_values?: unknown }).requirement_item_values))
+    setRequirements(normalizeRequirementsText((position as { requirements?: unknown }).requirements))
     setWelcome1(position.welcome_1 ?? '')
     setWelcome2(position.welcome_2 ?? '')
     setWelcome3(position.welcome_3 ?? '')
     setLinkedinSearchUrl((position as { linkedin_saved_search_url?: string | null }).linkedin_saved_search_url ?? '')
     setStatus(position.status ?? 'pending')
-    setPlanned(position.planned_fee_ils != null ? String(position.planned_fee_ils) : '')
-    setActual(position.actual_fee_ils != null ? String(position.actual_fee_ils) : '')
-    const c = (position as { critical_stage_sort_order?: number | null }).critical_stage_sort_order
-    setCriticalN(c != null ? String(c) : '3')
   }, [position])
 
   useEffect(() => {
@@ -188,18 +200,21 @@ export function PositionDetailPage() {
 
   useEffect(() => {
     if (search.get('addCandidate') !== '1') return
-    const el = document.getElementById('position-add-candidate')
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    const firstInput = el?.querySelector('input') as HTMLInputElement | null
-    requestAnimationFrame(() => firstInput?.focus())
     setSearch(
       (prev) => {
         const next = new URLSearchParams(prev)
         next.delete('addCandidate')
+        next.set('tab', 'candidates')
         return next
       },
       { replace: true },
     )
+    requestAnimationFrame(() => {
+      document.getElementById('position-candidates-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      const el = document.getElementById('position-add-candidate')
+      const firstInput = el?.querySelector('input') as HTMLInputElement | null
+      firstInput?.focus()
+    })
   }, [search, setSearch])
 
   const invalidateAll = async () => {
@@ -213,20 +228,16 @@ export function PositionDetailPage() {
 
   const savePos = useMutation({
     mutationFn: async () => {
-      const crit = criticalN.trim() ? Number(criticalN) : null
       const { error } = await supabase!
         .from('positions')
         .update({
           title: title.trim() || 'Untitled',
-          requirement_item_values: requirementItemValues,
+          requirements: requirements.trim() || null,
           welcome_1: welcome1.trim() || null,
           welcome_2: welcome2.trim() || null,
           welcome_3: welcome3.trim() || null,
           linkedin_saved_search_url: linkedinSearchUrl.trim() || null,
           status,
-          planned_fee_ils: planned ? Number(planned) : null,
-          actual_fee_ils: actual ? Number(actual) : null,
-          critical_stage_sort_order: crit != null && !Number.isNaN(crit) ? crit : null,
         })
         .eq('id', id!)
         .eq('user_id', user!.id)
@@ -335,7 +346,6 @@ export function PositionDetailPage() {
   const [cEmail, setCEmail] = useState('')
   const [cPhone, setCPhone] = useState('')
   const [cSource, setCSource] = useState<'app' | 'external'>('app')
-  const [cRequirementItemValues, setCRequirementItemValues] = useState<string[]>([])
 
   const addCandidate = useMutation({
     mutationFn: async () => {
@@ -367,7 +377,6 @@ export function PositionDetailPage() {
           outcome: 'active',
           email_normalized: en,
           phone_normalized: pn,
-          requirement_item_values: cRequirementItemValues,
         })
         .select('id, full_name')
         .single()
@@ -378,7 +387,6 @@ export function PositionDetailPage() {
       setCName('')
       setCEmail('')
       setCPhone('')
-      setCRequirementItemValues([])
       success('Candidate added')
       await logActivityEvent(supabase!, user!.id, {
         event_type: 'candidate_created',
@@ -393,21 +401,6 @@ export function PositionDetailPage() {
       if (e.message === 'cancelled') return
       toastError(e.message)
     },
-  })
-
-  const updateCandidateRequirements = useMutation({
-    mutationFn: async ({ candidateId, values }: { candidateId: string; values: string[] }) => {
-      const { error } = await supabase!
-        .from('candidates')
-        .update({ requirement_item_values: values })
-        .eq('id', candidateId)
-        .eq('user_id', user!.id)
-      if (error) throw error
-    },
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
-    },
-    onError: (e: Error) => toastError(e.message),
   })
 
   const [importError, setImportError] = useState<string | null>(null)
@@ -670,6 +663,11 @@ export function PositionDetailPage() {
 
   const terminalPosition = status === 'success' || status === 'cancelled'
 
+  const activePipelineCandidates = useMemo(
+    () => (candidatesQ.data ?? []).filter((c) => c.outcome === 'active'),
+    [candidatesQ.data],
+  )
+
   const filteredCandidates = useMemo(
     () => (candidatesQ.data ?? []).filter((c) => outcomeFilter.has(c.outcome)),
     [candidatesQ.data, outcomeFilter],
@@ -789,15 +787,6 @@ export function PositionDetailPage() {
         <p className="text-ink-muted text-xs">
           {c.source} · {st?.name ?? '—'} · {c.outcome}
         </p>
-        <div className="mt-2 text-xs font-medium">
-          Requirements
-          <RequirementsMultiSelect
-            className="mt-1"
-            value={normalizeRequirementItemValues(c.requirement_item_values)}
-            onChange={(next) => void updateCandidateRequirements.mutateAsync({ candidateId: c.id, values: next })}
-            disabled={updateCandidateRequirements.isPending}
-          />
-        </div>
         <label className="mt-2 block text-xs font-medium">
           Stage
           <select
@@ -880,6 +869,14 @@ export function PositionDetailPage() {
         backTo="/positions"
         right={
           <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <Link
+              to={`/settings/positions/${id}/fees`}
+              title="Fees & milestones (Settings)"
+              aria-label="Fees and milestones"
+              className="border-line flex h-9 w-9 items-center justify-center rounded-xl border bg-white/90 text-stone-700 shadow-sm transition hover:bg-stone-100 dark:border-line-dark dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
+            >
+              <Banknote className="h-4 w-4" aria-hidden />
+            </Link>
             <button
               type="button"
               title="Role setup: recruitment stages & Excel import"
@@ -930,8 +927,36 @@ export function PositionDetailPage() {
         }
       />
 
+      <nav
+        className="border-line -mx-1 flex flex-wrap gap-1 rounded-2xl border bg-white/50 p-1 dark:border-line-dark dark:bg-stone-900/40"
+        aria-label="Position sections"
+      >
+        {(
+          [
+            ['details', 'Details'],
+            ['candidates', 'Candidates'],
+            ['approaches', 'Approaches'],
+          ] as const
+        ).map(([tid, label]) => (
+          <button
+            key={tid}
+            type="button"
+            onClick={() => setTab(tid)}
+            className={`rounded-xl px-3 py-2 text-sm font-bold transition ${
+              tab === tid
+                ? 'bg-accent text-white shadow-sm'
+                : 'text-ink-muted hover:bg-white/80 dark:hover:bg-stone-800/80'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      {tab === 'details' ? (
+        <>
       <section className="border-line bg-white/60 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40">
-        <h2 className="font-display font-semibold">Position details</h2>
+        <h2 className="font-semibold">Position details</h2>
         <form
           className="mt-4 flex flex-col gap-3"
           onSubmit={(e) => {
@@ -995,106 +1020,25 @@ export function PositionDetailPage() {
             )}
           </div>
 
-          <details className="rounded-xl border border-stone-200/80 bg-stone-50/50 p-3 dark:border-stone-600 dark:bg-stone-900/30">
-            <summary className="cursor-pointer text-sm font-semibold">Advanced fees & milestones</summary>
-            <div className="mt-3 flex flex-col gap-3">
-              <label className="text-sm font-medium">
-                Critical stage threshold (sort order ≥ this = milestone)
-                <input
-                  value={criticalN}
-                  onChange={(e) => setCriticalN(e.target.value)}
-                  inputMode="numeric"
-                  className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                />
-              </label>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="text-sm font-medium">
-                  Planned fee (ILS)
-                  <input value={planned} onChange={(e) => setPlanned(e.target.value)} inputMode="decimal" className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
-                </label>
-                <label className="text-sm font-medium">
-                  Actual fee (ILS)
-                  <input value={actual} onChange={(e) => setActual(e.target.value)} inputMode="decimal" className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
-                </label>
-              </div>
-            </div>
-          </details>
-          <div className="text-sm font-medium">
-            Requirements
-            <RequirementsMultiSelect
-              value={requirementItemValues}
-              onChange={setRequirementItemValues}
+          <label className="block text-sm font-medium">
+            Requirements from client
+            <textarea
+              value={requirements}
+              onChange={(e) => setRequirements(e.target.value)}
               disabled={savePos.isPending}
+              rows={12}
+              placeholder="Paste 8–12 lines from the client brief (one line per bullet is fine)."
+              className="border-line mt-1 w-full resize-y rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
             />
-          </div>
+          </label>
 
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-medium">LinkedIn saved search</span>
-              <button
-                type="button"
-                onClick={() => openSavedLinkedin()}
-                disabled={!linkedinSearchUrl.trim()}
-                className="border-line flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-white/90 text-[#006384] shadow-sm hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-line-dark dark:bg-stone-800 dark:text-cyan-300 dark:hover:bg-stone-700"
-                title="Open saved LinkedIn URL in a new tab"
-                aria-label="Open LinkedIn saved search in new tab"
-              >
-                <ExternalLink className="h-4 w-4" aria-hidden />
-              </button>
-            </div>
-            <input
-              value={linkedinSearchUrl}
-              onChange={(e) => setLinkedinSearchUrl(e.target.value)}
-              placeholder="https://www.linkedin.com/search/results/people/?..."
-              className="border-line mt-1 w-full rounded-xl border px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/50"
-            />
-            <p className="text-ink-muted text-xs">Paste your LinkedIn people search URL; open it anytime with the link icon (after saving).</p>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium">Welcome approach (1)</span>
-                <button
-                  type="button"
-                  onClick={() => copyWelcomeSnippet(welcome1, 'Welcome 1')}
-                  className="border-line flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-white/90 shadow-sm hover:bg-stone-50 dark:border-line-dark dark:bg-stone-800 dark:hover:bg-stone-700"
-                  aria-label="Copy welcome approach 1"
-                >
-                  <Copy className="h-4 w-4" aria-hidden />
-                </button>
-              </div>
-              <textarea value={welcome1} onChange={(e) => setWelcome1(e.target.value)} rows={3} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
-            </div>
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium">Welcome approach (2)</span>
-                <button
-                  type="button"
-                  onClick={() => copyWelcomeSnippet(welcome2, 'Welcome 2')}
-                  className="border-line flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-white/90 shadow-sm hover:bg-stone-50 dark:border-line-dark dark:bg-stone-800 dark:hover:bg-stone-700"
-                  aria-label="Copy welcome approach 2"
-                >
-                  <Copy className="h-4 w-4" aria-hidden />
-                </button>
-              </div>
-              <textarea value={welcome2} onChange={(e) => setWelcome2(e.target.value)} rows={3} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
-            </div>
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium">Welcome approach (3)</span>
-                <button
-                  type="button"
-                  onClick={() => copyWelcomeSnippet(welcome3, 'Welcome 3')}
-                  className="border-line flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-white/90 shadow-sm hover:bg-stone-50 dark:border-line-dark dark:bg-stone-800 dark:hover:bg-stone-700"
-                  aria-label="Copy welcome approach 3"
-                >
-                  <Copy className="h-4 w-4" aria-hidden />
-                </button>
-              </div>
-              <textarea value={welcome3} onChange={(e) => setWelcome3(e.target.value)} rows={3} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
-            </div>
-          </div>
+          <p className="text-ink-muted text-xs dark:text-stone-500">
+            Planned/actual fees and milestone stage threshold:{' '}
+            <Link to={`/settings/positions/${id}/fees`} className="text-accent font-semibold underline dark:text-orange-300">
+              Settings → Fees for this role
+            </Link>
+            .
+          </p>
           <button type="submit" className="bg-accent text-stone-50 w-fit rounded-full px-5 py-2 text-sm font-semibold" disabled={savePos.isPending}>
             Save
           </button>
@@ -1103,7 +1047,7 @@ export function PositionDetailPage() {
 
       <section className="border-line bg-white/60 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-display font-semibold">Position activity</h2>
+          <h2 className="font-semibold">Position activity</h2>
           <div className="flex gap-2">
             <button
               type="button"
@@ -1154,8 +1098,77 @@ export function PositionDetailPage() {
         </ul>
       </section>
 
-      <section>
-        <h2 className="font-display font-semibold">Candidates</h2>
+      <section className="border-line bg-white/60 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-semibold">Active in pipeline</h2>
+          <button type="button" onClick={() => setTab('candidates')} className="text-accent text-sm font-semibold underline dark:text-orange-300">
+            All candidates →
+          </button>
+        </div>
+        <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">
+          Still active on this role — use Candidates for imports, filters, and full cards.
+        </p>
+        {activePipelineCandidates.length === 0 ? (
+          <p className="text-ink-muted mt-3 text-sm">No active candidates yet.</p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {activePipelineCandidates.map((c) => {
+              const st = c.position_stages as unknown as { name: string } | null
+              const days = differenceInCalendarDays(new Date(), new Date(c.created_at as string))
+              return (
+                <li
+                  key={c.id}
+                  className="border-line flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-white/70 px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/50"
+                >
+                  <Link to={`?tab=candidates&candidate=${c.id}`} className="font-medium text-[#9b3e20] hover:underline dark:text-orange-300">
+                    {c.full_name}
+                  </Link>
+                  <span className="text-ink-muted text-xs">
+                    {st?.name ?? '—'} · {days}d
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section className="border-line bg-white/60 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40">
+        <h2 className="font-semibold">Tasks for this role</h2>
+        <p className="text-ink-muted mt-1 text-sm">
+          To add a task, use the <span className="text-ink font-semibold">+</span> button in the bottom bar and choose{' '}
+          <span className="text-ink font-medium">Add task</span>. Company and position are filled from this page automatically.
+        </p>
+        <ul className="mt-3 space-y-2">
+          {(tasksQ.data ?? []).length === 0 ? (
+            <li className="text-ink-muted text-sm">No tasks linked to this role yet.</li>
+          ) : (
+            (tasksQ.data ?? []).map((t) => (
+              <li
+                key={t.id}
+                className="border-line bg-white/60 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/40"
+              >
+                <span className="pointer-events-none select-none">
+                  {t.title} · {t.status}
+                  {t.due_at ? <span className="text-ink-muted"> · due {formatDue(t.due_at)}</span> : null}
+                  {(t as { candidates?: { full_name?: string } | null }).candidates?.full_name ? (
+                    <span className="text-ink-muted"> · {(t as { candidates: { full_name: string } }).candidates.full_name}</span>
+                  ) : null}
+                </span>
+                <button type="button" onClick={() => void deleteTask.mutateAsync(t.id)} className="text-red-600 text-xs font-semibold">
+                  Remove
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      </section>
+        </>
+      ) : null}
+
+      {tab === 'candidates' ? (
+      <section id="position-candidates-section" className="scroll-mt-24">
+        <h2 className="font-semibold">Candidates</h2>
         <p className="text-ink-muted mt-2 text-sm">Filter by candidate outcome (multi-select). Default shows active pipeline only.</p>
         <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Filter candidates by outcome">
           {(
@@ -1206,14 +1219,6 @@ export function PositionDetailPage() {
             Phone
             <input value={cPhone} onChange={(e) => setCPhone(e.target.value)} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
           </label>
-          <div className="text-sm sm:col-span-2">
-            <span className="font-medium">Requirements</span>
-            <RequirementsMultiSelect
-              value={cRequirementItemValues}
-              onChange={setCRequirementItemValues}
-              disabled={addCandidate.isPending}
-            />
-          </div>
           <button type="submit" className="bg-accent text-stone-50 sm:col-span-2 w-fit rounded-full px-4 py-2 text-sm font-semibold">
             Add candidate
           </button>
@@ -1242,11 +1247,94 @@ export function PositionDetailPage() {
           )}
         </ul>
       </section>
+      ) : null}
+
+      {tab === 'approaches' ? (
+        <section className="border-line bg-white/60 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40">
+          <h2 className="font-semibold">Approaches</h2>
+          <p className="text-ink-muted mt-1 text-sm dark:text-stone-500">LinkedIn search and outreach snippets you can copy into messages.</p>
+          <form
+            className="mt-4 flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void savePos.mutateAsync()
+            }}
+          >
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">LinkedIn saved search</span>
+                <button
+                  type="button"
+                  onClick={() => openSavedLinkedin()}
+                  disabled={!linkedinSearchUrl.trim()}
+                  className="border-line flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-white/90 text-[#006384] shadow-sm hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-line-dark dark:bg-stone-800 dark:text-cyan-300 dark:hover:bg-stone-700"
+                  title="Open saved LinkedIn URL in a new tab"
+                  aria-label="Open LinkedIn saved search in new tab"
+                >
+                  <ExternalLink className="h-4 w-4" aria-hidden />
+                </button>
+              </div>
+              <input
+                value={linkedinSearchUrl}
+                onChange={(e) => setLinkedinSearchUrl(e.target.value)}
+                placeholder="https://www.linkedin.com/search/results/people/?..."
+                className="border-line mt-1 w-full rounded-xl border px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/50"
+              />
+              <p className="text-ink-muted text-xs">Save, then open with the link icon.</p>
+            </div>
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">Welcome approach (1)</span>
+                <button
+                  type="button"
+                  onClick={() => copyWelcomeSnippet(welcome1, 'Welcome 1')}
+                  className="border-line flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-white/90 shadow-sm hover:bg-stone-50 dark:border-line-dark dark:bg-stone-800 dark:hover:bg-stone-700"
+                  aria-label="Copy welcome approach 1"
+                >
+                  <Copy className="h-4 w-4" aria-hidden />
+                </button>
+              </div>
+              <textarea value={welcome1} onChange={(e) => setWelcome1(e.target.value)} rows={4} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
+            </div>
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">Welcome approach (2)</span>
+                <button
+                  type="button"
+                  onClick={() => copyWelcomeSnippet(welcome2, 'Welcome 2')}
+                  className="border-line flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-white/90 shadow-sm hover:bg-stone-50 dark:border-line-dark dark:bg-stone-800 dark:hover:bg-stone-700"
+                  aria-label="Copy welcome approach 2"
+                >
+                  <Copy className="h-4 w-4" aria-hidden />
+                </button>
+              </div>
+              <textarea value={welcome2} onChange={(e) => setWelcome2(e.target.value)} rows={4} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
+            </div>
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">Welcome approach (3)</span>
+                <button
+                  type="button"
+                  onClick={() => copyWelcomeSnippet(welcome3, 'Welcome 3')}
+                  className="border-line flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-white/90 shadow-sm hover:bg-stone-50 dark:border-line-dark dark:bg-stone-800 dark:hover:bg-stone-700"
+                  aria-label="Copy welcome approach 3"
+                >
+                  <Copy className="h-4 w-4" aria-hidden />
+                </button>
+              </div>
+              <textarea value={welcome3} onChange={(e) => setWelcome3(e.target.value)} rows={4} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
+            </div>
+            <button type="submit" className="bg-accent text-stone-50 w-fit rounded-full px-5 py-2 text-sm font-semibold" disabled={savePos.isPending}>
+              Save approaches
+            </button>
+          </form>
+        </section>
+      ) : null}
 
       <Modal open={positionSetupOpen} onClose={() => setPositionSetupOpen(false)} title="Role setup" size="lg">
         <div className="max-h-[min(70vh,32rem)] space-y-8 overflow-y-auto pr-1">
           <div>
-            <h3 className="font-display font-semibold">Recruitment stages</h3>
+            <h3 className="font-semibold">Recruitment stages</h3>
             <ul className="mt-3 space-y-2">
               {(stagesQ.data ?? []).map((s, idx) => (
                 <li key={s.id} className="border-line bg-white/60 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/40">
@@ -1288,7 +1376,7 @@ export function PositionDetailPage() {
             </form>
           </div>
           <div>
-            <h3 className="font-display font-semibold">Import candidates (Excel)</h3>
+            <h3 className="font-semibold">Import candidates (Excel)</h3>
             <p className="text-ink-muted mt-1 text-sm">Upload a spreadsheet with one row per candidate. We detect columns by header names (name, email, phone).</p>
             <input
               ref={excelImportRef}
@@ -1313,36 +1401,6 @@ export function PositionDetailPage() {
           </div>
         </div>
       </Modal>
-
-      <section>
-        <h2 className="font-display font-semibold">Tasks for this role</h2>
-        <p className="text-ink-muted mt-1 text-sm">
-          To add a task, use the <span className="text-ink font-semibold">+</span> button in the bottom bar and choose <span className="text-ink font-medium">Add task</span>. Company and position are filled from this page automatically.
-        </p>
-        <ul className="mt-3 space-y-2">
-          {(tasksQ.data ?? []).length === 0 ? (
-            <li className="text-ink-muted text-sm">No tasks linked to this role yet.</li>
-          ) : (
-            (tasksQ.data ?? []).map((t) => (
-              <li
-                key={t.id}
-                className="border-line bg-white/60 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/40"
-              >
-                <span className="pointer-events-none select-none">
-                  {t.title} · {t.status}
-                  {t.due_at ? <span className="text-ink-muted"> · due {formatDue(t.due_at)}</span> : null}
-                  {(t as { candidates?: { full_name?: string } | null }).candidates?.full_name ? (
-                    <span className="text-ink-muted"> · {(t as { candidates: { full_name: string } }).candidates.full_name}</span>
-                  ) : null}
-                </span>
-                <button type="button" onClick={() => void deleteTask.mutateAsync(t.id)} className="text-red-600 text-xs font-semibold">
-                  Remove
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
-      </section>
 
       <Modal open={shareOpen} onClose={() => setShareOpen(false)} title="Share link" size="sm">
         <p className="text-ink-muted text-sm">Anyone with this link can view a summary (expires in 7 days).</p>

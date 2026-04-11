@@ -368,7 +368,7 @@ export function CalendarPage() {
           >
             ←
           </button>
-          <span className="font-stitch-head min-w-[11rem] text-center text-lg font-extrabold sm:min-w-[14rem] sm:text-xl">
+          <span className="text-stitch-on-surface min-w-[11rem] text-center text-lg font-semibold sm:min-w-[14rem] sm:text-xl dark:text-stone-100">
             {format(cursor, 'MMMM yyyy')}
           </span>
           <button
@@ -596,7 +596,7 @@ export function CalendarPage() {
       </div>
 
       <section aria-labelledby="upcoming-events-heading" className="border-line rounded-2xl border bg-white/80 p-4 dark:border-line-dark dark:bg-stone-900/50">
-        <h2 id="upcoming-events-heading" className="font-stitch-head text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
+        <h2 id="upcoming-events-heading" className="text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
           Upcoming
         </h2>
         <p className="text-stitch-muted mt-1 text-xs dark:text-stone-400">From today onward, soonest first.</p>

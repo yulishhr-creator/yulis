@@ -8,9 +8,8 @@ import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { logActivityEvent } from '@/lib/activityLog'
+import { candidateOutcomePill } from '@/lib/candidateOutcomePill'
 import { useToast } from '@/hooks/useToast'
-import { RequirementsMultiSelect } from '@/components/RequirementsMultiSelect'
-
 const DRAFT_KEY = 'yulis_position_wizard_draft'
 
 const STEP_COLORS = [
@@ -27,7 +26,7 @@ type Draft = {
   industry: string
   status: string
   plannedFee: string
-  requirementItemValues: string[]
+  requirements: string
 }
 
 function loadDraft(): Partial<Draft> {
@@ -78,40 +77,6 @@ function positionStatusPill(status: string): { label: string; className: string 
     default:
       return {
         label: status.replace('_', ' '),
-        className: 'border-stone-200/80 bg-stone-50 text-stone-700 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300',
-      }
-  }
-}
-
-function candidateOutcomePill(outcome: string): { label: string; className: string } {
-  switch (outcome) {
-    case 'active':
-      return {
-        label: 'Active',
-        className:
-          'border-sky-200/80 bg-sky-50 text-sky-900 dark:border-cyan-700/60 dark:bg-cyan-950/40 dark:text-cyan-100',
-      }
-    case 'hired':
-      return {
-        label: 'Hired',
-        className:
-          'border-emerald-200/80 bg-emerald-50 text-emerald-900 dark:border-emerald-700/60 dark:bg-emerald-950/40 dark:text-emerald-100',
-      }
-    case 'rejected':
-      return {
-        label: 'Rejected',
-        className:
-          'border-red-200/80 bg-red-50 text-red-900 dark:border-red-800/60 dark:bg-red-950/40 dark:text-red-100',
-      }
-    case 'withdrawn':
-      return {
-        label: 'Withdrawn',
-        className:
-          'border-stone-200/80 bg-stone-100 text-stone-700 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300',
-      }
-    default:
-      return {
-        label: outcome,
         className: 'border-stone-200/80 bg-stone-50 text-stone-700 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300',
       }
   }
@@ -194,7 +159,7 @@ function PositionCard({
               to={`/positions/${p.id}`}
               draggable={false}
               onDragStart={(e) => e.preventDefault()}
-              className="font-display min-w-0 flex-1 text-base leading-snug font-semibold break-words text-[#302e2b] underline-offset-2 hover:underline dark:text-stone-100"
+              className="min-w-0 flex-1 text-base leading-snug font-semibold break-words text-[#302e2b] underline-offset-2 hover:underline dark:text-stone-100"
             >
               {p.title}
             </Link>
@@ -440,7 +405,7 @@ export function PositionsPage() {
             }}
             className={dropHover === 'active' ? 'rounded-3xl ring-2 ring-[#9b3e20]/25 ring-offset-2 ring-offset-paper dark:ring-offset-paper-dark' : ''}
           >
-            <h2 id="active-positions-heading" className="font-stitch-head text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
+            <h2 id="active-positions-heading" className="text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
               Active positions
             </h2>
             <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">Open roles you&apos;re still working (pending or in progress).</p>
@@ -475,7 +440,7 @@ export function PositionsPage() {
             }}
             className={dropHover === 'success' ? 'rounded-3xl ring-2 ring-emerald-500/30 ring-offset-2 ring-offset-paper dark:ring-offset-paper-dark' : ''}
           >
-            <h2 id="goal-achieved-heading" className="font-stitch-head text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
+            <h2 id="goal-achieved-heading" className="text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
               Goal achieved
             </h2>
             <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">Roles marked fulfilled — placement or hire completed.</p>
@@ -510,7 +475,7 @@ export function PositionsPage() {
             }}
             className={dropHover === 'cancelled' ? 'rounded-3xl ring-2 ring-stone-400/40 ring-offset-2 ring-offset-paper dark:ring-offset-paper-dark' : ''}
           >
-            <h2 id="withdrawn-positions-heading" className="font-stitch-head text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
+            <h2 id="withdrawn-positions-heading" className="text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
               Withdrawn
             </h2>
             <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">Roles pulled or closed without a hire.</p>
@@ -554,12 +519,18 @@ function CreatePositionWizard({ companies }: { companies: { id: string; name: st
   const [industry, setIndustry] = useState(d0.industry ?? '')
   const [status, setStatus] = useState(d0.status ?? 'pending')
   const [plannedFee, setPlannedFee] = useState(d0.plannedFee ?? '')
-  const [requirementItemValues, setRequirementItemValues] = useState<string[]>(d0.requirementItemValues ?? [])
+  const [requirements, setRequirements] = useState(
+    typeof d0.requirements === 'string'
+      ? d0.requirements
+      : Array.isArray((d0 as { requirementItemValues?: string[] }).requirementItemValues)
+        ? ((d0 as { requirementItemValues: string[] }).requirementItemValues ?? []).join('\n')
+        : '',
+  )
   const [pending, setPending] = useState(false)
 
   useEffect(() => {
-    saveDraft({ step, companyId, title, industry, status, plannedFee, requirementItemValues })
-  }, [step, companyId, title, industry, status, plannedFee, requirementItemValues])
+    saveDraft({ step, companyId, title, industry, status, plannedFee, requirements })
+  }, [step, companyId, title, industry, status, plannedFee, requirements])
 
   const headlines = ['Company', 'Role & industry', 'Status & fees', 'Review & create']
 
@@ -575,7 +546,7 @@ function CreatePositionWizard({ companies }: { companies: { id: string; name: st
         industry: industry.trim() || null,
         status: status as 'pending' | 'in_progress' | 'success' | 'cancelled',
         planned_fee_ils: plannedFee.trim() ? Number(plannedFee) : null,
-        requirement_item_values: requirementItemValues,
+        requirements: requirements.trim() || null,
       })
       .select('id, title')
       .single()
@@ -622,7 +593,7 @@ function CreatePositionWizard({ companies }: { companies: { id: string; name: st
   return (
     <div className="border-line overflow-hidden rounded-2xl border bg-white/80 dark:border-line-dark dark:bg-stone-900/50">
       <div className={`bg-gradient-to-r px-4 py-3 ${STEP_COLORS[step] ?? STEP_COLORS[0]} dark:opacity-95`}>
-        <p className="font-stitch-head text-sm font-extrabold tracking-wide text-[#302e2b] uppercase dark:text-stone-100">
+        <p className="text-sm font-extrabold tracking-wide text-[#302e2b] uppercase dark:text-stone-100">
           Step {step + 1} of 4 — {headlines[step]}
         </p>
       </div>
@@ -681,10 +652,17 @@ function CreatePositionWizard({ companies }: { companies: { id: string; name: st
                 placeholder="e.g. Software"
               />
             </label>
-            <div className="flex flex-col gap-1 text-sm">
-              <span className="font-medium">Requirements (optional)</span>
-              <RequirementsMultiSelect value={requirementItemValues} onChange={setRequirementItemValues} disabled={pending} />
-            </div>
+            <label className="flex flex-col gap-1 text-sm">
+              Requirements from client (optional)
+              <textarea
+                value={requirements}
+                onChange={(e) => setRequirements(e.target.value)}
+                disabled={pending}
+                rows={10}
+                placeholder="Paste 8–12 lines from the client brief (one line per bullet is fine)."
+                className="border-line resize-y rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+              />
+            </label>
           </div>
         ) : null}
 
@@ -729,7 +707,11 @@ function CreatePositionWizard({ companies }: { companies: { id: string; name: st
             </li>
             <li>
               <span className="text-ink-muted">Requirements: </span>
-              {requirementItemValues.length ? requirementItemValues.join(', ') : '—'}
+              {requirements.trim() ? (
+                <span className="whitespace-pre-wrap">{requirements.trim()}</span>
+              ) : (
+                '—'
+              )}
             </li>
             <li>
               <span className="text-ink-muted">Status: </span>

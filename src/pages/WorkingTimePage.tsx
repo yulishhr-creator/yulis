@@ -119,9 +119,9 @@ export function WorkingTimePage() {
       ) : null}
 
       <section className="border-line rounded-2xl border bg-white/80 p-4 dark:border-line-dark dark:bg-stone-900/50">
-        <h2 className="font-stitch-head text-lg font-extrabold text-[#302e2b] dark:text-stone-100">Summary</h2>
+        <h2 className="text-lg font-extrabold text-[#302e2b] dark:text-stone-100">Summary</h2>
         <p className="text-stitch-muted mt-1 text-sm tabular-nums dark:text-stone-400">
-          Total tracked: <span className="font-bold text-[#9b3e20] dark:text-orange-300">{hours.toFixed(2)}</span> hours (
+          Total tracked: <span className="text-ink font-semibold dark:text-stone-100">{hours.toFixed(2)}</span> hours (
           {entriesQ.data?.length ?? 0} sessions)
         </p>
         <p className="text-stitch-muted mt-2 text-xs dark:text-stone-500">

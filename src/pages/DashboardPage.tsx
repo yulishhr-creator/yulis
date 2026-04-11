@@ -11,8 +11,6 @@ import { formatDue } from '@/lib/dates'
 import { Modal } from '@/components/ui/Modal'
 import { useWorkTimer } from '@/work/WorkTimerContext'
 import { useToast } from '@/hooks/useToast'
-import { WeekendCountdownCard } from '@/components/dashboard/WeekendCountdownCard'
-
 function positionStatusPill(status: string): { label: string; className: string } {
   switch (status) {
     case 'pending':
@@ -367,14 +365,13 @@ export function DashboardPage() {
         <div className="pointer-events-none absolute -right-16 -bottom-16 h-48 w-48 rounded-full bg-[#fd8863]/20 blur-3xl dark:bg-orange-500/20" />
         <div className="pointer-events-none absolute top-0 left-1/2 h-32 w-32 -translate-x-1/2 rounded-full bg-[#97daff]/30 blur-2xl dark:bg-cyan-500/15" />
         <div className="relative z-10">
-          <h1 className="font-stitch-head text-stitch-on-surface text-2xl font-extrabold tracking-tight md:text-3xl dark:text-stone-100">
+          <h1 className="text-stitch-on-surface text-2xl font-extrabold tracking-tight md:text-3xl dark:text-stone-100">
             {pipelineStatsQ.isLoading ? (
               <>You&apos;re currently working on…</>
             ) : (
               <>
-                You&apos;re currently working on{' '}
-                <span className="text-[#9b3e20] dark:text-orange-300">{pipelineStats?.activeCandidateCount ?? 0}</span> candidates within{' '}
-                <span className="text-[#9b3e20] dark:text-orange-300">{pipelineStats?.activePositionCount ?? 0}</span> positions.
+                You&apos;re currently working on {pipelineStats?.activeCandidateCount ?? 0} candidates within{' '}
+                {pipelineStats?.activePositionCount ?? 0} positions.
               </>
             )}
           </h1>
@@ -389,33 +386,33 @@ export function DashboardPage() {
           transition={{ duration: 0.35 }}
         >
           <h2 className="sr-only">Task counts</h2>
-          <p className="font-stitch-head text-sm font-semibold tracking-tight text-[#302e2b] dark:text-stone-200">
+          <p className="text-ink-muted text-sm font-medium tracking-tight dark:text-stone-300">
             Everything open — sorted by due date.
           </p>
           <article className="mt-3 grid grid-cols-3 gap-0 overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-[0_16px_40px_rgba(48,46,43,0.07)] dark:border-stone-600 dark:bg-stone-900 dark:shadow-[0_16px_40px_rgba(0,0,0,0.25)] md:rounded-3xl">
             <div className="flex flex-col items-center justify-center border-r border-stone-200/70 px-4 py-5 text-center dark:border-stone-600">
-              <span className="font-stitch-label mb-0.5 text-[10px] font-bold tracking-[0.18em] text-[#165c25] uppercase dark:text-emerald-400">
+              <span className="text-ink-muted mb-0.5 text-[10px] font-bold tracking-[0.18em] uppercase dark:text-stone-400">
                 To do
               </span>
-              <p className="font-stitch-head text-stitch-on-surface text-3xl font-extrabold tabular-nums dark:text-stone-100">{kpis.todo}</p>
+              <p className="text-stitch-on-surface text-3xl font-extrabold tabular-nums dark:text-stone-100">{kpis.todo}</p>
               <span className="text-stitch-muted mt-1 text-[11px] font-medium dark:text-stone-500">
                 {kpis.todo === 1 ? '1 waiting' : `${kpis.todo} waiting`}
               </span>
             </div>
             <div className="flex flex-col items-center justify-center border-r border-stone-200/70 px-4 py-5 text-center dark:border-stone-600">
-              <span className="font-stitch-label mb-0.5 text-[10px] font-bold tracking-[0.18em] text-[#004d68] uppercase dark:text-cyan-400">
+              <span className="text-ink-muted mb-0.5 text-[10px] font-bold tracking-[0.18em] uppercase dark:text-stone-400">
                 In progress
               </span>
-              <p className="font-stitch-head text-stitch-on-surface text-3xl font-extrabold tabular-nums dark:text-stone-100">{kpis.inProgress}</p>
+              <p className="text-stitch-on-surface text-3xl font-extrabold tabular-nums dark:text-stone-100">{kpis.inProgress}</p>
               <span className="text-stitch-muted mt-1 text-[11px] font-medium dark:text-stone-500">
                 {kpis.inProgress === 0 ? 'None active' : `${kpis.inProgress} active`}
               </span>
             </div>
             <div className="flex flex-col items-center justify-center px-4 py-5 text-center">
-              <span className="font-stitch-label mb-0.5 text-[10px] font-bold tracking-[0.18em] text-[#9f0519] uppercase dark:text-red-400">
+              <span className="text-ink-muted mb-0.5 text-[10px] font-bold tracking-[0.18em] uppercase dark:text-stone-400">
                 Overdue
               </span>
-              <p className="font-stitch-head text-stitch-on-surface text-3xl font-extrabold tabular-nums dark:text-stone-100">{kpis.overdue}</p>
+              <p className="text-stitch-on-surface text-3xl font-extrabold tabular-nums dark:text-stone-100">{kpis.overdue}</p>
               <span className="text-stitch-muted mt-1 text-[11px] font-medium dark:text-stone-500">
                 {kpis.overdue > 0 ? `${kpis.overdue} past due` : 'On schedule'}
               </span>
@@ -430,19 +427,19 @@ export function DashboardPage() {
           initial={reduceMotion ? false : { opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <h2 className="font-stitch-head text-lg font-extrabold text-amber-950 dark:text-amber-100">Pipeline health</h2>
+          <h2 className="text-ink text-lg font-semibold dark:text-stone-100">Pipeline health</h2>
           <p className="text-stitch-muted mt-1 text-xs dark:text-stone-400">
             Candidates active with no update in 7+ days; open roles with no update in 14+ days.
           </p>
           {pipelineHints.stuck.length ? (
-            <ul className="mt-2 list-inside list-disc text-sm text-amber-950 dark:text-amber-50">
+            <ul className="text-ink mt-2 list-inside list-disc text-sm dark:text-stone-200">
               {pipelineHints.stuck.slice(0, 6).map((s) => (
                 <li key={s}>{s}</li>
               ))}
             </ul>
           ) : null}
           {pipelineHints.stale.length ? (
-            <ul className="mt-2 list-inside list-disc text-sm text-amber-900/90 dark:text-amber-100/90">
+            <ul className="text-ink mt-2 list-inside list-disc text-sm dark:text-stone-200">
               {pipelineHints.stale.slice(0, 6).map((s) => (
                 <li key={s}>Stale role: {s}</li>
               ))}
@@ -455,9 +452,9 @@ export function DashboardPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <h2
             id="tasks-heading"
-            className="font-stitch-head text-stitch-on-surface flex items-center gap-2 text-xl font-extrabold md:text-2xl dark:text-stone-100"
+            className="text-stitch-on-surface flex items-center gap-2 text-xl font-extrabold md:text-2xl dark:text-stone-100"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#b4fdb4]/50 to-[#97daff]/40 text-[#165c25] dark:from-emerald-900/40 dark:to-cyan-900/30 dark:text-emerald-300">
+            <span className="bg-stone-100 text-stitch-on-surface flex h-9 w-9 items-center justify-center rounded-xl dark:bg-stone-800 dark:text-stone-100">
               <Check className="h-5 w-5 stroke-[2.5]" aria-hidden />
             </span>
             Your tasks
@@ -468,7 +465,7 @@ export function DashboardPage() {
               onClick={() => setCompanyFilterOpen((o) => !o)}
               className={`border-line flex h-10 w-10 items-center justify-center rounded-2xl border shadow-sm transition dark:border-line-dark ${
                 companyTaskFilter !== 'all'
-                  ? 'bg-[#9b3e20]/15 text-[#9b3e20] ring-2 ring-[#9b3e20]/25 dark:text-orange-300'
+                  ? 'bg-stone-200/90 text-ink ring-2 ring-stone-300 dark:bg-stone-700 dark:text-stone-100 dark:ring-stone-600'
                   : 'bg-white/90 text-stone-600 dark:bg-stone-800 dark:text-stone-300'
               }`}
               aria-expanded={companyFilterOpen}
@@ -549,7 +546,10 @@ export function DashboardPage() {
             animate={{ opacity: 1 }}
           >
             No open tasks. Use the <span className="font-semibold">+</span> button (Add task) or open a{' '}
-            <Link to="/positions" className="font-semibold text-[#9b3e20] underline dark:text-orange-300">position</Link>.
+            <Link to="/positions" className="text-ink font-semibold underline dark:text-stone-200">
+              position
+            </Link>
+            .
           </motion.p>
         ) : filteredTasks.length === 0 && companyTaskFilter !== 'all' ? (
           <p className="text-stitch-muted mt-4 rounded-2xl border border-dashed border-stone-300 px-4 py-6 text-center text-sm dark:border-stone-600">
@@ -581,7 +581,10 @@ export function DashboardPage() {
                     )}
                     <p className="text-sm leading-relaxed text-[#302e2b] dark:text-stone-100">
                       You need to <span className="font-bold">{row.title}</span> for position{' '}
-                      <Link to={`/positions/${row.position_id}`} className="font-semibold text-[#9b3e20] underline-offset-2 hover:underline dark:text-orange-300">
+                      <Link
+                        to={`/positions/${row.position_id}`}
+                        className="text-ink font-semibold underline-offset-2 hover:underline dark:text-stone-200"
+                      >
                         {posTitle}
                       </Link>
                       {companyName ? <span className="text-stitch-muted dark:text-stone-400"> ({companyName})</span> : null}
@@ -591,7 +594,7 @@ export function DashboardPage() {
                           for candidate{' '}
                           <Link
                             to={`/positions/${row.position_id}?candidate=${cand.id}`}
-                            className="font-semibold text-[#006384] underline-offset-2 hover:underline dark:text-cyan-300"
+                            className="text-ink font-semibold underline-offset-2 hover:underline dark:text-stone-200"
                           >
                             {cand.full_name}
                           </Link>
@@ -600,7 +603,9 @@ export function DashboardPage() {
                       .
                     </p>
                     {row.status === 'in_progress' ? (
-                      <p className="text-[#006384] mt-2 text-xs font-bold uppercase tracking-wide dark:text-cyan-400">In progress</p>
+                      <p className="text-ink-muted mt-2 text-xs font-semibold uppercase tracking-wide dark:text-stone-400">
+                        In progress
+                      </p>
                     ) : null}
                   </div>
                   <button
@@ -622,8 +627,6 @@ export function DashboardPage() {
           </ul>
         )}
       </section>
-
-      <WeekendCountdownCard />
 
       <Modal open={trackOpen} onClose={() => setTrackOpen(false)} title="Track time on a role">
         <p className="text-ink-muted mb-3 text-sm">Every session is tied to a position. Stop the header timer when you are done.</p>
@@ -749,13 +752,13 @@ export function DashboardPage() {
         open
         className="group border-stitch-on-surface/10 rounded-3xl border bg-white/50 open:bg-white/90 open:shadow-md dark:border-stone-700 dark:bg-stone-900/40 dark:open:bg-stone-900/70"
       >
-        <summary className="font-stitch-head list-none cursor-pointer rounded-t-3xl px-4 py-4 marker:hidden [&::-webkit-details-marker]:hidden">
+        <summary className="list-none cursor-pointer rounded-t-3xl px-4 py-4 marker:hidden [&::-webkit-details-marker]:hidden">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <h2
               id="candidates-overview-heading"
               className="text-stitch-on-surface flex items-center gap-2 text-xl font-extrabold md:text-2xl dark:text-stone-100"
             >
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#fd8863]/35 to-[#97daff]/40 text-[#9b3e20] dark:from-orange-500/30 dark:to-cyan-500/25 dark:text-orange-300">
+              <span className="bg-stone-100 text-stitch-on-surface flex h-9 w-9 items-center justify-center rounded-xl dark:bg-stone-800 dark:text-stone-100">
                 <Users className="h-5 w-5 stroke-[2.25]" aria-hidden />
               </span>
               Candidates overview
@@ -835,7 +838,7 @@ export function DashboardPage() {
                     >
                       <div className="flex items-start gap-3">
                         <div className="min-w-0 flex-1">
-                          <span className="font-stitch-head block truncate font-bold text-[#9b3e20] dark:text-orange-300" title={p.title}>
+                          <span className="text-stitch-on-surface block truncate font-semibold dark:text-stone-100" title={p.title}>
                             {p.title}
                           </span>
                           {company ? <p className="text-stitch-muted mt-1 truncate text-xs">{company}</p> : null}

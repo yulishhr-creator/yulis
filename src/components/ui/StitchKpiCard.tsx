@@ -1,27 +1,11 @@
 import type { LucideIcon } from 'lucide-react'
 
-/** Accent tokens from Stitch HTML export (Dashboard - Light Theme, project HR Task Navigator). */
+/** Colored bottom bar only (text uses global ink colors). */
 const VARIANTS = {
-  green: {
-    bar: '#b4fdb4',
-    label: '#165c25',
-    footer: '#246830',
-  },
-  terracotta: {
-    bar: '#fd8863',
-    label: '#8b3315',
-    footer: '#9b3e20',
-  },
-  blue: {
-    bar: '#97daff',
-    label: '#004d68',
-    footer: '#006384',
-  },
-  danger: {
-    bar: '#fb5151',
-    label: '#9f0519',
-    footer: '#b31b25',
-  },
+  green: { bar: '#b4fdb4' },
+  terracotta: { bar: '#fd8863' },
+  blue: { bar: '#97daff' },
+  danger: { bar: '#fb5151' },
 } as const
 
 export type StitchKpiVariant = keyof typeof VARIANTS
@@ -34,9 +18,7 @@ type StitchKpiCardProps = {
   variant: StitchKpiVariant
 }
 
-/**
- * Mobile-first stat tile matching Stitch: white card, soft shadow, thick colored bottom bar, Manrope label, Plus Jakarta value.
- */
+/** Mobile-first stat tile: white card, soft shadow, thick colored bottom bar (decorative only). */
 export function StitchKpiCard({ label, value, footer, icon: Icon, variant }: StitchKpiCardProps) {
   const v = VARIANTS[variant]
   return (
@@ -45,17 +27,14 @@ export function StitchKpiCard({ label, value, footer, icon: Icon, variant }: Sti
       style={{ borderBottomColor: v.bar }}
     >
       <div>
-        <span
-          className="font-stitch-label mb-1 block text-xs font-bold tracking-[0.2em] uppercase"
-          style={{ color: v.label }}
-        >
+        <span className="text-ink-muted mb-1 block text-xs font-bold tracking-[0.2em] uppercase dark:text-stone-400">
           {label}
         </span>
-        <p className="font-stitch-head text-stitch-on-surface text-4xl font-extrabold tracking-tight tabular-nums dark:text-stone-100">
+        <p className="text-stitch-on-surface text-4xl font-extrabold tracking-tight tabular-nums dark:text-stone-100">
           {value}
         </p>
       </div>
-      <div className="mt-4 flex items-center gap-1.5 text-sm font-bold" style={{ color: v.footer }}>
+      <div className="text-ink-muted mt-4 flex items-center gap-1.5 text-sm font-semibold dark:text-stone-400">
         <Icon className="h-4 w-4 shrink-0 opacity-90" strokeWidth={2.25} aria-hidden />
         <span>{footer}</span>
       </div>

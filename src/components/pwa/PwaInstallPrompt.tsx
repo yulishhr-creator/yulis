@@ -118,7 +118,7 @@ export function PwaInstallPrompt() {
           <Download className="h-5 w-5" aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 id="pwa-install-title" className="font-stitch-head text-base font-extrabold text-[#302e2b] dark:text-stone-100">
+          <h2 id="pwa-install-title" className="text-base font-extrabold text-[#302e2b] dark:text-stone-100">
             {banner === 'chromium' ? 'Install as app?' : 'Add Yulis to your Home Screen'}
           </h2>
           <p id="pwa-install-desc" className="text-stitch-muted mt-1 text-sm leading-relaxed dark:text-stone-400">

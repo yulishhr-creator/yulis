@@ -24,14 +24,16 @@ export function AppLogo({ size = 'md', showWordmark = true, className }: AppLogo
         )}
         aria-hidden
       >
-        <span className="font-display text-stone-50 text-2xl font-bold tracking-tight">Y</span>
+        <span className="text-stone-50 text-2xl font-bold tracking-tight">Y</span>
       </div>
       {showWordmark ? (
         <div className="min-w-0">
-          <p className={clsx('font-display text-ink leading-tight font-semibold tracking-tight dark:text-stone-100', s.text)}>
+          <p className={clsx('text-ink leading-tight font-semibold tracking-tight dark:text-stone-100', s.text)}>
             Yuli’s HR
           </p>
-          <p className="text-accent dark:text-orange-300/90 text-[10px] font-semibold tracking-[0.2em] uppercase">Outsmart</p>
+          <p className="text-ink-muted text-[10px] font-semibold tracking-[0.2em] uppercase dark:text-stone-400">
+            Outsmart
+          </p>
         </div>
       ) : null}
     </div>

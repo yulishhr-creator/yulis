@@ -28,7 +28,7 @@ export function SetupPage() {
         <div className="mb-8 flex justify-center">
           <AppLogo size="md" />
         </div>
-        <h1 className="font-display text-center text-2xl font-semibold">Configure Supabase</h1>
+        <h1 className="text-center text-2xl font-semibold">Configure Supabase</h1>
         <p className="text-ink-muted mt-3 text-center text-sm leading-relaxed dark:text-stone-400">
           The app needs your Supabase project URL and anon key. They must be available when the site is{' '}
           <strong>built</strong> (Vite bakes them into the bundle).
@@ -36,7 +36,7 @@ export function SetupPage() {
 
         {deployed ? (
           <>
-            <h2 className="font-display mt-8 text-lg font-semibold">Vercel (this deployment)</h2>
+            <h2 className="mt-8 text-lg font-semibold">Vercel (this deployment)</h2>
             <ol className="text-ink-muted mt-3 list-decimal space-y-2 pl-5 text-sm leading-relaxed dark:text-stone-400">
               <li>
                 Open{' '}

@@ -13,6 +13,8 @@ import { CompaniesPage } from '@/pages/CompaniesPage'
 import { CompanyDetailPage } from '@/pages/CompanyDetailPage'
 import { PositionsPage } from '@/pages/PositionsPage'
 import { PositionDetailPage } from '@/pages/PositionDetailPage'
+import { PositionFeesPage } from '@/pages/PositionFeesPage'
+import { PositionFeesListPage } from '@/pages/PositionFeesListPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { EmailTemplatesPage } from '@/pages/EmailTemplatesPage'
 import { ListSettingsPage } from '@/pages/ListSettingsPage'
@@ -59,6 +61,8 @@ export default function App() {
                     <Route path="/candidates" element={<CandidatesPage />} />
                     <Route path="/positions" element={<PositionsPage />} />
                     <Route path="/positions/:id" element={<PositionDetailPage />} />
+                    <Route path="/settings/positions/:id/fees" element={<PositionFeesPage />} />
+                    <Route path="/settings/position-fees" element={<PositionFeesListPage />} />
                     <Route path="/notifications" element={<NotificationsPage />} />
                     <Route path="/settings" element={<SettingsPage />} />
                     <Route path="/settings/profile" element={<ProfilePage />} />

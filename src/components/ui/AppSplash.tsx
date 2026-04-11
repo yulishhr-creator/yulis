@@ -82,7 +82,7 @@ export function AppSplash({ children }: AppSplashProps) {
                   key={headlineIdx}
                   role="status"
                   aria-live="polite"
-                  className="font-stitch-head text-center text-xl font-extrabold tracking-tight text-[#2d1b4d] dark:text-stone-100"
+                  className="text-ink text-center text-xl font-semibold tracking-tight dark:text-stone-100"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}

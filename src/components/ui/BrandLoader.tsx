@@ -27,7 +27,7 @@ export function BrandLoader({ label = 'Loading…' }: BrandLoaderProps) {
         <AppLogo size="lg" />
       </motion.div>
       <motion.p
-        className="font-display text-ink text-lg dark:text-stone-200"
+        className="text-ink text-lg dark:text-stone-200"
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.15 }}

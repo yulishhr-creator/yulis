@@ -15,7 +15,7 @@ export function PageHeader({ title, subtitle, action }: PageHeaderProps) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
       >
-        <h1 className="font-display text-ink text-2xl font-semibold tracking-tight dark:text-stone-100">{title}</h1>
+        <h1 className="text-ink text-2xl font-semibold tracking-tight dark:text-stone-100">{title}</h1>
         {subtitle ? <p className="text-ink-muted mt-1 text-sm dark:text-stone-400">{subtitle}</p> : null}
       </motion.div>
       {action ? <div className="shrink-0">{action}</div> : null}

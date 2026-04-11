@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
-import { List, Mail, Download, User, Archive, Clock } from 'lucide-react'
+import { List, Mail, Download, User, Archive, Clock, Banknote } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import JSZip from 'jszip'
@@ -25,6 +25,7 @@ type WorkEntryRow = {
 
 const items = [
   { to: '/settings/profile', label: 'Profile & avatar', desc: 'Display name, photo, and how you appear in greetings.', icon: User },
+  { to: '/settings/position-fees', label: 'Position fees & milestones', desc: 'Planned and actual fees (₪) and critical-stage threshold per role.', icon: Banknote },
   { to: '/settings/lists', label: 'Lists & dropdowns', desc: 'Industries, payment presets, and other options.', icon: List },
   { to: '/settings/email-templates', label: 'Email templates', desc: 'Subjects and bodies with {{variables}}.', icon: Mail },
 ] as const
@@ -171,7 +172,7 @@ export function SettingsPage() {
                 <Icon className="h-6 w-6" aria-hidden />
               </span>
               <div>
-                <p className="font-stitch-head font-bold text-[#302e2b] dark:text-stone-100">{label}</p>
+                <p className="font-bold text-[#302e2b] dark:text-stone-100">{label}</p>
                 <p className="text-stitch-muted text-sm dark:text-stone-400">{desc}</p>
               </div>
             </Link>
@@ -187,7 +188,7 @@ export function SettingsPage() {
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="font-stitch-head flex items-center gap-2 text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
+            <h2 className="flex items-center gap-2 text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
               <Clock className="h-5 w-5 text-[#006384] dark:text-cyan-300" aria-hidden />
               Work effort
             </h2>
@@ -215,7 +216,7 @@ export function SettingsPage() {
           <p className="text-stitch-muted mt-4 text-sm">No completed sessions yet. Start a timer from the home screen.</p>
         ) : (
           <>
-            <h3 className="font-stitch-head mt-5 text-base font-extrabold text-[#302e2b] dark:text-stone-100">Recent activity</h3>
+            <h3 className="mt-5 text-base font-extrabold text-[#302e2b] dark:text-stone-100">Recent activity</h3>
             <ul className="mt-3 space-y-2">
               {workEntries.map((row) => {
                 const title = row.positions?.title ?? 'Role'
@@ -248,7 +249,7 @@ export function SettingsPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
       >
-        <h2 className="font-stitch-head flex items-center gap-2 text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
+        <h2 className="flex items-center gap-2 text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
           <Download className="h-5 w-5 text-[#9b3e20] dark:text-orange-300" aria-hidden />
           Export (full dataset)
         </h2>
@@ -286,7 +287,7 @@ export function SettingsPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
       >
-        <h2 className="font-stitch-head flex items-center gap-2 text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
+        <h2 className="flex items-center gap-2 text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
           <Archive className="h-5 w-5 text-[#006384] dark:text-cyan-300" aria-hidden />
           Download my data (GDPR-style)
         </h2>

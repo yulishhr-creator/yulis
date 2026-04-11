@@ -10,7 +10,6 @@ const LIST_CHOICES = [
   { key: 'industry', label: 'Industry' },
   { key: 'payment_term_preset', label: 'Payment term preset' },
   { key: 'candidate_outcome_label', label: 'Candidate outcome label' },
-  { key: 'requirements', label: 'Requirements (role & candidate)' },
 ] as const
 
 export function ListSettingsPage() {
@@ -116,7 +115,7 @@ export function ListSettingsPage() {
       </form>
 
       <div className="mt-8 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-stitch-head text-lg font-extrabold text-[#302e2b] dark:text-stone-100">Active values</h2>
+        <h2 className="text-lg font-extrabold text-[#302e2b] dark:text-stone-100">Active values</h2>
         <button
           type="button"
           onClick={() => setShowActiveValues((v) => !v)}

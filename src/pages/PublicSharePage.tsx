@@ -54,7 +54,7 @@ export function PublicSharePage() {
     <div className="bg-paper text-ink min-h-dvh dark:bg-paper-dark dark:text-stone-100">
       <header className="border-line border-b bg-white/90 px-4 py-4 dark:border-line-dark dark:bg-stone-900/90">
         <p className="text-accent text-[10px] font-bold tracking-[0.2em] uppercase dark:text-orange-300">Yuli&apos;s HR — shared view</p>
-        <h1 className="font-stitch-head mt-1 text-xl font-extrabold">Candidate preview</h1>
+        <h1 className="text-ink mt-1 text-xl font-semibold dark:text-stone-100">Candidate preview</h1>
       </header>
       <main className="mx-auto max-w-md space-y-4 px-4 py-8">
         <section className="rounded-2xl border border-stone-200/80 bg-white/90 p-4 shadow-sm dark:border-stone-600 dark:bg-stone-900/70">
@@ -69,7 +69,7 @@ export function PublicSharePage() {
           <p className="mt-2 text-xs font-medium uppercase tracking-wide text-stone-500">Outcome: {candidate.outcome}</p>
         </section>
         <section className="rounded-2xl border border-stone-200/80 bg-white/90 p-4 dark:border-stone-600 dark:bg-stone-900/70">
-          <h3 className="text-sm font-semibold text-[#9b3e20] dark:text-orange-300">Role</h3>
+          <h3 className="text-ink text-sm font-semibold dark:text-stone-100">Role</h3>
           <p className="mt-1 font-medium">{position.title}</p>
           <p className="text-ink-muted text-xs">Status: {position.status.replace('_', ' ')}</p>
           {company?.name ? <p className="text-ink-muted mt-2 text-sm">{company.name}</p> : null}

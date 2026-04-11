@@ -109,7 +109,7 @@ export function ProfilePage() {
             <p className="text-ink-muted max-w-[14rem] text-center text-xs">JPEG, PNG, WebP or GIF · max 2 MB</p>
           </div>
           <div className="flex-1 text-center sm:text-left">
-            <p className="font-display text-xl font-semibold">{name || email.split('@')[0] || 'You'}</p>
+            <p className="text-xl font-semibold">{name || email.split('@')[0] || 'You'}</p>
             <p className="text-ink-muted text-sm">{email}</p>
             <button
               type="button"

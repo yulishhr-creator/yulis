@@ -164,10 +164,10 @@ export function AppShell() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.35 }}
               >
-                <p className="from-[#9b3e20] to-[#006384] bg-gradient-to-r bg-clip-text font-stitch-head truncate text-sm font-extrabold text-transparent dark:from-orange-300 dark:to-cyan-300">
+                <p className="text-ink truncate text-sm font-semibold dark:text-stone-100">
                   {greeting()}, {displayName}
                 </p>
-                <p className="truncate text-[10px] font-semibold tracking-wide text-[#5c5348] dark:text-stone-400">
+                <p className="text-ink-muted truncate text-[10px] font-semibold tracking-wide dark:text-stone-400">
                   Keep pushing forward
                 </p>
               </motion.div>
@@ -202,8 +202,8 @@ export function AppShell() {
                   <motion.span
                     className={`relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all ${
                       isActive
-                        ? 'bg-white/90 text-[#9b3e20] shadow-inner dark:bg-stone-800 dark:text-orange-300'
-                        : 'bg-white/50 text-ink-muted group-hover:bg-[#fd8863]/15 group-hover:text-[#9b3e20] dark:bg-stone-900/50 dark:group-hover:text-orange-300'
+                        ? 'bg-white/90 text-ink shadow-inner dark:bg-stone-800 dark:text-stone-100'
+                        : 'bg-white/50 text-ink-muted group-hover:bg-stone-200/60 group-hover:text-ink dark:bg-stone-900/50 dark:group-hover:bg-stone-800 dark:group-hover:text-stone-100'
                     }`}
                     whileHover={reduceMotion ? undefined : { scale: 1.06, rotate: -3 }}
                     whileTap={reduceMotion ? undefined : { scale: 0.96 }}
@@ -252,7 +252,7 @@ export function AppShell() {
               }`}
               aria-label="Working time"
             >
-              <Clock className="text-[#9b3e20] h-5 w-5 dark:text-orange-300" aria-hidden />
+              <Clock className="text-ink-muted h-5 w-5 dark:text-stone-400" aria-hidden />
             </Link>
             <Link
               to={location.pathname === '/calendar' ? '/' : '/calendar'}
@@ -261,14 +261,14 @@ export function AppShell() {
               }`}
               aria-label={location.pathname === '/calendar' ? 'Close calendar' : 'Calendar'}
             >
-              <CalendarDays className="text-[#006384] h-5 w-5 dark:text-cyan-300" aria-hidden />
+              <CalendarDays className="text-ink-muted h-5 w-5 dark:text-stone-400" aria-hidden />
             </Link>
             {timer.open ? (
               <div className="border-line flex max-w-[min(100%,14rem)] items-center gap-2 rounded-2xl border bg-white/90 px-2 py-1.5 shadow-sm dark:border-line-dark dark:bg-stone-800/90">
-                <Clock className="text-[#9b3e20] h-4 w-4 shrink-0 dark:text-orange-300" aria-hidden />
+                <Clock className="text-ink-muted h-4 w-4 shrink-0 dark:text-stone-400" aria-hidden />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[10px] font-semibold text-[#302e2b] dark:text-stone-200">{timer.open.positionTitle}</p>
-                  <p className="font-mono text-xs font-bold tabular-nums text-[#006384] dark:text-cyan-300">{formatTimer(timer.elapsedSeconds)}</p>
+                  <p className="text-ink text-xs font-semibold tabular-nums dark:text-stone-200">{formatTimer(timer.elapsedSeconds)}</p>
                 </div>
                 <button
                   type="button"
@@ -288,7 +288,7 @@ export function AppShell() {
               className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 shadow-sm transition hover:bg-[#97daff]/30 dark:bg-stone-800/90 dark:hover:bg-cyan-900/40"
               aria-label={`Notifications${notificationCount ? `, ${notificationCount} items` : ''}`}
             >
-              <Bell className="text-[#006384] h-5 w-5 dark:text-cyan-300" aria-hidden />
+              <Bell className="text-ink-muted h-5 w-5 dark:text-stone-400" aria-hidden />
               {notificationCount > 0 ? (
                 <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-extrabold text-white">
                   {notificationCount > 9 ? '9+' : notificationCount}

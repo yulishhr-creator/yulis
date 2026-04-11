@@ -73,8 +73,8 @@ export function WeekProgressCard() {
           {DAYS.map((label, i) => (
             <span
               key={label}
-              className={`text-[9px] font-bold tracking-tight ${
-                i === dayIndex ? 'text-[#9b3e20] dark:text-orange-400' : 'text-stone-400 dark:text-stone-500'
+              className={`text-[9px] font-bold tracking-tight text-ink-muted dark:text-stone-500 ${
+                i === dayIndex ? 'opacity-100' : 'opacity-80'
               }`}
             >
               {label}
@@ -82,7 +82,7 @@ export function WeekProgressCard() {
           ))}
         </div>
 
-        <p className="mt-3 text-center font-display text-sm font-extrabold tracking-tight text-stone-900 uppercase dark:text-stone-100">
+        <p className="text-ink mt-3 text-center text-sm font-semibold tracking-tight uppercase dark:text-stone-100">
           {headline}
         </p>
         <p className="text-ink-muted mt-1 text-center text-[11px] font-medium dark:text-stone-400">{sub}</p>

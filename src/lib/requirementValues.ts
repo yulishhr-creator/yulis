@@ -1,5 +1,6 @@
-/** Normalize Postgres `text[]` / JSON array from Supabase into stable string[]. */
-export function normalizeRequirementItemValues(v: unknown): string[] {
-  if (!Array.isArray(v)) return []
-  return v.filter((x): x is string => typeof x === 'string')
+/** Normalize Postgres `text` / null from Supabase into a stable string for editing. */
+export function normalizeRequirementsText(v: unknown): string {
+  if (v == null) return ''
+  if (typeof v === 'string') return v
+  return ''
 }

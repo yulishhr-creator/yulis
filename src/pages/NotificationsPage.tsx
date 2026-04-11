@@ -75,7 +75,7 @@ function NotificationCalendarEventCard({
           <span className="w-4 shrink-0" aria-hidden />
         )}
         <div className="min-w-0 flex-1">
-          <p className="font-stitch-head text-stitch-on-surface font-bold dark:text-stone-100">{ev.title}</p>
+          <p className="text-stitch-on-surface font-bold dark:text-stone-100">{ev.title}</p>
           {ev.subtitle ? <p className="text-stitch-muted mt-1 text-sm dark:text-stone-400">{ev.subtitle}</p> : null}
           <p className="text-[#006384] mt-2 text-xs font-semibold tabular-nums dark:text-cyan-300">
             {format(new Date(ev.starts_at), 'EEE, MMM d · HH:mm')}
@@ -298,7 +298,10 @@ export function NotificationsPage() {
       ) : null}
 
       <section aria-labelledby="overdue-heading">
-        <h2 id="overdue-heading" className="font-stitch-label text-[#9f0519] mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] uppercase dark:text-red-400">
+        <h2
+          id="overdue-heading"
+          className="text-ink-muted mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] uppercase dark:text-stone-400"
+        >
           <AlertTriangle className="h-4 w-4" aria-hidden />
           Overdue tasks
         </h2>
@@ -323,7 +326,7 @@ export function NotificationsPage() {
                     to={`/positions/${t.position_id}`}
                     className="border-stitch-on-surface/10 flex flex-col gap-1 rounded-2xl border-b-4 border-b-red-400 bg-white p-4 shadow-[0_16px_36px_rgba(48,46,43,0.08)] dark:border-stone-700 dark:bg-stone-900"
                   >
-                    <span className="font-stitch-head text-stitch-on-surface font-bold dark:text-stone-100">{t.title}</span>
+                    <span className="text-stitch-on-surface font-bold dark:text-stone-100">{t.title}</span>
                     <span className="text-stitch-muted text-sm dark:text-stone-400">
                       {pos?.title ?? 'Position'} · was due {formatDue(t.due_at)}
                     </span>
@@ -336,7 +339,10 @@ export function NotificationsPage() {
       </section>
 
       <section aria-labelledby="calendar-events-heading">
-        <h2 id="calendar-events-heading" className="font-stitch-label text-[#006384] mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] uppercase dark:text-cyan-400">
+        <h2
+          id="calendar-events-heading"
+          className="text-ink-muted mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] uppercase dark:text-stone-400"
+        >
           <CalendarDays className="h-4 w-4" aria-hidden />
           Upcoming calendar events
         </h2>
@@ -351,7 +357,7 @@ export function NotificationsPage() {
           <div className="space-y-6">
             {upcomingImportant.length > 0 ? (
               <div>
-                <h3 className="text-stitch-muted mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#9b3e20] dark:text-orange-400">
+                <h3 className="text-ink-muted mb-2 text-[11px] font-bold tracking-[0.18em] uppercase dark:text-stone-400">
                   Important events
                 </h3>
                 <ul className="space-y-3">
@@ -380,7 +386,10 @@ export function NotificationsPage() {
       </section>
 
       <section aria-labelledby="reminders-heading">
-        <h2 id="reminders-heading" className="font-stitch-label text-[#006384] mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] uppercase dark:text-cyan-400">
+        <h2
+          id="reminders-heading"
+          className="text-ink-muted mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] uppercase dark:text-stone-400"
+        >
           <Bell className="h-4 w-4" aria-hidden />
           Reminders
         </h2>
@@ -403,7 +412,7 @@ export function NotificationsPage() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="font-stitch-head text-stitch-on-surface font-bold dark:text-stone-100">{r.title}</p>
+                    <p className="text-stitch-on-surface font-bold dark:text-stone-100">{r.title}</p>
                     {r.body ? <p className="text-stitch-muted mt-1 text-sm dark:text-stone-400">{r.body}</p> : null}
                     {r.due_at ? (
                       <p className="text-[#006384] mt-2 flex items-center gap-1 text-xs font-semibold dark:text-cyan-300">

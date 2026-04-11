@@ -44,15 +44,13 @@ export function WeatherVibes() {
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-ink font-stitch-head text-sm font-extrabold tabular-nums leading-none dark:text-stone-100">
+        <p className="text-ink text-sm font-extrabold tabular-nums leading-none dark:text-stone-100">
           {loading ? (
             <span className="text-ink-muted text-xs font-semibold dark:text-stone-500">…</span>
           ) : error || !data ? (
             <span className="text-ink-muted text-xs font-semibold dark:text-stone-500">—°C</span>
           ) : (
-            <span className="bg-gradient-to-r from-[#ec6f9d] to-[#5a2b7e] bg-clip-text text-transparent dark:from-pink-300 dark:to-violet-300">
-              {data.tempC}°C
-            </span>
+            <span>{data.tempC}°C</span>
           )}
         </p>
         <p className="text-ink-muted mt-0.5 truncate text-[10px] font-medium leading-tight dark:text-stone-400">

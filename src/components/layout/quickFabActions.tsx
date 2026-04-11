@@ -21,15 +21,17 @@ export type QuickFabAction = {
   onSelect: () => void
 }
 
-const iconBriefcase = 'rounded-xl bg-[#fd8863]/20 text-[#9b3e20] dark:text-orange-300'
-const iconBuilding = 'rounded-xl bg-[#97daff]/20 text-[#006384] dark:text-cyan-300'
-const iconTask = 'rounded-xl bg-emerald-500/15 text-emerald-800 dark:text-emerald-300'
-const iconCal = 'rounded-xl bg-[#97daff]/25 text-[#006384] dark:text-cyan-300'
-const iconMail = 'rounded-xl bg-violet-500/15 text-violet-900 dark:text-violet-300'
-const iconBell = 'rounded-xl bg-amber-500/15 text-amber-900 dark:text-amber-300'
-const iconClock = 'rounded-xl bg-sky-500/15 text-sky-900 dark:text-sky-300'
-const iconUser = 'rounded-xl bg-orange-500/15 text-orange-900 dark:text-orange-300'
-const iconGear = 'rounded-xl bg-stone-500/15 text-stone-800 dark:text-stone-300'
+const iconTile =
+  'rounded-xl bg-stone-200/70 text-stitch-on-surface dark:bg-stone-700 dark:text-stone-200'
+const iconBriefcase = iconTile
+const iconBuilding = iconTile
+const iconTask = iconTile
+const iconCal = iconTile
+const iconMail = iconTile
+const iconBell = iconTile
+const iconClock = iconTile
+const iconUser = iconTile
+const iconGear = iconTile
 
 function mergeSearch(pathname: string, currentSearch: string, patch: Record<string, string>) {
   const raw = currentSearch.startsWith('?') ? currentSearch.slice(1) : currentSearch

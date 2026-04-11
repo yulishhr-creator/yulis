@@ -91,7 +91,7 @@ export function LoginPage() {
         <div className="relative z-10">
           <AppLogo size="lg" />
           <motion.p
-            className="font-display text-ink mt-8 max-w-md text-3xl leading-tight font-semibold tracking-tight md:text-4xl dark:text-stone-100"
+            className="text-ink mt-8 max-w-md text-3xl leading-tight font-semibold tracking-tight md:text-4xl dark:text-stone-100"
             initial={reduceMotion ? false : { opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.55 }}
@@ -116,7 +116,7 @@ export function LoginPage() {
           <p className="text-accent text-center text-xs font-semibold tracking-[0.25em] uppercase dark:text-orange-300">
             {mode === 'signin' ? 'Welcome back' : 'Join the workspace'}
           </p>
-          <h1 className="font-display mt-2 text-center text-2xl font-semibold tracking-tight">
+          <h1 className="mt-2 text-center text-2xl font-semibold tracking-tight">
             {mode === 'signin' ? 'Sign in' : 'Create account'}
           </h1>
 
