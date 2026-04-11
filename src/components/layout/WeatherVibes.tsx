@@ -22,12 +22,23 @@ function MoodIcon({ mood, isDay, className }: { mood: WeatherMood; isDay: boolea
   }
 }
 
+type WeatherVibesProps = {
+  /** When true, sits under the profile block in the sidebar — no outer border-bottom; top divider from parent. */
+  embedded?: boolean
+}
+
 /** Compact weather + vibe line for the sidebar (°C only). */
-export function WeatherVibes() {
+export function WeatherVibes({ embedded = false }: WeatherVibesProps = {}) {
   const { data, loading, error, phrase } = useOpenMeteoWeather()
 
   return (
-    <div className="border-line border-b px-4 py-3 dark:border-line-dark">
+    <div
+      className={
+        embedded
+          ? 'border-line mt-3 border-t pt-3 dark:border-line-dark'
+          : 'border-line border-b px-4 py-3 dark:border-line-dark'
+      }
+    >
       <div className="flex items-center gap-2.5">
         <div
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#f8b3c8]/35 via-[#ec6f9d]/25 to-[#5a2b7e]/20 text-[#5a2b7e] shadow-inner dark:from-pink-500/20 dark:via-fuchsia-500/15 dark:to-violet-900/30 dark:text-pink-200"

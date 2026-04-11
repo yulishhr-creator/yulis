@@ -75,6 +75,61 @@ export function AppShell() {
     return () => document.removeEventListener('mousedown', onDoc)
   }, [])
 
+  const accountMenuEl = (
+    <div ref={menuRef} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setMenuOpen((v) => !v)}
+        className="border-line hover:ring-[#fd8863]/40 flex h-11 w-11 items-center justify-center rounded-full border bg-white/90 shadow-sm transition hover:shadow-md dark:border-line-dark dark:bg-stone-900/90"
+        aria-expanded={menuOpen}
+        aria-haspopup="menu"
+        aria-label="Account menu"
+      >
+        <UserAvatar email={user?.email} name={metaName} avatarUrl={avatarUrl} size="sm" />
+      </button>
+      {menuOpen ? (
+        <motion.div
+          role="menu"
+          className="border-line bg-paper absolute top-full left-0 z-50 mt-2 w-52 overflow-hidden rounded-2xl border py-1 shadow-xl dark:border-line-dark dark:bg-stone-900"
+          initial={reduceMotion ? false : { opacity: 0, y: -6, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+        >
+          <Link
+            to="/settings/profile"
+            role="menuitem"
+            className="hover:bg-[#fd8863]/15 flex items-center gap-2 px-3 py-2.5 text-sm dark:hover:bg-stone-800"
+            onClick={() => setMenuOpen(false)}
+          >
+            <User className="h-4 w-4 opacity-70" aria-hidden />
+            Profile
+          </Link>
+          <Link
+            to="/settings"
+            role="menuitem"
+            className="hover:bg-[#fd8863]/15 flex items-center gap-2 px-3 py-2.5 text-sm dark:hover:bg-stone-800"
+            onClick={() => setMenuOpen(false)}
+          >
+            <Settings className="h-4 w-4 opacity-70" aria-hidden />
+            Settings
+          </Link>
+          <button
+            type="button"
+            role="menuitem"
+            className="hover:bg-[#fd8863]/15 flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm dark:hover:bg-stone-800"
+            onClick={() => {
+              setMenuOpen(false)
+              void signOut()
+            }}
+          >
+            <LogOut className="h-4 w-4 opacity-70" aria-hidden />
+            Sign out
+          </button>
+        </motion.div>
+      ) : null}
+    </div>
+  )
+
   return (
     <div className="bg-paper text-ink relative min-h-dvh min-w-[960px] overflow-x-auto dark:bg-paper-dark dark:text-stone-100">
       <div className="pointer-events-none fixed inset-0 -z-10">
@@ -99,27 +154,35 @@ export function AppShell() {
         }`}
         aria-hidden={!sidebarOpen}
       >
-        <div className="border-line flex items-center gap-2 border-b px-3 py-3 dark:border-line-dark">
-          <Link to="/" className="min-w-0 flex-1" title="LvlUp Talent Solutions">
-            <img
-              src="/lvlup-logo.png"
-              alt="LvlUp Talent Solutions"
-              className="h-10 max-h-10 w-auto max-w-[min(100%,11rem)] object-contain object-left"
-              width={176}
-              height={40}
-            />
-          </Link>
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(false)}
-            className="border-line text-ink-muted hover:bg-[#ec6f9d]/10 hover:text-[#5a2b7e] dark:hover:bg-pink-500/10 dark:hover:text-pink-200 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-white/80 transition dark:border-line-dark dark:bg-stone-900/80"
-            aria-label="Collapse sidebar"
-          >
-            <ChevronLeft className="h-5 w-5" aria-hidden />
-          </button>
-        </div>
-
-        <WeatherVibes />
+        {sidebarOpen ? (
+          <div className="border-line border-b px-3 py-3 dark:border-line-dark">
+            <div className="flex items-start gap-2.5">
+              {accountMenuEl}
+              <motion.div
+                className="min-w-0 flex-1 flex flex-col gap-0.5 pt-0.5"
+                initial={false}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35 }}
+              >
+                <p className="from-[#9b3e20] to-[#006384] bg-gradient-to-r bg-clip-text font-stitch-head truncate text-sm font-extrabold text-transparent dark:from-orange-300 dark:to-cyan-300">
+                  {greeting()}, {displayName}
+                </p>
+                <p className="truncate text-[10px] font-semibold tracking-wide text-[#5c5348] dark:text-stone-400">
+                  Keep pushing forward
+                </p>
+              </motion.div>
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(false)}
+                className="border-line text-ink-muted hover:bg-[#ec6f9d]/10 hover:text-[#5a2b7e] dark:hover:bg-pink-500/10 dark:hover:text-pink-200 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-white/80 transition dark:border-line-dark dark:bg-stone-900/80"
+                aria-label="Collapse sidebar"
+              >
+                <ChevronLeft className="h-5 w-5" aria-hidden />
+              </button>
+            </div>
+            <WeatherVibes embedded />
+          </div>
+        ) : null}
 
         <nav className="flex flex-1 flex-col gap-1 p-3" aria-label="Main">
           {nav.map(({ to, label, icon: Icon, end }) => (
@@ -178,71 +241,7 @@ export function AppShell() {
                 <PanelLeft className="h-5 w-5" aria-hidden />
               </button>
             ) : null}
-            <div className="relative shrink-0" ref={menuRef}>
-              <button
-                type="button"
-                onClick={() => setMenuOpen((v) => !v)}
-                className="border-line hover:ring-[#fd8863]/40 flex h-11 w-11 items-center justify-center rounded-full border bg-white/90 shadow-sm transition hover:shadow-md dark:border-line-dark dark:bg-stone-900/90"
-                aria-expanded={menuOpen}
-                aria-haspopup="menu"
-                aria-label="Account menu"
-              >
-                <UserAvatar email={user?.email} name={metaName} avatarUrl={avatarUrl} size="sm" />
-              </button>
-              {menuOpen ? (
-                <motion.div
-                  role="menu"
-                  className="border-line bg-paper absolute top-full left-0 z-50 mt-2 w-52 overflow-hidden rounded-2xl border py-1 shadow-xl dark:border-line-dark dark:bg-stone-900"
-                  initial={reduceMotion ? false : { opacity: 0, y: -6, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={{ type: 'spring', stiffness: 420, damping: 30 }}
-                >
-                  <Link
-                    to="/settings/profile"
-                    role="menuitem"
-                    className="hover:bg-[#fd8863]/15 flex items-center gap-2 px-3 py-2.5 text-sm dark:hover:bg-stone-800"
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    <User className="h-4 w-4 opacity-70" aria-hidden />
-                    Profile
-                  </Link>
-                  <Link
-                    to="/settings"
-                    role="menuitem"
-                    className="hover:bg-[#fd8863]/15 flex items-center gap-2 px-3 py-2.5 text-sm dark:hover:bg-stone-800"
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    <Settings className="h-4 w-4 opacity-70" aria-hidden />
-                    Settings
-                  </Link>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="hover:bg-[#fd8863]/15 flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm dark:hover:bg-stone-800"
-                    onClick={() => {
-                      setMenuOpen(false)
-                      void signOut()
-                    }}
-                  >
-                    <LogOut className="h-4 w-4 opacity-70" aria-hidden />
-                    Sign out
-                  </button>
-                </motion.div>
-              ) : null}
-            </div>
-            <motion.div
-              className="min-w-0 flex-1 flex flex-col gap-0.5"
-              initial={false}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35 }}
-            >
-              <p className="from-[#9b3e20] to-[#006384] bg-gradient-to-r bg-clip-text font-stitch-head truncate text-base font-extrabold text-transparent dark:from-orange-300 dark:to-cyan-300">
-                {greeting()}, {displayName}
-              </p>
-              <p className="truncate text-[11px] font-semibold tracking-wide text-[#5c5348] dark:text-stone-400">
-                Keep pushing forward
-              </p>
-            </motion.div>
+            {!sidebarOpen ? accountMenuEl : null}
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
