@@ -1,13 +1,16 @@
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { differenceInCalendarDays } from 'date-fns'
-import { Search } from 'lucide-react'
+import { Search, UserPlus } from 'lucide-react'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
+import { logActivityEvent } from '@/lib/activityLog'
 import { candidateOutcomePill } from '@/lib/candidateOutcomePill'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
+import { Modal } from '@/components/ui/Modal'
+import { useToast } from '@/hooks/useToast'
 
 type Outcome = 'active' | 'rejected' | 'withdrawn' | 'hired'
 
@@ -23,8 +26,21 @@ type CandidateRow = {
   positions: {
     id: string
     title: string
+    status: string
     companies: { name: string } | null
   } | null
+}
+
+type AssignPositionOption = {
+  id: string
+  title: string
+  companies: { name: string } | null | { name: string }[]
+}
+
+function nestedCompanyName(c: AssignPositionOption['companies']): string | null {
+  if (!c) return null
+  if (Array.isArray(c)) return c[0]?.name ?? null
+  return c.name
 }
 
 function digitsOnly(s: string): string {
@@ -50,8 +66,12 @@ export function CandidatesPage() {
   const { user } = useAuth()
   const supabase = getSupabase()
   const uid = user?.id
+  const qc = useQueryClient()
+  const { success, error: toastError } = useToast()
   const [outcomeFilter, setOutcomeFilter] = useState<'all' | Outcome>('active')
   const [search, setSearch] = useState('')
+  const [assignFor, setAssignFor] = useState<CandidateRow | null>(null)
+  const [assignPositionId, setAssignPositionId] = useState('')
 
   const q = useQuery({
     queryKey: ['all-candidates', uid, outcomeFilter],
@@ -78,11 +98,157 @@ export function CandidatesPage() {
     },
   })
 
+  const positionsForAssignQ = useQuery({
+    queryKey: ['candidates-assign-positions', uid],
+    enabled: Boolean(supabase && uid),
+    queryFn: async () => {
+      const { data, error } = await supabase!
+        .from('positions')
+        .select('id, title, companies ( name )')
+        .eq('user_id', uid!)
+        .in('status', ['pending', 'in_progress'])
+        .order('updated_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as unknown as AssignPositionOption[]
+    },
+  })
+
+  const assignMutation = useMutation({
+    mutationFn: async ({ candidate, newPositionId }: { candidate: CandidateRow; newPositionId: string }) => {
+      if (!supabase || !uid) throw new Error('Not signed in')
+      if (newPositionId === candidate.position_id) throw new Error('Already on this role')
+      const oldTitle = candidate.positions?.title ?? 'Previous role'
+      const { data: stages, error: stErr } = await supabase
+        .from('position_stages')
+        .select('id')
+        .eq('position_id', newPositionId)
+        .order('sort_order', { ascending: true })
+        .limit(1)
+      if (stErr) throw stErr
+      const firstStageId = stages?.[0]?.id ?? null
+      const { error: upErr } = await supabase
+        .from('candidates')
+        .update({
+          position_id: newPositionId,
+          position_stage_id: firstStageId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', candidate.id)
+        .eq('user_id', uid)
+      if (upErr) throw upErr
+      const { error: taskErr } = await supabase
+        .from('tasks')
+        .update({ position_id: newPositionId, updated_at: new Date().toISOString() })
+        .eq('candidate_id', candidate.id)
+        .eq('user_id', uid)
+      if (taskErr) throw taskErr
+      await logActivityEvent(supabase, uid, {
+        event_type: 'candidate_reassigned',
+        position_id: newPositionId,
+        candidate_id: candidate.id,
+        title: `${candidate.full_name} assigned here`,
+        subtitle: `From: ${oldTitle}`,
+        metadata: { from_position_id: candidate.position_id, to_position_id: newPositionId },
+      })
+      return { oldPid: candidate.position_id, newPid: newPositionId }
+    },
+    onSuccess: async ({ oldPid, newPid }) => {
+      success('Candidate assigned to role')
+      setAssignFor(null)
+      setAssignPositionId('')
+      await qc.invalidateQueries({ queryKey: ['all-candidates'] })
+      await qc.invalidateQueries({ queryKey: ['position-candidates', oldPid] })
+      await qc.invalidateQueries({ queryKey: ['position-candidates', newPid] })
+      await qc.invalidateQueries({ queryKey: ['position-activity', oldPid] })
+      await qc.invalidateQueries({ queryKey: ['position-activity', newPid] })
+      await qc.invalidateQueries({ queryKey: ['position-tasks', oldPid] })
+      await qc.invalidateQueries({ queryKey: ['position-tasks', newPid] })
+      await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
   const rows = q.data ?? []
+  const assignOptions = useMemo(() => {
+    if (!assignFor) return []
+    return (positionsForAssignQ.data ?? []).filter((p) => p.id !== assignFor.position_id)
+  }, [assignFor, positionsForAssignQ.data])
   const filteredRows = useMemo(() => rows.filter((c) => candidateMatchesSearch(c, search)), [rows, search])
 
   return (
     <div className="flex flex-col gap-6">
+      <Modal
+        open={assignFor !== null}
+        onClose={() => {
+          if (assignMutation.isPending) return
+          setAssignFor(null)
+          setAssignPositionId('')
+        }}
+        title="Assign candidate"
+        size="md"
+      >
+        {assignFor ? (
+          <div className="flex flex-col gap-4">
+            <p className="text-ink-muted text-sm dark:text-stone-400">
+              Move <span className="text-ink font-semibold dark:text-stone-200">{assignFor.full_name}</span> to another
+              active role. Their pipeline stage resets to the first stage on the new role. Open tasks for this candidate
+              are moved to the new role.
+            </p>
+            {positionsForAssignQ.isLoading ? (
+              <p className="text-sm">Loading roles…</p>
+            ) : assignOptions.length === 0 ? (
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                No other active roles available. Create or reopen a role under Positions first.
+              </p>
+            ) : (
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Role
+                <select
+                  value={assignPositionId}
+                  onChange={(e) => setAssignPositionId(e.target.value)}
+                  className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                >
+                  <option value="">Select a role…</option>
+                  {assignOptions.map((p) => {
+                    const co = nestedCompanyName(p.companies)
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {p.title}
+                        {co ? ` — ${co}` : ''}
+                      </option>
+                    )
+                  })}
+                </select>
+              </label>
+            )}
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                className="border-line rounded-full border px-4 py-2 text-sm font-medium dark:border-line-dark"
+                disabled={assignMutation.isPending}
+                onClick={() => {
+                  setAssignFor(null)
+                  setAssignPositionId('')
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="bg-[#9b3e20] text-white rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-50 dark:bg-orange-600"
+                disabled={assignMutation.isPending || !assignPositionId || assignOptions.length === 0}
+                onClick={() => {
+                  if (!assignFor || !assignPositionId) return
+                  assignMutation.mutate({ candidate: assignFor, newPositionId: assignPositionId })
+                }}
+              >
+                {assignMutation.isPending ? 'Assigning…' : 'Assign'}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
       <ScreenHeader
         title="Candidates"
         subtitle="Everyone in your pipeline — open a role to edit details or import."
@@ -140,18 +306,32 @@ export function CandidatesPage() {
                 key={c.id}
                 className="border-line rounded-2xl border bg-white/80 px-4 py-3 shadow-sm dark:border-line-dark dark:bg-stone-900/50"
               >
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <Link
-                    to={`/positions/${c.position_id}?candidate=${c.id}`}
-                    className="text-ink font-semibold hover:underline dark:text-stone-100"
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-2">
+                    <Link
+                      to={`/positions/${c.position_id}?candidate=${c.id}`}
+                      className="text-ink font-semibold hover:underline dark:text-stone-100"
+                    >
+                      {c.full_name}
+                    </Link>
+                    <span
+                      className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase ${out.className}`}
+                    >
+                      {out.label}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAssignFor(c)
+                      setAssignPositionId('')
+                    }}
+                    className="border-line text-ink-muted hover:bg-[#9b3e20]/10 hover:text-[#9b3e20] dark:hover:bg-orange-500/15 dark:hover:text-orange-300 inline-flex shrink-0 items-center gap-1.5 rounded-xl border bg-white/90 px-2.5 py-1.5 text-xs font-semibold dark:border-line-dark dark:bg-stone-800/80"
+                    aria-label={`Assign ${c.full_name} to another role`}
                   >
-                    {c.full_name}
-                  </Link>
-                  <span
-                    className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase ${out.className}`}
-                  >
-                    {out.label}
-                  </span>
+                    <UserPlus className="h-3.5 w-3.5" aria-hidden />
+                    Assign
+                  </button>
                 </div>
                 <p className="text-stitch-muted mt-1 text-sm">
                   {pos ? (
