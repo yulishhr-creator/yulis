@@ -1,7 +1,7 @@
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Check, ChevronDown, Timer, ListFilter, Plus, Users } from 'lucide-react'
+import { Check, ChevronDown, ListFilter, Users } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { differenceInCalendarDays } from 'date-fns'
 
@@ -374,34 +374,10 @@ export function DashboardPage() {
               <>
                 You&apos;re currently working on{' '}
                 <span className="text-[#9b3e20] dark:text-orange-300">{pipelineStats?.activeCandidateCount ?? 0}</span> candidates within{' '}
-                <span className="text-[#9b3e20] dark:text-orange-300">{pipelineStats?.activePositionCount ?? 0}</span> positions, good luck
+                <span className="text-[#9b3e20] dark:text-orange-300">{pipelineStats?.activePositionCount ?? 0}</span> positions.
               </>
             )}
           </h1>
-          <p className="text-stitch-muted mt-3 max-w-xl text-base leading-relaxed md:text-lg dark:text-stone-400">
-            So, what would you like to do now?
-          </p>
-          <div className="mt-5 flex flex-wrap items-center gap-2">
-            <motion.div className="min-w-0 flex-1 sm:flex-none" whileHover={reduceMotion ? undefined : { scale: 1.02 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
-              <Link
-                to="/?addTask=1"
-                className="inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-3 py-2 text-xs font-bold tracking-wide text-white uppercase shadow-md shadow-[#9b3e20]/20 sm:w-auto sm:px-4 sm:text-sm"
-              >
-                <Plus className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" aria-hidden />
-                Create task
-              </Link>
-            </motion.div>
-            <motion.div className="min-w-0 flex-1 sm:flex-none" whileHover={reduceMotion ? undefined : { scale: 1.02 }} whileTap={reduceMotion ? undefined : { scale: 0.98 }}>
-              <button
-                type="button"
-                onClick={() => setTrackOpen(true)}
-                className="border-[#9b3e20]/35 inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-full border-2 bg-stone-900/5 px-3 py-2 text-xs font-bold text-[#7c2d12] shadow-sm dark:border-orange-400/35 dark:bg-stone-800/80 dark:text-amber-200 sm:w-auto sm:px-4 sm:text-sm"
-              >
-                <Timer className="h-3.5 w-3.5 shrink-0 text-[#9b3e20] dark:text-orange-300 sm:h-4 sm:w-4" aria-hidden />
-                Track time
-              </button>
-            </motion.div>
-          </div>
         </div>
       </motion.section>
 
