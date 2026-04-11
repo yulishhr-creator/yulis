@@ -631,7 +631,7 @@ export function DashboardPage() {
       <Modal open={trackOpen} onClose={() => setTrackOpen(false)} title="Track time on a role">
         <p className="text-ink-muted mb-3 text-sm">Every session is tied to a position. Stop the header timer when you are done.</p>
         {timer.open ? (
-          <p className="mb-3 text-sm font-medium text-[#9b3e20] dark:text-orange-300">A timer is already running — stop it first.</p>
+          <p className="text-ink mb-3 text-sm font-medium dark:text-stone-200">A timer is already running — stop it first.</p>
         ) : null}
         {timerPositionsQ.isLoading ? (
           <p className="text-sm">Loading roles…</p>
