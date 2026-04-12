@@ -1,7 +1,7 @@
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { differenceInCalendarDays } from 'date-fns'
-import { ChevronDown, ChevronRight, GripVertical } from 'lucide-react'
+import { Briefcase, Building2, ChevronDown, ChevronRight, Coins, GripVertical, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
@@ -10,21 +10,16 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { logActivityEvent } from '@/lib/activityLog'
 import { candidateOutcomePill } from '@/lib/candidateOutcomePill'
 import { useToast } from '@/hooks/useToast'
+import { isMissingRequirementsColumnError, parseRequirementTokens } from '@/lib/requirementValues'
 const DRAFT_KEY = 'yulis_position_wizard_draft'
 
-const STEP_COLORS = [
-  'from-[#fd8863]/30 to-[#97daff]/25',
-  'from-[#97daff]/25 to-[#b4fdb4]/20',
-  'from-[#b4fdb4]/20 to-[#fd8863]/20',
-  'from-[#9b3e20]/20 to-[#006384]/20',
-] as const
+const WIZARD_STEPS = ['Details', 'Review'] as const
 
 type Draft = {
   step: number
   companyId: string
   title: string
   industry: string
-  status: string
   plannedFee: string
   requirements: string
 }
@@ -524,6 +519,10 @@ export function PositionsPage() {
   )
 }
 
+function wizardSectionClass(): string {
+  return 'rounded-2xl border border-stone-200/90 bg-stone-50/40 p-4 dark:border-stone-600/80 dark:bg-stone-900/35'
+}
+
 function CreatePositionWizard({ companies }: { companies: { id: string; name: string }[] }) {
   const { user } = useAuth()
   const supabase = getSupabase()
@@ -531,11 +530,10 @@ function CreatePositionWizard({ companies }: { companies: { id: string; name: st
   const qc = useQueryClient()
   const { success, error: toastError } = useToast()
   const d0 = loadDraft()
-  const [step, setStep] = useState(Math.min(3, Math.max(0, d0.step ?? 0)))
+  const [step, setStep] = useState(Math.min(1, Math.max(0, d0.step ?? 0)))
   const [companyId, setCompanyId] = useState(d0.companyId ?? companies[0]?.id ?? '')
   const [title, setTitle] = useState(d0.title ?? '')
   const [industry, setIndustry] = useState(d0.industry ?? '')
-  const [status, setStatus] = useState(d0.status ?? 'pending')
   const [plannedFee, setPlannedFee] = useState(d0.plannedFee ?? '')
   const [requirements, setRequirements] = useState(
     typeof d0.requirements === 'string'
@@ -547,34 +545,67 @@ function CreatePositionWizard({ companies }: { companies: { id: string; name: st
   const [pending, setPending] = useState(false)
 
   useEffect(() => {
-    saveDraft({ step, companyId, title, industry, status, plannedFee, requirements })
-  }, [step, companyId, title, industry, status, plannedFee, requirements])
+    saveDraft({ step, companyId, title, industry, plannedFee, requirements })
+  }, [step, companyId, title, industry, plannedFee, requirements])
 
-  const headlines = ['Company', 'Role & industry', 'Status & fees', 'Review & create']
+  function parseBudgetIls(): number | null {
+    const raw = plannedFee.trim().replace(/\s/g, '').replace(',', '.')
+    if (!raw) return null
+    const n = Number(raw)
+    if (!Number.isFinite(n) || n < 0) return null
+    return n
+  }
 
   async function onCreate() {
     if (!supabase || !user || !companyId) return
+    const budget = parseBudgetIls()
+    if (plannedFee.trim() && budget == null) {
+      toastError('Budget must be a valid number, or leave it empty.')
+      return
+    }
     setPending(true)
-    const { data, error } = await supabase
-      .from('positions')
-      .insert({
-        user_id: user.id,
-        company_id: companyId,
-        title: title.trim() || 'New position',
-        industry: industry.trim() || null,
-        status: status as 'pending' | 'in_progress' | 'success' | 'cancelled',
-        planned_fee_ils: plannedFee.trim() ? Number(plannedFee) : null,
-        requirements: requirements.trim() || null,
-      })
-      .select('id, title')
-      .single()
+    const trimmedReq = requirements.trim()
+    const baseRow = {
+      user_id: user.id,
+      company_id: companyId,
+      title: title.trim() || 'New position',
+      industry: industry.trim() || null,
+      status: 'pending' as const,
+      planned_fee_ils: budget,
+    }
+
+    let data: { id: string; title: string } | null = null
+    let error: { message: string } | null = null
+
+    if (trimmedReq) {
+      const tryText = await supabase.from('positions').insert({ ...baseRow, requirements: trimmedReq }).select('id, title').single()
+      if (!tryText.error) {
+        data = tryText.data as { id: string; title: string }
+      } else if (isMissingRequirementsColumnError(tryText.error.message)) {
+        const tokens = parseRequirementTokens(requirements)
+        const tryArr = await supabase
+          .from('positions')
+          .insert({ ...baseRow, requirement_item_values: tokens })
+          .select('id, title')
+          .single()
+        data = tryArr.data as { id: string; title: string } | null
+        error = tryArr.error
+      } else {
+        error = tryText.error
+      }
+    } else {
+      const ins = await supabase.from('positions').insert(baseRow).select('id, title').single()
+      data = ins.data as { id: string; title: string } | null
+      error = ins.error
+    }
+
     if (error) {
       setPending(false)
       toastError(error.message)
       return
     }
-    const posId = data!.id as string
-    const posTitle = (data!.title as string) ?? 'Role'
+    const posId = data!.id
+    const posTitle = data!.title ?? 'Role'
     const defaultStages = ['Applied', 'Screening', 'Interview', 'Offer']
     for (let i = 0; i < defaultStages.length; i++) {
       await supabase.from('position_stages').insert({
@@ -602,174 +633,187 @@ function CreatePositionWizard({ companies }: { companies: { id: string; name: st
     navigate(`/positions/${posId}`)
   }
 
-  function canNext(): boolean {
-    if (step === 0) return Boolean(companyId)
-    if (step === 1) return title.trim().length > 0
-    return true
-  }
+  const canContinue = Boolean(companyId && title.trim())
 
   return (
-    <div className="border-line overflow-hidden rounded-2xl border bg-white/80 dark:border-line-dark dark:bg-stone-900/50">
-      <div className={`bg-gradient-to-r px-4 py-3 ${STEP_COLORS[step] ?? STEP_COLORS[0]} dark:opacity-95`}>
-        <p className="text-sm font-extrabold tracking-wide text-[#302e2b] uppercase dark:text-stone-100">
-          Step {step + 1} of 4 — {headlines[step]}
+    <div className="border-line overflow-hidden rounded-3xl border border-stone-200/80 bg-white shadow-sm dark:border-line-dark dark:bg-stone-900/60 dark:shadow-none">
+      <div className="from-[#fd8863]/20 via-[#97daff]/15 to-[#b4fdb4]/15 border-b border-stone-200/80 bg-gradient-to-br px-5 py-4 dark:border-stone-600 dark:from-orange-950/40 dark:via-stone-900 dark:to-stone-900">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-accent flex items-center gap-2 text-[11px] font-bold tracking-[0.2em] uppercase dark:text-orange-300">
+              <Sparkles className="h-3.5 w-3.5" aria-hidden />
+              New role
+            </p>
+            <h2 className="mt-1 text-lg font-extrabold tracking-tight text-[#302e2b] dark:text-stone-100">
+              {WIZARD_STEPS[step]}
+            </h2>
+          </div>
+          <div className="flex items-center gap-2" aria-hidden>
+            {WIZARD_STEPS.map((_, i) => (
+              <span
+                key={i}
+                className={`h-2 rounded-full transition-all ${i === step ? 'w-8 bg-[#9b3e20] dark:bg-orange-500' : 'w-2 bg-stone-300/90 dark:bg-stone-600'}`}
+              />
+            ))}
+          </div>
+        </div>
+        <p className="text-ink-muted mt-2 text-xs dark:text-stone-400">
+          {step === 0
+            ? 'Everything optional except client and role title — you can refine the role on the next screen.'
+            : 'Check the summary, then create. New roles start as Pending; change status anytime on the role page.'}
         </p>
       </div>
-      <div className="flex gap-1 border-b border-stone-200/80 px-2 pt-2 dark:border-stone-600">
-        {headlines.map((h, i) => (
-          <button
-            key={h}
-            type="button"
-            onClick={() => setStep(i)}
-            className={`min-w-0 flex-1 truncate rounded-t-lg px-2 py-2 text-[10px] font-bold uppercase ${
-              i === step ? 'bg-white text-[#9b3e20] shadow-sm dark:bg-stone-800 dark:text-orange-300' : 'text-stone-500'
-            }`}
-          >
-            {i + 1}
-          </button>
-        ))}
-      </div>
 
-      <div className="p-4">
+      <div className="p-5 sm:p-6">
         {step === 0 ? (
-          <label className="flex flex-col gap-1 text-sm">
-            Client company
-            <select
-              value={companyId}
-              onChange={(e) => setCompanyId(e.target.value)}
-              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-              required
-            >
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
+          <div className="flex flex-col gap-5">
+            <div className={wizardSectionClass()}>
+              <div className="text-ink-muted mb-3 flex items-center gap-2 text-xs font-bold tracking-wide uppercase dark:text-stone-500">
+                <Building2 className="h-4 w-4 text-[#9b3e20] dark:text-orange-400" aria-hidden />
+                Client
+              </div>
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                Company
+                <select
+                  value={companyId}
+                  onChange={(e) => setCompanyId(e.target.value)}
+                  className="border-line rounded-xl border bg-white px-3 py-2.5 text-base shadow-sm dark:border-line-dark dark:bg-stone-900/80"
+                  required
+                >
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
 
-        {step === 1 ? (
-          <div className="flex flex-col gap-3">
-            <label className="flex flex-col gap-1 text-sm">
-              Role title
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                placeholder="e.g. Senior Software Engineer"
-                required
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              Industry (optional)
-              <input
-                value={industry}
-                onChange={(e) => setIndustry(e.target.value)}
-                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                placeholder="e.g. Software"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              Requirements from client (optional)
-              <textarea
-                value={requirements}
-                onChange={(e) => setRequirements(e.target.value)}
-                disabled={pending}
-                rows={10}
-                placeholder="Paste 8–12 lines from the client brief (one line per bullet is fine)."
-                className="border-line resize-y rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-              />
-            </label>
+            <div className={wizardSectionClass()}>
+              <div className="text-ink-muted mb-3 flex items-center gap-2 text-xs font-bold tracking-wide uppercase dark:text-stone-500">
+                <Briefcase className="h-4 w-4 text-[#9b3e20] dark:text-orange-400" aria-hidden />
+                Role
+              </div>
+              <div className="flex flex-col gap-4">
+                <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                  Role title <span className="text-rose-600 dark:text-rose-400">*</span>
+                  <input
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="border-line rounded-xl border bg-white px-3 py-2.5 text-base shadow-sm dark:border-line-dark dark:bg-stone-900/80"
+                    placeholder="e.g. Senior Software Engineer"
+                    autoComplete="off"
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                  Industry <span className="text-ink-muted font-normal">(optional)</span>
+                  <input
+                    value={industry}
+                    onChange={(e) => setIndustry(e.target.value)}
+                    className="border-line rounded-xl border bg-white px-3 py-2.5 text-base shadow-sm dark:border-line-dark dark:bg-stone-900/80"
+                    placeholder="e.g. Fintech, Healthcare…"
+                    autoComplete="off"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className={wizardSectionClass()}>
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                Client brief / requirements <span className="text-ink-muted font-normal">(optional)</span>
+                <textarea
+                  value={requirements}
+                  onChange={(e) => setRequirements(e.target.value)}
+                  disabled={pending}
+                  rows={6}
+                  placeholder="Paste bullets or notes from the client. Skip if you’ll add this later on the role page."
+                  className="border-line resize-y rounded-xl border bg-white px-3 py-2.5 text-sm leading-relaxed shadow-sm dark:border-line-dark dark:bg-stone-900/80"
+                />
+              </label>
+            </div>
+
+            <div className={wizardSectionClass()}>
+              <div className="text-ink-muted mb-3 flex items-center gap-2 text-xs font-bold tracking-wide uppercase dark:text-stone-500">
+                <Coins className="h-4 w-4 text-[#9b3e20] dark:text-orange-400" aria-hidden />
+                Fee
+              </div>
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                Budget <span className="text-ink-muted font-normal">(optional, ₪)</span>
+                <input
+                  value={plannedFee}
+                  onChange={(e) => setPlannedFee(e.target.value)}
+                  className="border-line rounded-xl border bg-white px-3 py-2.5 text-base shadow-sm dark:border-line-dark dark:bg-stone-900/80"
+                  placeholder="Leave empty if unknown"
+                  inputMode="decimal"
+                  autoComplete="off"
+                />
+              </label>
+            </div>
           </div>
-        ) : null}
-
-        {step === 2 ? (
-          <div className="flex flex-col gap-3">
-            <label className="flex flex-col gap-1 text-sm">
-              Status
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-              >
-                <option value="pending">Pending</option>
-                <option value="in_progress">In progress</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              Planned fee (₪, optional)
-              <input
-                value={plannedFee}
-                onChange={(e) => setPlannedFee(e.target.value)}
-                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                inputMode="decimal"
-              />
-            </label>
+        ) : (
+          <div className="rounded-2xl border border-stone-200/90 bg-stone-50/50 p-5 dark:border-stone-600 dark:bg-stone-900/40">
+            <h3 className="text-sm font-extrabold text-[#302e2b] dark:text-stone-100">Summary</h3>
+            <dl className="mt-4 space-y-3 text-sm">
+              <div className="flex flex-wrap justify-between gap-2 border-b border-stone-200/70 pb-3 dark:border-stone-600/80">
+                <dt className="text-ink-muted font-medium">Company</dt>
+                <dd className="text-right font-semibold text-[#302e2b] dark:text-stone-100">
+                  {companies.find((c) => c.id === companyId)?.name ?? '—'}
+                </dd>
+              </div>
+              <div className="flex flex-wrap justify-between gap-2 border-b border-stone-200/70 pb-3 dark:border-stone-600/80">
+                <dt className="text-ink-muted font-medium">Role title</dt>
+                <dd className="text-right font-semibold text-[#302e2b] dark:text-stone-100">{title.trim() || '—'}</dd>
+              </div>
+              <div className="flex flex-wrap justify-between gap-2 border-b border-stone-200/70 pb-3 dark:border-stone-600/80">
+                <dt className="text-ink-muted font-medium">Industry</dt>
+                <dd className="text-right font-semibold text-[#302e2b] dark:text-stone-100">{industry.trim() || '—'}</dd>
+              </div>
+              <div className="flex flex-wrap justify-between gap-2 border-b border-stone-200/70 pb-3 dark:border-stone-600/80">
+                <dt className="text-ink-muted font-medium">Client brief</dt>
+                <dd className="max-w-[min(100%,20rem)] text-right text-[#302e2b] dark:text-stone-100">
+                  {requirements.trim() ? <span className="whitespace-pre-wrap">{requirements.trim()}</span> : '—'}
+                </dd>
+              </div>
+              <div className="flex flex-wrap justify-between gap-2">
+                <dt className="text-ink-muted font-medium">Budget</dt>
+                <dd className="text-right font-semibold text-[#302e2b] dark:text-stone-100">
+                  {parseBudgetIls() != null ? `₪${parseBudgetIls()!.toLocaleString('he-IL')}` : '—'}
+                </dd>
+              </div>
+            </dl>
+            <p className="text-ink-muted mt-4 text-xs leading-relaxed dark:text-stone-500">
+              Default pipeline: Applied → Screening → Interview → Offer. Status starts as <strong className="text-stone-700 dark:text-stone-300">Pending</strong>.
+            </p>
           </div>
-        ) : null}
+        )}
 
-        {step === 3 ? (
-          <ul className="text-sm leading-relaxed text-[#302e2b] dark:text-stone-200">
-            <li>
-              <span className="text-ink-muted">Company: </span>
-              {companies.find((c) => c.id === companyId)?.name ?? '—'}
-            </li>
-            <li>
-              <span className="text-ink-muted">Title: </span>
-              {title.trim() || '—'}
-            </li>
-            <li>
-              <span className="text-ink-muted">Industry: </span>
-              {industry.trim() || '—'}
-            </li>
-            <li>
-              <span className="text-ink-muted">Requirements: </span>
-              {requirements.trim() ? (
-                <span className="whitespace-pre-wrap">{requirements.trim()}</span>
-              ) : (
-                '—'
-              )}
-            </li>
-            <li>
-              <span className="text-ink-muted">Status: </span>
-              {status.replace('_', ' ')}
-            </li>
-            <li>
-              <span className="text-ink-muted">Planned fee: </span>
-              {plannedFee.trim() ? `₪${plannedFee}` : '—'}
-            </li>
-            <li className="text-ink-muted mt-2 text-xs">Default pipeline stages: Applied → Screening → Interview → Offer.</li>
-          </ul>
-        ) : null}
-
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-6 flex flex-wrap items-center gap-3">
           {step > 0 ? (
             <button
               type="button"
-              className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold dark:border-stone-600"
+              className="rounded-full border border-stone-300 px-5 py-2.5 text-sm font-semibold text-stone-800 transition hover:bg-stone-50 dark:border-stone-600 dark:text-stone-200 dark:hover:bg-stone-800/80"
               onClick={() => setStep((s) => s - 1)}
             >
               Back
             </button>
           ) : null}
-          {step < 3 ? (
+          {step < 1 ? (
             <button
               type="button"
-              disabled={!canNext()}
-              className="rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-5 py-2 text-sm font-bold text-white disabled:opacity-50"
-              onClick={() => canNext() && setStep((s) => s + 1)}
+              disabled={!canContinue}
+              className="rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-6 py-2.5 text-sm font-bold text-white shadow-md shadow-orange-900/10 disabled:cursor-not-allowed disabled:opacity-45 dark:shadow-none"
+              onClick={() => canContinue && setStep(1)}
             >
-              Next
+              Review
             </button>
           ) : (
             <button
               type="button"
               disabled={pending || !title.trim()}
-              className="rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-5 py-2 text-sm font-bold text-white disabled:opacity-50"
+              className="rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-6 py-2.5 text-sm font-bold text-white shadow-md shadow-orange-900/10 disabled:cursor-not-allowed disabled:opacity-45 dark:shadow-none"
               onClick={() => void onCreate()}
             >
-              {pending ? 'Creating…' : 'Create & open'}
+              {pending ? 'Creating…' : 'Create & open role'}
             </button>
           )}
         </div>
