@@ -442,7 +442,9 @@ export function CalendarPage() {
               />
             </label>
             <label className="flex min-w-0 flex-col gap-1 text-sm">
-              Short description <span className="text-ink-muted font-normal">(optional)</span>
+              <span>
+                Short description <span className="text-ink-muted font-normal">(optional)</span>
+              </span>
               <input
                 value={subtitle}
                 onChange={(e) => setSubtitle(e.target.value)}
@@ -461,7 +463,9 @@ export function CalendarPage() {
               />
             </label>
             <label className="flex min-w-0 flex-col gap-1 text-sm">
-              End <span className="text-ink-muted font-normal">(optional)</span>
+              <span>
+                End <span className="text-ink-muted font-normal">(optional)</span>
+              </span>
               <input
                 type="datetime-local"
                 value={endsAt}
@@ -470,7 +474,9 @@ export function CalendarPage() {
               />
             </label>
             <label className="flex min-w-0 flex-col gap-1 text-sm">
-              Reminder <span className="text-ink-muted font-normal">(optional)</span>
+              <span>
+                Reminder <span className="text-ink-muted font-normal">(optional)</span>
+              </span>
               <input
                 type="datetime-local"
                 value={reminderAt}
