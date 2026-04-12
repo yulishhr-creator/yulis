@@ -64,7 +64,6 @@ export function DashboardPage() {
   const companyFilterRef = useRef<HTMLDivElement>(null)
   const [taskModalOpen, setTaskModalOpen] = useState(false)
   const [newTaskTitle, setNewTaskTitle] = useState('')
-  const [newTaskDue, setNewTaskDue] = useState('')
   const [newTaskPositionId, setNewTaskPositionId] = useState('')
   const tasksQ = useQuery({
     queryKey: ['dashboard-tasks', uid],
@@ -245,7 +244,6 @@ export function DashboardPage() {
   useEffect(() => {
     if (searchParams.get('addTask') !== '1') return
     setNewTaskTitle('')
-    setNewTaskDue('')
     const pid = sessionStorage.getItem('yulis_task_prefill_position_id')
     setNewTaskPositionId(pid ?? '')
     setTaskModalOpen(true)
@@ -280,7 +278,7 @@ export function DashboardPage() {
         position_id: newTaskPositionId.trim(),
         title: newTaskTitle.trim() || 'Task',
         status: 'todo',
-        due_at: newTaskDue ? new Date(newTaskDue).toISOString() : null,
+        due_at: null,
       })
       if (error) throw error
     },
@@ -288,7 +286,6 @@ export function DashboardPage() {
       success('Task added')
       setTaskModalOpen(false)
       setNewTaskTitle('')
-      setNewTaskDue('')
       setNewTaskPositionId('')
       await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
       await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
@@ -725,15 +722,6 @@ export function DashboardPage() {
                 className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
                 placeholder="What needs doing?"
                 required
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm font-medium">
-              Due (optional)
-              <input
-                type="datetime-local"
-                value={newTaskDue}
-                onChange={(e) => setNewTaskDue(e.target.value)}
-                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
               />
             </label>
             <button
