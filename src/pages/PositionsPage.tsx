@@ -50,9 +50,7 @@ function positionStatusPill(status: string): { label: string; className: string 
       return {
         label: 'In progress',
         className:
-          status === 'pending'
-            ? 'border-amber-200/80 bg-amber-50 text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/50 dark:text-amber-100'
-            : 'border-sky-200/80 bg-sky-50 text-sky-900 dark:border-cyan-700/60 dark:bg-cyan-950/40 dark:text-cyan-100',
+          'border-sky-200/80 bg-sky-50 text-sky-900 dark:border-cyan-700/60 dark:bg-cyan-950/40 dark:text-cyan-100',
       }
     case 'success':
       return {
