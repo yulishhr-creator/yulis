@@ -25,6 +25,7 @@ import { CalendarPage } from '@/pages/CalendarPage'
 import { CandidatesPage } from '@/pages/CandidatesPage'
 import { CandidateDetailPage } from '@/pages/CandidateDetailPage'
 import { PublicSharePage } from '@/pages/PublicSharePage'
+import { PublicPositionCandidatesPage } from '@/pages/PublicPositionCandidatesPage'
 import { WorkTimerProvider } from '@/work/WorkTimerContext'
 
 const queryClient = new QueryClient({
@@ -46,6 +47,7 @@ export default function App() {
                 <Route path="/setup" element={<SetupPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/p/:token" element={<PublicSharePage />} />
+                <Route path="/pub/pos/:token" element={<PublicPositionCandidatesPage />} />
                 <Route element={<ProtectedRoute />}>
                   <Route
                     element={

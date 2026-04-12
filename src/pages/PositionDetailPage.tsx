@@ -16,6 +16,7 @@ import {
   ExternalLink,
   Settings,
   Banknote,
+  Globe,
 } from 'lucide-react'
 import { differenceInCalendarDays, formatDistanceToNow } from 'date-fns'
 
@@ -157,6 +158,26 @@ export function PositionDetailPage() {
     },
   })
 
+  const positionIsOpen = useMemo(
+    () => posQ.data?.status === 'pending' || posQ.data?.status === 'in_progress',
+    [posQ.data?.status],
+  )
+
+  const publicListTokenQ = useQuery({
+    queryKey: ['position-public-list-token', id, user?.id],
+    enabled: Boolean(supabase && user && id && positionIsOpen),
+    queryFn: async () => {
+      const { data, error } = await supabase!
+        .from('position_public_list_tokens')
+        .select('token')
+        .eq('position_id', id!)
+        .is('revoked_at', null)
+        .maybeSingle()
+      if (error) throw error
+      return (data as { token: string } | null)?.token ?? null
+    },
+  })
+
   const position = posQ.data
   const company = position?.companies as unknown as { id: string; name: string; contact_email: string | null } | undefined
 
@@ -173,6 +194,8 @@ export function PositionDetailPage() {
   const [noteText, setNoteText] = useState('')
   const [shareOpen, setShareOpen] = useState(false)
   const [shareUrl, setShareUrl] = useState<string | null>(null)
+  const [publicListOpen, setPublicListOpen] = useState(false)
+  const [publicListUrl, setPublicListUrl] = useState<string | null>(null)
 
   useEffect(() => {
     if (!position) return
@@ -221,6 +244,7 @@ export function PositionDetailPage() {
     await qc.invalidateQueries({ queryKey: ['position', id] })
     await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
     await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+    await qc.invalidateQueries({ queryKey: ['position-public-list-token', id] })
     await qc.invalidateQueries({ queryKey: ['positions'] })
     await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
     await qc.invalidateQueries({ queryKey: ['notification-count'] })
@@ -615,6 +639,32 @@ export function PositionDetailPage() {
     onError: (e: Error) => toastError(e.message),
   })
 
+  const ensurePositionPublicListToken = useMutation({
+    mutationFn: async () => {
+      if (!supabase || !user || !id) throw new Error('Not signed in')
+      const now = new Date().toISOString()
+      const { error: revErr } = await supabase
+        .from('position_public_list_tokens')
+        .update({ revoked_at: now })
+        .eq('position_id', id)
+        .eq('user_id', user.id)
+        .is('revoked_at', null)
+      if (revErr) throw revErr
+      const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+      const { error } = await supabase.from('position_public_list_tokens').insert({
+        user_id: user.id,
+        position_id: id,
+        token,
+      })
+      if (error) throw error
+      return token
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['position-public-list-token', id] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
   async function uploadResume(candidateId: string, file: File | null) {
     if (!file || !supabase || !user) return
     const path = `${user.id}/${candidateId}/${Date.now()}-${file.name.replace(/[^\w.-]/g, '_')}`
@@ -888,6 +938,31 @@ export function PositionDetailPage() {
             </button>
             {!terminalPosition ? (
               <>
+                <button
+                  type="button"
+                  title="Public list of candidates (shareable link)"
+                  aria-label="Public list of candidates"
+                  disabled={publicListTokenQ.isLoading || ensurePositionPublicListToken.isPending}
+                  onClick={async () => {
+                    if (!id) return
+                    let tok = publicListTokenQ.data ?? null
+                    if (tok == null) {
+                      try {
+                        tok = await ensurePositionPublicListToken.mutateAsync()
+                      } catch {
+                        return
+                      }
+                    }
+                    const url = `${window.location.origin}/pub/pos/${tok}`
+                    setPublicListUrl(url)
+                    setPublicListOpen(true)
+                    void navigator.clipboard.writeText(url).catch(() => {})
+                    success('Public link copied')
+                  }}
+                  className="border-line flex h-9 w-9 items-center justify-center rounded-xl border bg-white/90 text-stone-700 shadow-sm transition hover:bg-stone-100 disabled:opacity-50 dark:border-line-dark dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
+                >
+                  <Globe className="h-4 w-4" aria-hidden />
+                </button>
                 <button
                   type="button"
                   title="Mark role fulfilled"
@@ -1405,6 +1480,27 @@ export function PositionDetailPage() {
       <Modal open={shareOpen} onClose={() => setShareOpen(false)} title="Share link" size="sm">
         <p className="text-ink-muted text-sm">Anyone with this link can view a summary (expires in 7 days).</p>
         <p className="mt-2 break-all rounded-lg bg-stone-100 p-2 text-xs dark:bg-stone-800">{shareUrl}</p>
+      </Modal>
+
+      <Modal open={publicListOpen} onClose={() => setPublicListOpen(false)} title="Public candidate list" size="sm">
+        <p className="text-ink-muted text-sm">
+          Anyone with this link can see names, pipeline stage, and outcome for this open role. Contact details are not
+          included. The page stops working if the role is marked fulfilled or withdrawn.
+        </p>
+        {publicListUrl ? (
+          <>
+            <p className="mt-2 break-all rounded-lg bg-stone-100 p-2 text-xs dark:bg-stone-800">{publicListUrl}</p>
+            <a
+              href={publicListUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent mt-3 inline-flex items-center gap-1 text-sm font-semibold underline dark:text-orange-300"
+            >
+              <ExternalLink className="h-4 w-4 shrink-0" aria-hidden />
+              Open in new tab
+            </a>
+          </>
+        ) : null}
       </Modal>
     </div>
   )

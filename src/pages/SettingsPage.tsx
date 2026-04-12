@@ -130,6 +130,7 @@ export function SettingsPage() {
         'calendar_events',
         'work_time_entries',
         'candidate_share_tokens',
+        'position_public_list_tokens',
         'user_oauth_integrations',
       ] as const
       for (const name of tables) {
