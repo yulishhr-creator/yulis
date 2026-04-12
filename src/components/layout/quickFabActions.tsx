@@ -1,12 +1,12 @@
 import type { NavigateFunction } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
 import {
-  ArrowRightLeft,
   Briefcase,
   Building2,
   CalendarPlus,
   ClipboardList,
   Clock,
+  UserPlus,
 } from 'lucide-react'
 
 export type QuickFabAction = {
@@ -49,20 +49,20 @@ export function buildQuickFabActions(opts: {
 
   const createTask = (): QuickFabAction => ({
     id: 'task',
-    title: 'Create Task',
+    title: 'New Task',
     subtitle: 'Choose role on the next screen',
     icon: ClipboardList,
     iconBgClass: iconTask,
     onSelect: done(() => navigate('/?addTask=1')),
   })
 
-  const assignCandidate = (): QuickFabAction => ({
-    id: 'assign-candidate',
-    title: 'Assign Candidate',
-    subtitle: 'Move someone to another active role',
-    icon: ArrowRightLeft,
+  const createCandidate = (): QuickFabAction => ({
+    id: 'create-candidate',
+    title: 'Create Candidate',
+    subtitle: 'Pick a role, then add name and contact details',
+    icon: UserPlus,
     iconBgClass: iconAssign,
-    onSelect: done(() => navigate('/candidates?assign=1')),
+    onSelect: done(() => navigate('/candidates?new=1')),
   })
 
   const acquirePosition = (): QuickFabAction => ({
@@ -103,7 +103,7 @@ export function buildQuickFabActions(opts: {
 
   return [
     createTask(),
-    assignCandidate(),
+    createCandidate(),
     acquirePosition(),
     registerClient(),
     calendarOrReminder(),

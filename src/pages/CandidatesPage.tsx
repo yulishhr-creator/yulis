@@ -29,7 +29,8 @@ type CandidateRow = {
     id: string
     title: string
     status: string
-    companies: { name: string } | null
+    company_id: string
+    companies: { id: string; name: string } | null
   } | null
 }
 
@@ -76,7 +77,9 @@ export function CandidatesPage() {
   const { success, error: toastError } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const showAssignHint = searchParams.get('assign') === '1'
+  const openNewCandidateFromQuery = searchParams.get('new') === '1'
   const [outcomeFilter, setOutcomeFilter] = useState<'all' | Outcome>('active')
+  const [companyTab, setCompanyTab] = useState<'all' | string>('all')
   const [search, setSearch] = useState('')
   const [assignFor, setAssignFor] = useState<CandidateRow | null>(null)
   const [assignPositionId, setAssignPositionId] = useState('')
@@ -102,6 +105,20 @@ export function CandidatesPage() {
     return () => cancelAnimationFrame(id)
   }, [showAssignHint])
 
+  useEffect(() => {
+    if (!openNewCandidateFromQuery) return
+    setNewCandidatePositionId('')
+    setNewCandidateOpen(true)
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('new')
+        return next
+      },
+      { replace: true },
+    )
+  }, [openNewCandidateFromQuery, setSearchParams])
+
   const q = useQuery({
     queryKey: ['all-candidates', uid, outcomeFilter],
     enabled: Boolean(supabase && uid),
@@ -112,7 +129,7 @@ export function CandidatesPage() {
           `
           id, full_name, email, phone, outcome, created_at, updated_at, position_id,
           position_stages ( name ),
-          positions ( id, title, status, companies ( name ) )
+          positions ( id, title, status, company_id, companies ( id, name ) )
         `,
         )
         .eq('user_id', uid!)
@@ -203,7 +220,33 @@ export function CandidatesPage() {
     if (!assignFor) return []
     return (positionsForAssignQ.data ?? []).filter((p) => p.id !== assignFor.position_id)
   }, [assignFor, positionsForAssignQ.data])
-  const filteredRows = useMemo(() => rows.filter((c) => candidateMatchesSearch(c, search)), [rows, search])
+
+  const companiesInView = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const c of rows) {
+      const cid = c.positions?.company_id
+      if (!cid) continue
+      const name = c.positions?.companies?.name?.trim()
+      map.set(cid, name || 'Unknown client')
+    }
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+  }, [rows])
+
+  useEffect(() => {
+    if (companyTab === 'all') return
+    if (companiesInView.some((co) => co.id === companyTab)) return
+    setCompanyTab('all')
+  }, [companiesInView, companyTab])
+
+  const filteredRows = useMemo(() => {
+    let list = rows.filter((c) => candidateMatchesSearch(c, search))
+    if (companyTab !== 'all') {
+      list = list.filter((c) => c.positions?.company_id === companyTab)
+    }
+    return list
+  }, [rows, search, companyTab])
   const newCandidatePositionOptions = positionsForAssignQ.data ?? []
 
   return (
@@ -386,21 +429,64 @@ export function CandidatesPage() {
         </div>
       ) : null}
 
-      <div className="flex flex-wrap gap-2">
-        {(['all', 'active', 'rejected', 'withdrawn', 'hired'] as const).map((k) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => setOutcomeFilter(k)}
-            className={`rounded-full px-3 py-1 text-xs font-bold uppercase transition ${
-              outcomeFilter === k
-                ? 'bg-[#9b3e20] text-white dark:bg-orange-600'
-                : 'border border-stone-300 dark:border-stone-600'
-            }`}
-          >
-            {k === 'all' ? 'All' : k}
-          </button>
-        ))}
+      <div className="flex flex-col gap-4">
+        <div>
+          <p className="text-ink-muted mb-2 text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Outcome</p>
+          <div className="flex flex-wrap gap-2">
+            {(['all', 'active', 'rejected', 'withdrawn', 'hired'] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setOutcomeFilter(k)}
+                className={`rounded-full px-3 py-1 text-xs font-bold uppercase transition ${
+                  outcomeFilter === k
+                    ? 'bg-[#9b3e20] text-white dark:bg-orange-600'
+                    : 'border border-stone-300 dark:border-stone-600'
+                }`}
+              >
+                {k === 'all' ? 'All' : k}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {companiesInView.length > 0 ? (
+          <div>
+            <p className="text-ink-muted mb-2 text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Client</p>
+            <div className="flex flex-wrap gap-2" role="tablist" aria-label="Filter by client">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={companyTab === 'all'}
+                onClick={() => setCompanyTab('all')}
+                className={`rounded-full px-3 py-1 text-xs font-bold transition ${
+                  companyTab === 'all'
+                    ? 'bg-[#006384] text-white dark:bg-cyan-700'
+                    : 'border border-stone-300 dark:border-stone-600'
+                }`}
+              >
+                All clients
+              </button>
+              {companiesInView.map((co) => (
+                <button
+                  key={co.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={companyTab === co.id}
+                  onClick={() => setCompanyTab(co.id)}
+                  className={`max-w-[14rem] truncate rounded-full px-3 py-1 text-xs font-bold transition ${
+                    companyTab === co.id
+                      ? 'bg-[#006384] text-white dark:bg-cyan-700'
+                      : 'border border-stone-300 dark:border-stone-600'
+                  }`}
+                  title={co.name}
+                >
+                  {co.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="relative">
@@ -480,23 +566,19 @@ export function CandidatesPage() {
                     ) : null}
                     {!c.email && !c.phone ? <span className="text-stitch-muted">No email or phone on file</span> : null}
                   </div>
-                  <p className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                    <span
-                      className="border-violet-400/80 bg-violet-100 text-violet-950 inline-flex max-w-full items-center rounded-full border-2 px-2.5 py-0.5 text-[11px] font-extrabold tracking-wide uppercase shadow-sm dark:border-violet-500/70 dark:bg-violet-950/90 dark:text-violet-100"
-                      title="Pipeline stage"
-                    >
-                      {stage ? stage : '—'}
-                    </span>
-                    <span className="text-stitch-muted" aria-hidden>
+                  <p className="text-stitch-muted mt-2 text-xs">
+                    <span className="text-ink/80 dark:text-stone-400">Pipeline stage:</span>{' '}
+                    <span className="font-medium text-[#302e2b] dark:text-stone-200">{stage || '—'}</span>
+                    <span className="text-stitch-muted mx-2" aria-hidden>
                       ·
                     </span>
-                    <span title={formatDateTime(c.updated_at)} className="font-medium">
+                    <span title={formatDateTime(c.updated_at)} className="font-medium text-stone-600 dark:text-stone-400">
                       Updated {updatedRel}
                     </span>
-                    <span className="text-stitch-muted" aria-hidden>
+                    <span className="text-stitch-muted mx-2" aria-hidden>
                       ·
                     </span>
-                    <span>{days}d on role</span>
+                    <span className="font-medium text-stone-600 dark:text-stone-400">{days}d on role</span>
                   </p>
                 </Link>
                 <div className="border-line flex shrink-0 flex-col border-l dark:border-line-dark">

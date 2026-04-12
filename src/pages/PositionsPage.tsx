@@ -630,7 +630,7 @@ function CreatePositionWizard({ companies }: { companies: { id: string; name: st
     setPending(false)
     success('Position created')
     await qc.invalidateQueries({ queryKey: ['positions'] })
-    navigate(`/positions/${posId}`)
+    navigate('/positions', { replace: true })
   }
 
   const canContinue = Boolean(companyId && title.trim())
@@ -813,7 +813,7 @@ function CreatePositionWizard({ companies }: { companies: { id: string; name: st
               className="rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-6 py-2.5 text-sm font-bold text-white shadow-md shadow-orange-900/10 disabled:cursor-not-allowed disabled:opacity-45 dark:shadow-none"
               onClick={() => void onCreate()}
             >
-              {pending ? 'Creating…' : 'Create & open role'}
+              {pending ? 'Creating…' : 'Create position'}
             </button>
           )}
         </div>

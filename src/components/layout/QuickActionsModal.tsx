@@ -25,7 +25,7 @@ export function QuickActionsModal({ open, onClose }: QuickActionsModalProps) {
   return (
     <Modal open={open} onClose={closeFab} title="Actions" size="md">
       <p className="text-ink-muted mb-3 text-xs dark:text-stone-400">
-        The same shortcuts everywhere — tasks, assignments, positions, clients, calendar, and time tracking.
+        Same shortcuts on every page — tasks, candidates, positions, clients, calendar, and time tracking.
       </p>
       <div className="flex max-h-[min(60vh,24rem)] flex-col gap-2 overflow-y-auto pr-1">
         {fabActions.map((a) => {
