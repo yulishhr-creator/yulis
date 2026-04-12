@@ -1,8 +1,8 @@
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { differenceInCalendarDays } from 'date-fns'
-import { Briefcase, Building2, ChevronDown, ChevronRight, Coins, GripVertical, Sparkles } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { Briefcase, Building2, ChevronDown, ChevronRight, Coins, GripVertical, Search, Sparkles } from 'lucide-react'
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
@@ -42,30 +42,27 @@ function saveDraft(d: Partial<Draft>) {
   }
 }
 
-/** Position row status — same visual language as dashboard / mobile list. */
+/** Position row status — labels aligned with board columns on this page. */
 function positionStatusPill(status: string): { label: string; className: string } {
   switch (status) {
     case 'pending':
-      return {
-        label: 'Pending',
-        className:
-          'border-amber-200/80 bg-amber-50 text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/50 dark:text-amber-100',
-      }
     case 'in_progress':
       return {
         label: 'In progress',
         className:
-          'border-sky-200/80 bg-sky-50 text-sky-900 dark:border-cyan-700/60 dark:bg-cyan-950/40 dark:text-cyan-100',
+          status === 'pending'
+            ? 'border-amber-200/80 bg-amber-50 text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/50 dark:text-amber-100'
+            : 'border-sky-200/80 bg-sky-50 text-sky-900 dark:border-cyan-700/60 dark:bg-cyan-950/40 dark:text-cyan-100',
       }
     case 'success':
       return {
-        label: 'Goal achieved',
+        label: 'Success',
         className:
           'border-emerald-200/80 bg-emerald-50 text-emerald-900 dark:border-emerald-700/60 dark:bg-emerald-950/40 dark:text-emerald-100',
       }
     case 'cancelled':
       return {
-        label: 'Withdrawn',
+        label: 'Cancelled',
         className:
           'border-stone-200/80 bg-stone-100 text-stone-700 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300',
       }
@@ -102,10 +99,32 @@ function candidateStageName(st: CandidateNested['position_stages']): string {
   return st.name ?? '—'
 }
 
+function positionMatchesSearch(p: PositionListItem, raw: string): boolean {
+  const q = raw.trim().toLowerCase()
+  if (!q) return true
+  if ((p.title ?? '').toLowerCase().includes(q)) return true
+  const co = (p.companies as { name?: string } | null)?.name ?? ''
+  if (co.toLowerCase().includes(q)) return true
+  for (const c of p.candidates ?? []) {
+    if (c.deleted_at) continue
+    if ((c.full_name ?? '').toLowerCase().includes(q)) return true
+    if (candidateStageName(c.position_stages).toLowerCase().includes(q)) return true
+  }
+  return false
+}
+
+function partitionByStatus(list: PositionListItem[]) {
+  const inProgress = list.filter((p) => p.status === 'pending' || p.status === 'in_progress')
+  const success = list.filter((p) => p.status === 'success')
+  const cancelled = list.filter((p) => p.status === 'cancelled')
+  return { inProgress, success, cancelled }
+}
+
 type PositionListItem = {
   id: string
   title: string
   status: string
+  company_id: string
   created_at: string
   companies: unknown
   candidates?: CandidateNested[] | null
@@ -116,11 +135,13 @@ function PositionCard({
   isDragging,
   onDragStart,
   onDragEnd,
+  showCompanyName = true,
 }: {
   p: PositionListItem
   isDragging: boolean
   onDragStart: (id: string) => void
   onDragEnd: () => void
+  showCompanyName?: boolean
 }) {
   const co = p.companies as { name: string } | null
   const daysSince = differenceInCalendarDays(new Date(), new Date(p.created_at))
@@ -166,10 +187,14 @@ function PositionCard({
             </span>
           </div>
           <div className="text-ink-muted mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs dark:text-stone-500">
-            <span className="text-sm font-medium text-stone-800 dark:text-stone-200">{co?.name ?? '—'}</span>
-            <span aria-hidden className="select-none">
-              ·
-            </span>
+            {showCompanyName ? (
+              <>
+                <span className="text-sm font-medium text-stone-800 dark:text-stone-200">{co?.name ?? '—'}</span>
+                <span aria-hidden className="select-none">
+                  ·
+                </span>
+              </>
+            ) : null}
             <span
               className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${pill.className}`}
             >
@@ -224,6 +249,119 @@ function PositionCard({
 
 type DropZone = 'active' | 'success' | 'cancelled'
 
+function dropSlotKey(companyId: string, zone: DropZone): string {
+  return `${companyId}:${zone}`
+}
+
+function CompanyBoardColumn({
+  companyId,
+  companyName,
+  positions: colPositions,
+  showCompanyOnCards,
+  layout = 'scroll',
+  draggingId,
+  setDraggingId,
+  dropHover,
+  setDropHover,
+  onDragOverSlot,
+  onDropSlot,
+}: {
+  companyId: string
+  companyName: string
+  positions: PositionListItem[]
+  showCompanyOnCards: boolean
+  layout?: 'scroll' | 'single'
+  draggingId: string | null
+  setDraggingId: Dispatch<SetStateAction<string | null>>
+  dropHover: string | null
+  setDropHover: Dispatch<SetStateAction<string | null>>
+  onDragOverSlot: (e: React.DragEvent, companyId: string, zone: DropZone) => void
+  onDropSlot: (e: React.DragEvent, companyId: string, zone: DropZone) => void
+}) {
+  const { inProgress, success, cancelled } = partitionByStatus(colPositions)
+
+  function leaveSlot(e: React.DragEvent, slot: string) {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDropHover((h) => (h === slot ? null : h))
+    }
+  }
+
+  function bucketClass(zone: DropZone) {
+    const slot = dropSlotKey(companyId, zone)
+    const hot = dropHover === slot
+    const base = 'mt-2 min-h-[2.5rem] rounded-xl transition-colors'
+    if (!hot) return `${base} border border-transparent`
+    if (zone === 'success') return `${base} bg-emerald-500/10 ring-2 ring-emerald-500/35`
+    if (zone === 'cancelled') return `${base} bg-stone-400/10 ring-2 ring-stone-400/40`
+    return `${base} bg-[#fd8863]/10 ring-2 ring-[#9b3e20]/35 dark:bg-orange-500/10 dark:ring-orange-400/40`
+  }
+
+  function sectionShell(zone: DropZone, title: string, hint: string, list: PositionListItem[]) {
+    const slot = dropSlotKey(companyId, zone)
+    return (
+      <section
+        onDragOver={(e) => onDragOverSlot(e, companyId, zone)}
+        onDrop={(e) => onDropSlot(e, companyId, zone)}
+        onDragLeave={(e) => leaveSlot(e, slot)}
+        className={
+          dropHover === slot
+            ? zone === 'success'
+              ? 'rounded-xl ring-2 ring-emerald-500/30 ring-offset-1 ring-offset-white dark:ring-offset-stone-900'
+              : zone === 'cancelled'
+                ? 'rounded-xl ring-2 ring-stone-400/40 ring-offset-1 ring-offset-white dark:ring-offset-stone-900'
+                : 'rounded-xl ring-2 ring-[#9b3e20]/25 ring-offset-1 ring-offset-white dark:ring-offset-stone-900'
+            : ''
+        }
+      >
+        <h4 className="text-xs font-extrabold tracking-wide text-[#302e2b] uppercase dark:text-stone-200">{title}</h4>
+        <p className="text-ink-muted text-[11px] leading-snug dark:text-stone-500">{hint}</p>
+        <div className={bucketClass(zone)}>
+          {list.length === 0 ? (
+            <p className="text-ink-muted px-1 py-3 text-xs">None — drop a role here.</p>
+          ) : (
+            <ul className="space-y-2 pt-1">
+              {list.map((p) => (
+                <PositionCard
+                  key={p.id}
+                  p={p}
+                  showCompanyName={showCompanyOnCards}
+                  isDragging={draggingId === p.id}
+                  onDragStart={(id) => setDraggingId(id)}
+                  onDragEnd={() => {
+                    setDraggingId(null)
+                    setDropHover(null)
+                  }}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+    )
+  }
+
+  const colShell =
+    layout === 'single'
+      ? 'border-line bg-white/50 mx-auto w-full max-w-xl flex flex-col gap-4 rounded-2xl border p-3 shadow-sm dark:border-line-dark dark:bg-stone-900/40'
+      : 'border-line bg-white/50 flex min-w-[17.5rem] max-w-md flex-1 flex-col gap-4 rounded-2xl border p-3 shadow-sm dark:border-line-dark dark:bg-stone-900/40'
+
+  return (
+    <div className={colShell}>
+      <h3 className="text-ink border-stitch-on-surface/10 border-b pb-2 text-sm font-extrabold dark:border-stone-600 dark:text-stone-100">
+        {companyName}
+      </h3>
+      {sectionShell(
+        'active',
+        'In progress',
+        'Open roles (not yet fulfilled or cancelled).',
+        inProgress,
+      )}
+      {sectionShell('success', 'Success', 'Fulfilled placements.', success)}
+      {sectionShell('cancelled', 'Cancelled', 'Closed without hire.', cancelled)}
+    </div>
+  )
+}
+
 export function PositionsPage() {
   const { user } = useAuth()
   const supabase = getSupabase()
@@ -231,7 +369,9 @@ export function PositionsPage() {
   const qc = useQueryClient()
   const { success, error: toastError } = useToast()
   const [draggingId, setDraggingId] = useState<string | null>(null)
-  const [dropHover, setDropHover] = useState<DropZone | null>(null)
+  const [dropHover, setDropHover] = useState<string | null>(null)
+  const [companyTab, setCompanyTab] = useState<'all' | string>('all')
+  const [searchText, setSearchText] = useState('')
 
   const companiesQ = useQuery({
     queryKey: ['companies', user?.id],
@@ -281,7 +421,7 @@ export function PositionsPage() {
     onSuccess: async ({ next, prev, id }) => {
       if (!supabase || !user) return
       if (next === 'success') {
-        success('Moved to Goal achieved')
+        success('Moved to Success')
         await logActivityEvent(supabase, user.id, {
           event_type: 'position_status_changed',
           position_id: id,
@@ -290,7 +430,7 @@ export function PositionsPage() {
           metadata: { from: prev, to: next },
         })
       } else if (next === 'cancelled') {
-        success('Moved to Withdrawn')
+        success('Moved to Cancelled')
         await logActivityEvent(supabase, user.id, {
           event_type: 'position_status_changed',
           position_id: id,
@@ -299,7 +439,7 @@ export function PositionsPage() {
           metadata: { from: prev, to: next },
         })
       } else {
-        success('Moved to Active')
+        success('Moved to In progress')
         await logActivityEvent(supabase, user.id, {
           event_type: 'position_status_changed',
           position_id: id,
@@ -336,13 +476,13 @@ export function PositionsPage() {
     return null
   }
 
-  function handleDragOver(e: React.DragEvent, zone: DropZone) {
+  function handleDragOverSlot(e: React.DragEvent, companyId: string, zone: DropZone) {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    setDropHover(zone)
+    setDropHover(dropSlotKey(companyId, zone))
   }
 
-  function handleDrop(e: React.DragEvent, zone: DropZone) {
+  function handleDropSlot(e: React.DragEvent, _companyId: string, zone: DropZone) {
     e.preventDefault()
     setDropHover(null)
     setDraggingId(null)
@@ -358,23 +498,35 @@ export function PositionsPage() {
   const companies = companiesQ.data ?? []
   const positions = positionsQ.data ?? []
 
-  const activePositions = useMemo(
-    () => positions.filter((p) => p.status === 'pending' || p.status === 'in_progress'),
-    [positions],
+  const filteredPositions = useMemo(
+    () => positions.filter((p) => positionMatchesSearch(p, searchText)),
+    [positions, searchText],
   )
-  const goalAchieved = useMemo(() => positions.filter((p) => p.status === 'success'), [positions])
-  const withdrawn = useMemo(() => positions.filter((p) => p.status === 'cancelled'), [positions])
 
-  const zoneClass = (zone: DropZone) =>
-    `mt-3 min-h-[3rem] rounded-2xl transition-colors ${
-      dropHover === zone ? 'bg-[#fd8863]/10 ring-2 ring-[#9b3e20]/35 dark:bg-orange-500/10 dark:ring-orange-400/40' : ''
-    }`
+  const tabCompanies = useMemo(() => {
+    const list = companies.map((c) => ({ id: c.id, name: c.name }))
+    const ids = new Set(list.map((c) => c.id))
+    for (const p of filteredPositions) {
+      if (!ids.has(p.company_id)) {
+        ids.add(p.company_id)
+        const nm = (p.companies as { name?: string } | null)?.name?.trim() || 'Unknown client'
+        list.push({ id: p.company_id, name: nm })
+      }
+    }
+    return list.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+  }, [companies, filteredPositions])
+
+  useEffect(() => {
+    if (companyTab === 'all') return
+    if (tabCompanies.some((c) => c.id === companyTab)) return
+    setCompanyTab('all')
+  }, [companyTab, tabCompanies])
 
   return (
     <div className="flex flex-col gap-6">
       <ScreenHeader
         title="Positions"
-        subtitle="Roles you’re hiring for — add tasks from each role."
+        subtitle="Filter by client, then drag roles between In progress, Success, and Cancelled."
         backTo="/"
         right={
           <Link
@@ -398,121 +550,106 @@ export function PositionsPage() {
 
       {createOpen && companies.length > 0 ? <CreatePositionWizard companies={companies} /> : null}
 
+      <div className="relative">
+        <Search
+          className="text-ink-muted pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+          aria-hidden
+        />
+        <input
+          type="search"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          placeholder="Search roles, clients, candidates, stages…"
+          className="border-line bg-white/80 focus:ring-accent/30 w-full rounded-2xl border py-2.5 pr-3 pl-10 text-sm shadow-sm outline-none focus:ring-2 dark:border-line-dark dark:bg-stone-900/50"
+          aria-label="Search positions and candidates"
+        />
+      </div>
+
       <p className="text-ink-muted text-xs dark:text-stone-500">
-        Drag a role by the grip to move it between <strong className="text-ink dark:text-stone-300">Active</strong>,{' '}
-        <strong className="text-ink dark:text-stone-300">Goal achieved</strong>, and <strong className="text-ink dark:text-stone-300">Withdrawn</strong>.
+        Drag a role by the grip into <strong className="text-ink dark:text-stone-300">In progress</strong>,{' '}
+        <strong className="text-ink dark:text-stone-300">Success</strong>, or <strong className="text-ink dark:text-stone-300">Cancelled</strong>{' '}
+        within a client column.
       </p>
 
       {positionsQ.isLoading ? (
         <p className="text-ink-muted text-sm">Loading…</p>
       ) : positions.length === 0 ? (
         <p className="text-ink-muted text-sm">No positions yet.</p>
+      ) : filteredPositions.length === 0 ? (
+        <p className="text-ink-muted text-sm">No positions match your search.</p>
       ) : (
-        <div className="flex flex-col gap-8">
-          <section
-            aria-labelledby="active-positions-heading"
-            onDragOver={(e) => handleDragOver(e, 'active')}
-            onDrop={(e) => handleDrop(e, 'active')}
-            onDragLeave={(e) => {
-              if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropHover((h) => (h === 'active' ? null : h))
-            }}
-            className={dropHover === 'active' ? 'rounded-3xl ring-2 ring-[#9b3e20]/25 ring-offset-2 ring-offset-paper dark:ring-offset-paper-dark' : ''}
+        <div className="flex flex-col gap-4">
+          <div
+            className="border-line flex flex-wrap gap-2 border-b border-stone-200/80 pb-3 dark:border-stone-600"
+            role="tablist"
+            aria-label="Filter by company"
           >
-            <h2 id="active-positions-heading" className="text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
-              Active positions
-            </h2>
-            <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">Open roles you&apos;re still working (pending or in progress).</p>
-            <div className={zoneClass('active')}>
-              {activePositions.length === 0 ? (
-                <p className="text-ink-muted px-2 py-4 text-sm">None in this category — drop a role here to reopen as in progress.</p>
-              ) : (
-                <ul className="space-y-2 pt-1">
-                  {activePositions.map((p) => (
-                    <PositionCard
-                      key={p.id}
-                      p={p}
-                      isDragging={draggingId === p.id}
-                      onDragStart={(id) => setDraggingId(id)}
-                      onDragEnd={() => {
-                        setDraggingId(null)
-                        setDropHover(null)
-                      }}
-                    />
-                  ))}
-                </ul>
-              )}
-            </div>
-          </section>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={companyTab === 'all'}
+              onClick={() => setCompanyTab('all')}
+              className={`rounded-full px-4 py-2 text-xs font-bold transition ${
+                companyTab === 'all'
+                  ? 'bg-[#9b3e20] text-white dark:bg-orange-600'
+                  : 'border border-stone-300 bg-white/80 dark:border-stone-600 dark:bg-stone-900/50'
+              }`}
+            >
+              All
+            </button>
+            {tabCompanies.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                role="tab"
+                aria-selected={companyTab === c.id}
+                onClick={() => setCompanyTab(c.id)}
+                className={`max-w-[14rem] truncate rounded-full px-4 py-2 text-xs font-bold transition ${
+                  companyTab === c.id
+                    ? 'bg-[#9b3e20] text-white dark:bg-orange-600'
+                    : 'border border-stone-300 bg-white/80 dark:border-stone-600 dark:bg-stone-900/50'
+                }`}
+                title={c.name}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
 
-          <section
-            aria-labelledby="goal-achieved-heading"
-            onDragOver={(e) => handleDragOver(e, 'success')}
-            onDrop={(e) => handleDrop(e, 'success')}
-            onDragLeave={(e) => {
-              if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropHover((h) => (h === 'success' ? null : h))
-            }}
-            className={dropHover === 'success' ? 'rounded-3xl ring-2 ring-emerald-500/30 ring-offset-2 ring-offset-paper dark:ring-offset-paper-dark' : ''}
-          >
-            <h2 id="goal-achieved-heading" className="text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
-              Goal achieved
-            </h2>
-            <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">Roles marked fulfilled — placement or hire completed.</p>
-            <div className={zoneClass('success')}>
-              {goalAchieved.length === 0 ? (
-                <p className="text-ink-muted px-2 py-4 text-sm">None in this category — drop here to mark fulfilled.</p>
-              ) : (
-                <ul className="space-y-2 pt-1">
-                  {goalAchieved.map((p) => (
-                    <PositionCard
-                      key={p.id}
-                      p={p}
-                      isDragging={draggingId === p.id}
-                      onDragStart={(id) => setDraggingId(id)}
-                      onDragEnd={() => {
-                        setDraggingId(null)
-                        setDropHover(null)
-                      }}
-                    />
-                  ))}
-                </ul>
-              )}
+          {companyTab === 'all' ? (
+            <div className="flex gap-4 overflow-x-auto pb-2 [scrollbar-width:thin] md:flex-wrap md:overflow-x-visible">
+              {tabCompanies.map((c) => (
+                <CompanyBoardColumn
+                  key={c.id}
+                  companyId={c.id}
+                  companyName={c.name}
+                  layout="scroll"
+                  positions={filteredPositions.filter((p) => p.company_id === c.id)}
+                  showCompanyOnCards={false}
+                  draggingId={draggingId}
+                  setDraggingId={setDraggingId}
+                  dropHover={dropHover}
+                  setDropHover={setDropHover}
+                  onDragOverSlot={handleDragOverSlot}
+                  onDropSlot={handleDropSlot}
+                />
+              ))}
             </div>
-          </section>
-
-          <section
-            aria-labelledby="withdrawn-positions-heading"
-            onDragOver={(e) => handleDragOver(e, 'cancelled')}
-            onDrop={(e) => handleDrop(e, 'cancelled')}
-            onDragLeave={(e) => {
-              if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropHover((h) => (h === 'cancelled' ? null : h))
-            }}
-            className={dropHover === 'cancelled' ? 'rounded-3xl ring-2 ring-stone-400/40 ring-offset-2 ring-offset-paper dark:ring-offset-paper-dark' : ''}
-          >
-            <h2 id="withdrawn-positions-heading" className="text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
-              Withdrawn
-            </h2>
-            <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">Roles pulled or closed without a hire.</p>
-            <div className={zoneClass('cancelled')}>
-              {withdrawn.length === 0 ? (
-                <p className="text-ink-muted px-2 py-4 text-sm">None in this category — drop here to withdraw.</p>
-              ) : (
-                <ul className="space-y-2 pt-1">
-                  {withdrawn.map((p) => (
-                    <PositionCard
-                      key={p.id}
-                      p={p}
-                      isDragging={draggingId === p.id}
-                      onDragStart={(id) => setDraggingId(id)}
-                      onDragEnd={() => {
-                        setDraggingId(null)
-                        setDropHover(null)
-                      }}
-                    />
-                  ))}
-                </ul>
-              )}
-            </div>
-          </section>
+          ) : (
+            <CompanyBoardColumn
+              companyId={companyTab}
+              companyName={tabCompanies.find((c) => c.id === companyTab)?.name ?? 'Company'}
+              layout="single"
+              positions={filteredPositions.filter((p) => p.company_id === companyTab)}
+              showCompanyOnCards={false}
+              draggingId={draggingId}
+              setDraggingId={setDraggingId}
+              dropHover={dropHover}
+              setDropHover={setDropHover}
+              onDragOverSlot={handleDragOverSlot}
+              onDropSlot={handleDropSlot}
+            />
+          )}
         </div>
       )}
     </div>
@@ -660,7 +797,7 @@ function CreatePositionWizard({ companies }: { companies: { id: string; name: st
         <p className="text-ink-muted mt-2 text-xs dark:text-stone-400">
           {step === 0
             ? 'Everything optional except client and role title — you can refine the role on the next screen.'
-            : 'Check the summary, then create. New roles start as Pending; change status anytime on the role page.'}
+            : 'Check the summary, then create. New roles start in progress; change status anytime on the role page.'}
         </p>
       </div>
 
@@ -783,7 +920,7 @@ function CreatePositionWizard({ companies }: { companies: { id: string; name: st
               </div>
             </dl>
             <p className="text-ink-muted mt-4 text-xs leading-relaxed dark:text-stone-500">
-              Default pipeline: Applied → Screening → Interview → Offer. Status starts as <strong className="text-stone-700 dark:text-stone-300">Pending</strong>.
+              Default pipeline: Applied → Screening → Interview → Offer. Status starts as <strong className="text-stone-700 dark:text-stone-300">In progress</strong> (pending).
             </p>
           </div>
         )}
