@@ -1,4 +1,4 @@
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { differenceInCalendarDays, formatDistanceToNow } from 'date-fns'
@@ -64,11 +64,15 @@ function candidateMatchesSearch(c: CandidateRow, raw: string): boolean {
   return false
 }
 
+const newCandidateButtonClass =
+  'inline-flex shrink-0 items-center rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-4 py-2 text-sm font-bold text-white shadow-sm dark:from-orange-700 dark:to-orange-500'
+
 export function CandidatesPage() {
   const { user } = useAuth()
   const supabase = getSupabase()
   const uid = user?.id
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const { success, error: toastError } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const showAssignHint = searchParams.get('assign') === '1'
@@ -76,6 +80,8 @@ export function CandidatesPage() {
   const [search, setSearch] = useState('')
   const [assignFor, setAssignFor] = useState<CandidateRow | null>(null)
   const [assignPositionId, setAssignPositionId] = useState('')
+  const [newCandidateOpen, setNewCandidateOpen] = useState(false)
+  const [newCandidatePositionId, setNewCandidatePositionId] = useState('')
 
   function dismissAssignHint() {
     setSearchParams(
@@ -198,9 +204,80 @@ export function CandidatesPage() {
     return (positionsForAssignQ.data ?? []).filter((p) => p.id !== assignFor.position_id)
   }, [assignFor, positionsForAssignQ.data])
   const filteredRows = useMemo(() => rows.filter((c) => candidateMatchesSearch(c, search)), [rows, search])
+  const newCandidatePositionOptions = positionsForAssignQ.data ?? []
 
   return (
     <div className="flex flex-col gap-6">
+      <Modal
+        open={newCandidateOpen}
+        onClose={() => setNewCandidateOpen(false)}
+        title="Add candidate"
+        size="md"
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-ink-muted text-sm dark:text-stone-400">
+            Choose an active role — you&apos;ll add their name and contact details on the next screen.
+          </p>
+          {positionsForAssignQ.isLoading ? (
+            <p className="text-sm">Loading roles…</p>
+          ) : newCandidatePositionOptions.length === 0 ? (
+            <p className="text-sm text-amber-800 dark:text-amber-200">
+              No active roles yet.{' '}
+              <Link to="/positions?create=1" className="font-semibold underline">
+                Create a position
+              </Link>{' '}
+              first.
+            </p>
+          ) : (
+            <label className="flex flex-col gap-1 text-sm font-medium">
+              Role
+              <select
+                value={newCandidatePositionId}
+                onChange={(e) => setNewCandidatePositionId(e.target.value)}
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+              >
+                <option value="">Select a role…</option>
+                {newCandidatePositionOptions.map((p) => {
+                  const co = nestedCompanyName(p.companies)
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {p.title}
+                      {co ? ` — ${co}` : ''}
+                    </option>
+                  )
+                })}
+              </select>
+            </label>
+          )}
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              className="border-line rounded-full border px-4 py-2 text-sm font-medium dark:border-line-dark"
+              onClick={() => {
+                setNewCandidateOpen(false)
+                setNewCandidatePositionId('')
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="rounded-full bg-[#9b3e20] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-orange-600"
+              disabled={!newCandidatePositionId || newCandidatePositionOptions.length === 0}
+              onClick={() => {
+                if (!newCandidatePositionId) return
+                setNewCandidateOpen(false)
+                const pid = newCandidatePositionId
+                setNewCandidatePositionId('')
+                navigate(`/positions/${pid}?addCandidate=1`)
+              }}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal
         open={assignFor !== null}
         onClose={() => {
@@ -277,6 +354,18 @@ export function CandidatesPage() {
         title="Candidates"
         subtitle="Everyone in your pipeline — open a role to edit details or import."
         backTo="/"
+        right={
+          <button
+            type="button"
+            className={newCandidateButtonClass}
+            onClick={() => {
+              setNewCandidatePositionId('')
+              setNewCandidateOpen(true)
+            }}
+          >
+            New
+          </button>
+        }
       />
 
       {showAssignHint ? (

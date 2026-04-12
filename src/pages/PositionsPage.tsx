@@ -377,7 +377,19 @@ export function PositionsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <ScreenHeader title="Positions" subtitle="Roles you’re hiring for — add tasks from each role." backTo="/" />
+      <ScreenHeader
+        title="Positions"
+        subtitle="Roles you’re hiring for — add tasks from each role."
+        backTo="/"
+        right={
+          <Link
+            to="/positions?create=1"
+            className="inline-flex shrink-0 items-center rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-4 py-2 text-sm font-bold text-white shadow-sm dark:from-orange-700 dark:to-orange-500"
+          >
+            New
+          </Link>
+        }
+      />
 
       {createOpen && companies.length === 0 ? (
         <p className="text-ink-muted rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900/50 dark:bg-amber-950/30">

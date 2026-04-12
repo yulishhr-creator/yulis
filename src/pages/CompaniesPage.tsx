@@ -80,6 +80,14 @@ export function CompaniesPage() {
         title="Companies"
         subtitle={sendEmailMode ? 'Choose a client to open your mail app — add a contact email on their profile if missing.' : 'Clients you recruit for.'}
         backTo="/"
+        right={
+          <Link
+            to="/companies/new"
+            className="inline-flex shrink-0 items-center rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-4 py-2 text-sm font-bold text-white shadow-sm dark:from-orange-700 dark:to-orange-500"
+          >
+            New
+          </Link>
+        }
       />
 
       {sendEmailMode ? (
