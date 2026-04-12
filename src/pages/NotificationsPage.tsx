@@ -485,7 +485,7 @@ export function NotificationsPage() {
             <p className="text-stitch-muted text-sm">Loading…</p>
           ) : upcomingEvents.length === 0 ? (
             <p className="text-stitch-muted text-sm">
-              No upcoming events in the next two weeks. Add one from Quick actions → Add Calendar Event.
+              No upcoming events in the next two weeks. Add one from Quick actions → Set Calendar Event / Reminder.
             </p>
           ) : (
             <div className="space-y-6">

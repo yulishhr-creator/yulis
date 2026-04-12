@@ -2,13 +2,11 @@ import type { NavigateFunction } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
 import {
   ArrowRightLeft,
-  Bell,
   Briefcase,
   Building2,
   CalendarPlus,
   ClipboardList,
   Clock,
-  Mail,
 } from 'lucide-react'
 
 export type QuickFabAction = {
@@ -32,16 +30,11 @@ const iconTask =
   'rounded-xl bg-gradient-to-br from-emerald-600 to-teal-500 text-white shadow-md shadow-emerald-500/25 dark:from-emerald-500 dark:to-teal-600 dark:shadow-emerald-900/30'
 const iconCal =
   'rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/30 dark:from-blue-500 dark:to-indigo-700 dark:shadow-blue-900/35'
-const iconMail =
-  'rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 text-white shadow-md shadow-rose-500/25 dark:from-rose-400 dark:to-pink-700 dark:shadow-rose-900/30'
-const iconBell =
-  'rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-md shadow-amber-500/25 dark:from-amber-400 dark:to-amber-700'
 const iconClock =
   'rounded-xl bg-gradient-to-br from-slate-600 to-slate-800 text-white shadow-md shadow-slate-500/25 dark:from-slate-500 dark:to-slate-900 dark:shadow-black/40'
 
 /**
  * Same quick actions on every screen (sidebar + modal).
- * Order: Assign Candidate → Create Client → …
  */
 export function buildQuickFabActions(opts: {
   navigate: NavigateFunction
@@ -54,33 +47,6 @@ export function buildQuickFabActions(opts: {
     fn()
   }
 
-  const assignCandidate = (): QuickFabAction => ({
-    id: 'assign-candidate',
-    title: 'Assign Candidate',
-    subtitle: 'Move someone to another active role',
-    icon: ArrowRightLeft,
-    iconBgClass: iconAssign,
-    onSelect: done(() => navigate('/candidates?assign=1')),
-  })
-
-  const createClient = (): QuickFabAction => ({
-    id: 'create-client',
-    title: 'Create Client',
-    subtitle: 'New company profile',
-    icon: Building2,
-    iconBgClass: iconClient,
-    onSelect: done(() => navigate('/companies/new')),
-  })
-
-  const createPosition = (): QuickFabAction => ({
-    id: 'position',
-    title: 'Create new Position',
-    subtitle: 'New role for a client',
-    icon: Briefcase,
-    iconBgClass: iconBriefcase,
-    onSelect: done(() => navigate('/positions?create=1')),
-  })
-
   const createTask = (): QuickFabAction => ({
     id: 'task',
     title: 'Create Task',
@@ -90,36 +56,45 @@ export function buildQuickFabActions(opts: {
     onSelect: done(() => navigate('/?addTask=1')),
   })
 
-  const calendar = (): QuickFabAction => ({
+  const assignCandidate = (): QuickFabAction => ({
+    id: 'assign-candidate',
+    title: 'Assign Candidate',
+    subtitle: 'Move someone to another active role',
+    icon: ArrowRightLeft,
+    iconBgClass: iconAssign,
+    onSelect: done(() => navigate('/candidates?assign=1')),
+  })
+
+  const acquirePosition = (): QuickFabAction => ({
+    id: 'position',
+    title: 'Acquire Position',
+    subtitle: 'New role for a client',
+    icon: Briefcase,
+    iconBgClass: iconBriefcase,
+    onSelect: done(() => navigate('/positions?create=1')),
+  })
+
+  const registerClient = (): QuickFabAction => ({
+    id: 'register-client',
+    title: 'Register Client',
+    subtitle: 'New company profile',
+    icon: Building2,
+    iconBgClass: iconClient,
+    onSelect: done(() => navigate('/companies/new')),
+  })
+
+  const calendarOrReminder = (): QuickFabAction => ({
     id: 'calendar',
-    title: 'Add Calendar Event',
-    subtitle: 'On your calendar — separate from reminders',
+    title: 'Set Calendar Event / Reminder',
+    subtitle: 'Schedule on the calendar, optional reminder time',
     icon: CalendarPlus,
     iconBgClass: iconCal,
     onSelect: done(() => navigate('/calendar?new=1')),
   })
 
-  const email = (): QuickFabAction => ({
-    id: 'email',
-    title: 'Send An Email',
-    subtitle: 'Pick a client with a contact email',
-    icon: Mail,
-    iconBgClass: iconMail,
-    onSelect: done(() => navigate('/companies?sendEmail=1')),
-  })
-
-  const reminder = (): QuickFabAction => ({
-    id: 'reminder',
-    title: 'Set Reminder',
-    subtitle: 'A nudge for yourself — not a calendar block',
-    icon: Bell,
-    iconBgClass: iconBell,
-    onSelect: done(() => navigate('/notifications?newReminder=1')),
-  })
-
   const trackTime = (): QuickFabAction => ({
     id: 'track',
-    title: 'Track time',
+    title: 'Track Time',
     subtitle: 'Start a timer on a role',
     icon: Clock,
     iconBgClass: iconClock,
@@ -127,13 +102,11 @@ export function buildQuickFabActions(opts: {
   })
 
   return [
-    assignCandidate(),
-    createClient(),
-    createPosition(),
     createTask(),
-    calendar(),
-    email(),
-    reminder(),
+    assignCandidate(),
+    acquirePosition(),
+    registerClient(),
+    calendarOrReminder(),
     trackTime(),
   ]
 }
