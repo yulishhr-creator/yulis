@@ -26,7 +26,7 @@ export function CompaniesPage() {
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('companies')
-        .select('id, name, contact_email, created_at')
+        .select('id, name, contact_email, created_at, status')
         .eq('user_id', user!.id)
         .is('deleted_at', null)
         .order('name')
@@ -120,7 +120,12 @@ export function CompaniesPage() {
                   className="hover:border-accent min-w-0 flex-1 flex flex-col gap-2 rounded-xl border border-transparent transition-colors dark:hover:border-orange-400/40"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <span className="min-w-0 flex-1 text-base leading-snug font-semibold break-words">{c.name}</span>
+                    <span className="min-w-0 flex-1 text-base leading-snug font-semibold break-words">
+                      {c.name}
+                      {c.status === 'inactive' ? (
+                        <span className="text-ink-muted ml-2 align-middle text-xs font-bold normal-case">Inactive</span>
+                      ) : null}
+                    </span>
                     <span
                       className="shrink-0 rounded-xl bg-gradient-to-br from-[#fd8863]/35 to-[#97daff]/40 px-2.5 py-1 text-xs font-extrabold tabular-nums text-[#9b3e20] ring-1 ring-[#9b3e20]/25 dark:from-orange-500/30 dark:to-cyan-500/25 dark:text-orange-200 dark:ring-orange-400/35"
                       title="Days since this client was added"

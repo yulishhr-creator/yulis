@@ -5,6 +5,7 @@ export type ActivityEventType =
   | 'candidate_stage_changed'
   | 'candidate_file_uploaded'
   | 'candidate_outcome_changed'
+  | 'candidate_status_changed'
   | 'candidate_reassigned'
   | 'position_status_changed'
   | 'candidate_reached_critical_stage'

@@ -28,6 +28,7 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/hooks/useToast'
 import { criticalStageThreshold, logActivityEvent } from '@/lib/activityLog'
+import { formatCandidateStatus } from '@/lib/candidateStatus'
 import { normalizeRequirementsText } from '@/lib/requirementValues'
 
 type StageRow = { id: string; name: string; sort_order: number }
@@ -188,7 +189,7 @@ export function PositionDetailPage() {
   const [welcome3, setWelcome3] = useState('')
   const [linkedinSearchUrl, setLinkedinSearchUrl] = useState('')
   const [positionSetupOpen, setPositionSetupOpen] = useState(false)
-  const [outcomeFilter, setOutcomeFilter] = useState<Set<string>>(() => new Set(['active']))
+  const [candStatusFilter, setCandStatusFilter] = useState<Set<string>>(() => new Set(['pending']))
   const [status, setStatus] = useState('pending')
   const [activityFilter, setActivityFilter] = useState<'all' | 'milestones'>('all')
   const [noteText, setNoteText] = useState('')
@@ -398,7 +399,7 @@ export function PositionDetailPage() {
           email: cEmail.trim() || null,
           phone: cPhone.trim() || null,
           source: cSource,
-          outcome: 'active',
+          status: 'pending',
           email_normalized: en,
           phone_normalized: pn,
         })
@@ -468,7 +469,7 @@ export function PositionDetailPage() {
         email: em || null,
         phone: ph || null,
         source: 'external',
-        outcome: 'active',
+        status: 'pending',
         email_normalized: normalizeEmail(em),
         phone_normalized: normalizePhone(ph),
       })
@@ -551,34 +552,34 @@ export function PositionDetailPage() {
     onError: (e: Error) => toastError(e.message),
   })
 
-  const setCandidateOutcome = useMutation({
+  const patchCandidateStatus = useMutation({
     mutationFn: async ({
       candidateId,
-      outcome,
+      nextStatus,
       closeTasks,
     }: {
       candidateId: string
-      outcome: 'active' | 'hired' | 'rejected' | 'withdrawn'
+      nextStatus: 'pending' | 'success' | 'cancelled'
       closeTasks: boolean
     }) => {
       const cand = (candidatesQ.data ?? []).find((c) => c.id === candidateId)
-      const prev = cand?.outcome ?? 'active'
-      const { error } = await supabase!.from('candidates').update({ outcome }).eq('id', candidateId).eq('user_id', user!.id)
+      const prev = (cand?.status as string) ?? 'pending'
+      const { error } = await supabase!.from('candidates').update({ status: nextStatus }).eq('id', candidateId).eq('user_id', user!.id)
       if (error) throw error
-      if (closeTasks && outcome !== 'active') {
+      if (closeTasks && nextStatus !== 'pending') {
         await supabase!.from('tasks').update({ status: 'done' }).eq('candidate_id', candidateId).eq('user_id', user!.id).neq('status', 'done')
       }
-      return { candidateId, prev, outcome, name: cand?.full_name ?? 'Candidate' }
+      return { candidateId, prev, nextStatus, name: cand?.full_name ?? 'Candidate' }
     },
-    onSuccess: async ({ candidateId, prev, outcome, name }) => {
-      success('Outcome updated')
+    onSuccess: async ({ candidateId, prev, nextStatus, name }) => {
+      success('Status updated')
       await logActivityEvent(supabase!, user!.id, {
-        event_type: 'candidate_outcome_changed',
+        event_type: 'candidate_status_changed',
         position_id: id!,
         candidate_id: candidateId,
-        title: `${name}: ${outcome}`,
-        subtitle: `${prev} → ${outcome}`,
-        metadata: { from: prev, to: outcome },
+        title: `${name}: ${nextStatus}`,
+        subtitle: `${prev} → ${nextStatus}`,
+        metadata: { from: prev, to: nextStatus },
       })
       await invalidateAll()
     },
@@ -705,7 +706,13 @@ export function PositionDetailPage() {
     const rows = activityQ.data ?? []
     if (activityFilter === 'milestones') {
       return rows.filter((r) =>
-        ['candidate_reached_critical_stage', 'candidate_created', 'position_status_changed', 'candidate_outcome_changed'].includes(r.event_type),
+        [
+          'candidate_reached_critical_stage',
+          'candidate_created',
+          'position_status_changed',
+          'candidate_outcome_changed',
+          'candidate_status_changed',
+        ].includes(r.event_type),
       )
     }
     return rows
@@ -714,17 +721,17 @@ export function PositionDetailPage() {
   const terminalPosition = status === 'success' || status === 'cancelled'
 
   const activePipelineCandidates = useMemo(
-    () => (candidatesQ.data ?? []).filter((c) => c.outcome === 'active'),
+    () => (candidatesQ.data ?? []).filter((c) => c.status === 'pending'),
     [candidatesQ.data],
   )
 
   const filteredCandidates = useMemo(
-    () => (candidatesQ.data ?? []).filter((c) => outcomeFilter.has(c.outcome)),
-    [candidatesQ.data, outcomeFilter],
+    () => (candidatesQ.data ?? []).filter((c) => candStatusFilter.has(c.status as string)),
+    [candidatesQ.data, candStatusFilter],
   )
 
-  function toggleOutcomeFilter(key: string) {
-    setOutcomeFilter((prev) => {
+  function toggleCandStatusFilter(key: string) {
+    setCandStatusFilter((prev) => {
       const next = new Set(prev)
       if (next.has(key)) {
         if (next.size <= 1) return prev
@@ -767,7 +774,7 @@ export function PositionDetailPage() {
   function renderCandidateCard(c: PositionCandidate) {
     const st = c.position_stages as unknown as { name: string } | null
     const hl = highlightCandidate === c.id
-    const active = c.outcome === 'active'
+    const inPipeline = c.status === 'pending'
     const resumePath = c.resume_storage_path ?? null
     return (
       <li
@@ -792,16 +799,16 @@ export function PositionDetailPage() {
               {c.full_name}
               <ChevronRight className="ml-1 inline h-4 w-4 opacity-50" aria-hidden />
             </Link>
-            {hl && active ? (
+            {hl && inPipeline ? (
               <div className="flex items-center gap-0.5">
                 <button
                   type="button"
-                  title="Mark hired"
-                  aria-label="Mark hired"
+                  title="Mark success"
+                  aria-label="Mark success"
                   onClick={() => {
-                    if (!window.confirm('Are you sure you want to mark this candidate as hired?')) return
+                    if (!window.confirm('Mark this candidate as success (placement won)?')) return
                     const close = window.confirm('Also mark open tasks for this candidate as done?')
-                    void setCandidateOutcome.mutateAsync({ candidateId: c.id, outcome: 'hired', closeTasks: close })
+                    void patchCandidateStatus.mutateAsync({ candidateId: c.id, nextStatus: 'success', closeTasks: close })
                   }}
                   className="border-line flex h-7 w-7 items-center justify-center rounded-md border bg-white text-stone-800 hover:bg-stone-50 dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800"
                 >
@@ -809,12 +816,12 @@ export function PositionDetailPage() {
                 </button>
                 <button
                   type="button"
-                  title="Mark rejected"
-                  aria-label="Mark rejected"
+                  title="Mark cancelled"
+                  aria-label="Mark cancelled"
                   onClick={() => {
-                    if (!window.confirm('Are you sure you want to reject this candidate?')) return
+                    if (!window.confirm('Mark this candidate as cancelled (closed without success)?')) return
                     const close = window.confirm('Also mark open tasks for this candidate as done?')
-                    void setCandidateOutcome.mutateAsync({ candidateId: c.id, outcome: 'rejected', closeTasks: close })
+                    void patchCandidateStatus.mutateAsync({ candidateId: c.id, nextStatus: 'cancelled', closeTasks: close })
                   }}
                   className="border-line flex h-7 w-7 items-center justify-center rounded-md border bg-white text-stone-800 hover:bg-stone-50 dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800"
                 >
@@ -835,7 +842,7 @@ export function PositionDetailPage() {
           </button>
         </div>
         <p className="text-ink-muted text-xs">
-          {c.source} · {st?.name ?? '—'} · {c.outcome}
+          {c.source} · {st?.name ?? '—'} · {formatCandidateStatus(c.status as string)}
         </p>
         <label className="mt-2 block text-xs font-medium">
           Stage
@@ -853,24 +860,23 @@ export function PositionDetailPage() {
           </select>
         </label>
         <label className="mt-2 block text-xs font-medium">
-          Outcome
+          Status
           <select
-            key={`${c.id}-${c.outcome}`}
-            value={c.outcome}
-            disabled={setCandidateOutcome.isPending}
+            key={`${c.id}-${c.status}`}
+            value={c.status as string}
+            disabled={patchCandidateStatus.isPending}
             onChange={(e) => {
-              const v = e.target.value as 'active' | 'hired' | 'rejected' | 'withdrawn'
-              if (v === c.outcome) return
-              if (!window.confirm('Are you sure you want to change this candidate’s outcome?')) return
-              const closeTasks = v !== 'active' ? window.confirm('Also mark open tasks for this candidate as done?') : false
-              void setCandidateOutcome.mutateAsync({ candidateId: c.id, outcome: v, closeTasks })
+              const v = e.target.value as 'pending' | 'success' | 'cancelled'
+              if (v === c.status) return
+              if (!window.confirm('Change this candidate’s status?')) return
+              const closeTasks = v !== 'pending' ? window.confirm('Also mark open tasks for this candidate as done?') : false
+              void patchCandidateStatus.mutateAsync({ candidateId: c.id, nextStatus: v, closeTasks })
             }}
             className="border-line mt-1 w-full rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
           >
-            <option value="active">Active</option>
-            <option value="hired">Hired</option>
-            <option value="rejected">Rejected</option>
-            <option value="withdrawn">Withdrawn</option>
+            <option value="pending">Pending</option>
+            <option value="success">Success</option>
+            <option value="cancelled">Cancelled</option>
           </select>
         </label>
         <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -891,7 +897,11 @@ export function PositionDetailPage() {
             Share link
           </button>
         </div>
-        {hl && !active ? <p className="mt-2 text-sm font-medium text-stone-600 dark:text-stone-400">Outcome: {c.outcome}</p> : null}
+        {hl && !inPipeline ? (
+          <p className="mt-2 text-sm font-medium text-stone-600 dark:text-stone-400">
+            Status: {formatCandidateStatus(c.status as string)}
+          </p>
+        ) : null}
         {hl ? (
           <div className="mt-3 border-t border-stone-200/80 pt-3 dark:border-stone-600">
             <h3 className="text-xs font-bold uppercase tracking-wide text-stone-500">Candidate activity</h3>
@@ -1181,10 +1191,10 @@ export function PositionDetailPage() {
           </button>
         </div>
         <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">
-          Still active on this role — use Candidates for imports, filters, and full cards.
+          Still pending on this role — use Candidates for imports, filters, and full cards.
         </p>
         {activePipelineCandidates.length === 0 ? (
-          <p className="text-ink-muted mt-3 text-sm">No active candidates yet.</p>
+          <p className="text-ink-muted mt-3 text-sm">No pending candidates yet.</p>
         ) : (
           <ul className="mt-3 space-y-2">
             {activePipelineCandidates.map((c) => {
@@ -1244,22 +1254,23 @@ export function PositionDetailPage() {
       {tab === 'candidates' ? (
       <section id="position-candidates-section" className="scroll-mt-24">
         <h2 className="font-semibold">Candidates</h2>
-        <p className="text-ink-muted mt-2 text-sm">Filter by candidate outcome (multi-select). Default shows active pipeline only.</p>
-        <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Filter candidates by outcome">
+        <p className="text-ink-muted mt-2 text-sm">
+          Filter by candidate status (multi-select). Default shows pending pipeline only.
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Filter candidates by status">
           {(
             [
-              { id: 'active', label: 'Active' },
-              { id: 'hired', label: 'Hired' },
-              { id: 'rejected', label: 'Rejected' },
-              { id: 'withdrawn', label: 'Withdrawn' },
+              { id: 'pending', label: 'Pending' },
+              { id: 'success', label: 'Success' },
+              { id: 'cancelled', label: 'Cancelled' },
             ] as const
           ).map(({ id, label }) => (
             <button
               key={id}
               type="button"
-              onClick={() => toggleOutcomeFilter(id)}
+              onClick={() => toggleCandStatusFilter(id)}
               className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                outcomeFilter.has(id) ? 'bg-accent text-white' : 'border-line border bg-white/80 dark:border-line-dark dark:bg-stone-900/50'
+                candStatusFilter.has(id) ? 'bg-accent text-white' : 'border-line border bg-white/80 dark:border-line-dark dark:bg-stone-900/50'
               }`}
             >
               {label}
@@ -1484,7 +1495,7 @@ export function PositionDetailPage() {
 
       <Modal open={publicListOpen} onClose={() => setPublicListOpen(false)} title="Public candidate list" size="sm">
         <p className="text-ink-muted text-sm">
-          Anyone with this link can see names, pipeline stage, and outcome for this open role. Contact details are not
+          Anyone with this link can see names, pipeline stage, and status for this open role. Contact details are not
           included. The page stops working if the role is marked fulfilled or withdrawn.
         </p>
         {publicListUrl ? (
@@ -1508,7 +1519,12 @@ export function PositionDetailPage() {
 
 function ActivityIcon({ type }: { type: string }) {
   const cls = 'mt-0.5 h-8 w-8 shrink-0 rounded-lg bg-stone-100 p-1.5 dark:bg-stone-800'
-  if (type === 'candidate_outcome_changed' || type === 'position_status_changed') return <PartyPopper className={cls} aria-hidden />
+  if (
+    type === 'candidate_outcome_changed' ||
+    type === 'candidate_status_changed' ||
+    type === 'position_status_changed'
+  )
+    return <PartyPopper className={cls} aria-hidden />
   if (type === 'candidate_reached_critical_stage') return <CheckCircle className={cls} aria-hidden />
   if (type === 'candidate_file_uploaded') return <FileText className={cls} aria-hidden />
   return <ChevronRight className={cls} aria-hidden />

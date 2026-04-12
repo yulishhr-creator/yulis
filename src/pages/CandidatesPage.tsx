@@ -7,18 +7,18 @@ import { Mail, Phone, Search, UserPlus } from 'lucide-react'
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { logActivityEvent } from '@/lib/activityLog'
-import { candidateOutcomePill } from '@/lib/candidateOutcomePill'
+import { candidateStatusPill } from '@/lib/candidateStatus'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/hooks/useToast'
 import { formatDateTime } from '@/lib/dates'
 
-type Outcome = 'active' | 'rejected' | 'withdrawn' | 'hired'
+type CandidateDisposition = 'pending' | 'success' | 'cancelled'
 
 type CandidateRow = {
   id: string
   full_name: string
-  outcome: string
+  status: string
   created_at: string
   updated_at: string
   position_id: string
@@ -78,7 +78,7 @@ export function CandidatesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const showAssignHint = searchParams.get('assign') === '1'
   const openNewCandidateFromQuery = searchParams.get('new') === '1'
-  const [outcomeFilter, setOutcomeFilter] = useState<'all' | Outcome>('active')
+  const [statusFilter, setStatusFilter] = useState<'all' | CandidateDisposition>('pending')
   const [companyTab, setCompanyTab] = useState<'all' | string>('all')
   const [search, setSearch] = useState('')
   const [assignFor, setAssignFor] = useState<CandidateRow | null>(null)
@@ -120,14 +120,14 @@ export function CandidatesPage() {
   }, [openNewCandidateFromQuery, setSearchParams])
 
   const q = useQuery({
-    queryKey: ['all-candidates', uid, outcomeFilter],
+    queryKey: ['all-candidates', uid, statusFilter],
     enabled: Boolean(supabase && uid),
     queryFn: async () => {
       let query = supabase!
         .from('candidates')
         .select(
           `
-          id, full_name, email, phone, outcome, created_at, updated_at, position_id,
+          id, full_name, email, phone, status, created_at, updated_at, position_id,
           position_stages ( name ),
           positions ( id, title, status, company_id, companies ( id, name ) )
         `,
@@ -135,8 +135,8 @@ export function CandidatesPage() {
         .eq('user_id', uid!)
         .is('deleted_at', null)
         .order('updated_at', { ascending: false })
-      if (outcomeFilter !== 'all') {
-        query = query.eq('outcome', outcomeFilter)
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter)
       }
       const { data, error } = await query
       if (error) throw error
@@ -431,20 +431,27 @@ export function CandidatesPage() {
 
       <div className="flex flex-col gap-4">
         <div>
-          <p className="text-ink-muted mb-2 text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Outcome</p>
+          <p className="text-ink-muted mb-2 text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Status</p>
           <div className="flex flex-wrap gap-2">
-            {(['all', 'active', 'rejected', 'withdrawn', 'hired'] as const).map((k) => (
+            {(
+              [
+                { k: 'all' as const, label: 'All' },
+                { k: 'pending' as const, label: 'Pending' },
+                { k: 'success' as const, label: 'Success' },
+                { k: 'cancelled' as const, label: 'Cancelled' },
+              ] as const
+            ).map(({ k, label }) => (
               <button
                 key={k}
                 type="button"
-                onClick={() => setOutcomeFilter(k)}
+                onClick={() => setStatusFilter(k)}
                 className={`rounded-full px-3 py-1 text-xs font-bold uppercase transition ${
-                  outcomeFilter === k
+                  statusFilter === k
                     ? 'bg-[#9b3e20] text-white dark:bg-orange-600'
                     : 'border border-stone-300 dark:border-stone-600'
                 }`}
               >
-                {k === 'all' ? 'All' : k}
+                {label}
               </button>
             ))}
           </div>
@@ -517,7 +524,7 @@ export function CandidatesPage() {
             const stage = c.position_stages?.name?.trim()
             const company = pos?.companies?.name
             const days = differenceInCalendarDays(new Date(), new Date(c.created_at))
-            const out = candidateOutcomePill(c.outcome)
+            const out = candidateStatusPill(c.status)
             const updatedRel = formatDistanceToNow(new Date(c.updated_at), { addSuffix: true })
             return (
               <li

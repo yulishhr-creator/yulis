@@ -8,7 +8,7 @@ import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { logActivityEvent } from '@/lib/activityLog'
-import { candidateOutcomePill } from '@/lib/candidateOutcomePill'
+import { candidateStatusPill } from '@/lib/candidateStatus'
 import { useToast } from '@/hooks/useToast'
 import { isMissingRequirementsColumnError, parseRequirementTokens } from '@/lib/requirementValues'
 const DRAFT_KEY = 'yulis_position_wizard_draft'
@@ -88,7 +88,7 @@ function formatCandidateAge(createdAt: string): string {
 type CandidateNested = {
   id: string
   full_name: string
-  outcome: string
+  status: string
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -193,7 +193,7 @@ function PositionCard({
             <ul className="mt-1.5 space-y-1.5 border-t border-stone-200/70 pt-1.5 dark:border-stone-600">
               {cands.map((c) => {
                 const st = candidateStageName(c.position_stages)
-                const out = candidateOutcomePill(c.outcome)
+                const out = candidateStatusPill(c.status)
                 return (
                   <li
                     key={c.id}
@@ -239,7 +239,7 @@ export function PositionsPage() {
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('companies')
-        .select('id, name')
+        .select('id, name, status')
         .eq('user_id', user!.id)
         .is('deleted_at', null)
         .order('name')
@@ -259,7 +259,7 @@ export function PositionsPage() {
           id, title, status, company_id, created_at, updated_at,
           companies ( name ),
           candidates (
-            id, full_name, outcome, created_at, updated_at, deleted_at,
+            id, full_name, status, created_at, updated_at, deleted_at,
             position_stages ( name )
           )
         `,
@@ -523,7 +523,7 @@ function wizardSectionClass(): string {
   return 'rounded-2xl border border-stone-200/90 bg-stone-50/40 p-4 dark:border-stone-600/80 dark:bg-stone-900/35'
 }
 
-function CreatePositionWizard({ companies }: { companies: { id: string; name: string }[] }) {
+function CreatePositionWizard({ companies }: { companies: { id: string; name: string; status?: string }[] }) {
   const { user } = useAuth()
   const supabase = getSupabase()
   const navigate = useNavigate()
@@ -683,6 +683,7 @@ function CreatePositionWizard({ companies }: { companies: { id: string; name: st
                   {companies.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
+                      {c.status === 'inactive' ? ' (inactive)' : ''}
                     </option>
                   ))}
                 </select>

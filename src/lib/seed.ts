@@ -21,6 +21,7 @@ export async function seedDemoIfEmpty(supabase: SupabaseClient, userId: string):
       contact_phone: '+972-50-0000000',
       website: 'https://example.com',
       payment_terms: ['Net 30', 'Success fee on hire'],
+      status: 'active',
     })
     .select('id')
     .single()
@@ -84,7 +85,7 @@ export async function seedDemoIfEmpty(supabase: SupabaseClient, userId: string):
       email: 'jamie.rivera@example.com',
       phone: '+972501111111',
       source: 'external',
-      outcome: 'active',
+      status: 'pending',
       email_normalized: 'jamie.rivera@example.com',
       phone_normalized: '972501111111',
       notes: 'Imported from client list (demo).',
@@ -100,7 +101,7 @@ export async function seedDemoIfEmpty(supabase: SupabaseClient, userId: string):
     email: 'sam.cohen@example.com',
     phone: '+972502222222',
     source: 'app',
-    outcome: 'active',
+    status: 'pending',
     email_normalized: 'sam.cohen@example.com',
     phone_normalized: '972502222222',
     notes: 'Added from the app (demo).',

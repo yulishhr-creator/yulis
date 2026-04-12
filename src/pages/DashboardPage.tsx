@@ -130,7 +130,7 @@ export function DashboardPage() {
           updated_at,
           company_id,
           companies ( name ),
-          candidates ( id, full_name, outcome, position_stage_id, updated_at, created_at, position_stages ( name ) )
+          candidates ( id, full_name, status, position_stage_id, updated_at, created_at, position_stages ( name ) )
         `,
         )
         .eq('user_id', uid!)
@@ -165,7 +165,7 @@ export function DashboardPage() {
         .select('*', { count: 'exact', head: true })
         .eq('user_id', uid!)
         .is('deleted_at', null)
-        .eq('outcome', 'active')
+        .eq('status', 'pending')
         .in('position_id', posIds)
       if (cErr) throw cErr
       return { activeCandidateCount: count ?? 0, activePositionCount: posIds.length }
@@ -312,11 +312,11 @@ export function DashboardPage() {
       const cands =
         (p.candidates as unknown as Array<{
           full_name: string
-          outcome: string
+          status: string
           updated_at: string
         }>) ?? []
       for (const c of cands) {
-        if (c.outcome !== 'active') continue
+        if (c.status !== 'pending') continue
         if (differenceInCalendarDays(now, new Date(c.updated_at)) >= 7) {
           stuck.push(`${c.full_name} · ${p.title}`)
         }
@@ -802,7 +802,7 @@ export function DashboardPage() {
                   (p.candidates as unknown as Array<{
                     id: string
                     full_name: string
-                    outcome: string
+                    status: string
                     created_at: string
                     position_stages: { name: string } | null
                   }>) ?? []
@@ -859,7 +859,7 @@ export function DashboardPage() {
                                 {daysOnRole}d
                               </span>
                               <span className="text-stitch-muted text-xs">
-                                {c.position_stages?.name ?? '—'} · {c.outcome}
+                                {c.position_stages?.name ?? '—'} · {c.status}
                               </span>
                             </li>
                           )

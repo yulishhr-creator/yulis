@@ -7,7 +7,7 @@ import { Briefcase, Calendar, ChevronRight, ClipboardList, History, Mail, MapPin
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { formatDateTime, formatDue } from '@/lib/dates'
-import { candidateOutcomePill } from '@/lib/candidateOutcomePill'
+import { candidateStatusPill } from '@/lib/candidateStatus'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
 
 type TabId = 'overview' | 'tasks' | 'activity'
@@ -49,7 +49,7 @@ export function CandidateDetailPage() {
         .select(
           `
           id, full_name, email, phone, linkedin, location, current_title, years_exp, salary_expectation,
-          notes, lead_source, source, outcome, created_at, updated_at, position_id, resume_storage_path,
+          notes, lead_source, source, status, created_at, updated_at, position_id, resume_storage_path,
           position_stages ( name ),
           positions (
             id, title, status,
@@ -100,7 +100,7 @@ export function CandidateDetailPage() {
   const c = candidateQ.data
   const pos = c?.positions as unknown as { id: string; title: string; status: string; companies: unknown } | null
   const coName = companyName(pos?.companies)
-  const outPill = c ? candidateOutcomePill(c.outcome) : null
+  const outPill = c ? candidateStatusPill(c.status as string) : null
   const stage = c ? stageName(c.position_stages as { name: string } | { name: string }[] | null) : '—'
 
   const subtitle = useMemo(() => {
@@ -330,7 +330,7 @@ export function CandidateDetailPage() {
           ) : null}
 
           <p className="text-ink-muted border-t border-stone-200/80 pt-3 text-xs dark:border-stone-600">
-            To change stage, outcome, or upload files, use{' '}
+            To change stage, status, or upload files, use{' '}
             <Link to={pos ? `/positions/${pos.id}?candidate=${c.id}&tab=candidates` : '/candidates'} className="text-accent font-semibold underline dark:text-orange-300">
               this candidate on the role page
             </Link>

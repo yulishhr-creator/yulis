@@ -9,7 +9,7 @@ import { slugifyListItemValue } from '@/lib/listItemSlug'
 const LIST_CHOICES = [
   { key: 'industry', label: 'Industry' },
   { key: 'payment_term_preset', label: 'Payment term preset' },
-  { key: 'candidate_outcome_label', label: 'Candidate outcome label' },
+  { key: 'candidate_status_label', label: 'Candidate status label' },
 ] as const
 
 export function ListSettingsPage() {

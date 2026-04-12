@@ -153,7 +153,7 @@ export function CalendarPage() {
           .order('full_name'),
         supabase!
           .from('companies')
-          .select('id, name')
+          .select('id, name, status')
           .eq('user_id', uid!)
           .is('deleted_at', null)
           .order('name'),
@@ -549,6 +549,7 @@ export function CalendarPage() {
                   {companies.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
+                      {(c as { status?: string }).status === 'inactive' ? ' (inactive)' : ''}
                     </option>
                   ))}
                 </select>

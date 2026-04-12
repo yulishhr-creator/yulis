@@ -2,10 +2,12 @@ import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 
 import { getSupabase } from '@/lib/supabase'
+import { formatCandidateStatus } from '@/lib/candidateStatus'
 
 type PublicCandidateRow = {
   full_name: string
-  outcome: string
+  status?: string
+  outcome?: string
   current_title: string | null
   stage_name: string
 }
@@ -16,19 +18,8 @@ type PublicPositionListPayload = {
   candidates: PublicCandidateRow[]
 }
 
-function outcomeLabel(outcome: string): string {
-  switch (outcome) {
-    case 'active':
-      return 'Active'
-    case 'hired':
-      return 'Hired'
-    case 'rejected':
-      return 'Rejected'
-    case 'withdrawn':
-      return 'Withdrawn'
-    default:
-      return outcome.replace(/_/g, ' ')
-  }
+function rowStatusLabel(row: PublicCandidateRow): string {
+  return formatCandidateStatus(row.status ?? row.outcome ?? 'pending')
 }
 
 export function PublicPositionCandidatesPage() {
@@ -99,7 +90,7 @@ export function PublicPositionCandidatesPage() {
                     Stage
                   </th>
                   <th scope="col" className="px-4 py-3">
-                    Outcome
+                    Status
                   </th>
                   <th scope="col" className="hidden px-4 py-3 sm:table-cell">
                     Title
@@ -114,7 +105,7 @@ export function PublicPositionCandidatesPage() {
                   >
                     <td className="px-4 py-3 font-semibold">{c.full_name}</td>
                     <td className="text-ink-muted px-4 py-3">{c.stage_name || '—'}</td>
-                    <td className="px-4 py-3">{outcomeLabel(c.outcome)}</td>
+                    <td className="px-4 py-3">{rowStatusLabel(c)}</td>
                     <td className="text-ink-muted hidden px-4 py-3 sm:table-cell">{c.current_title?.trim() || '—'}</td>
                   </tr>
                 ))}

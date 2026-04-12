@@ -23,6 +23,7 @@ export function CompanyDetailPage() {
   const [contactEmail, setContactEmail] = useState('')
   const [contactPhone, setContactPhone] = useState('')
   const [paymentTerms, setPaymentTerms] = useState('')
+  const [companyStatus, setCompanyStatus] = useState<'active' | 'inactive'>('active')
 
   const companyQ = useQuery({
     queryKey: ['company', id, user?.id],
@@ -49,6 +50,7 @@ export function CompanyDetailPage() {
     setContactEmail(c.contact_email ?? '')
     setContactPhone(c.contact_phone ?? '')
     setPaymentTerms((c.payment_terms as string[] | null)?.join('\n') ?? '')
+    setCompanyStatus(c.status === 'inactive' ? 'inactive' : 'active')
   }, [companyQ.data])
 
   const save = useMutation({
@@ -69,6 +71,7 @@ export function CompanyDetailPage() {
             contact_email: contactEmail.trim() || null,
             contact_phone: contactPhone.trim() || null,
             payment_terms: terms,
+            status: companyStatus,
           })
           .select('id')
           .single()
@@ -85,6 +88,7 @@ export function CompanyDetailPage() {
           contact_email: contactEmail.trim() || null,
           contact_phone: contactPhone.trim() || null,
           payment_terms: terms,
+          status: companyStatus,
         })
         .eq('id', id!)
         .eq('user_id', user!.id)
@@ -124,6 +128,17 @@ export function CompanyDetailPage() {
           void save.mutateAsync()
         }}
       >
+        <label className="flex flex-col gap-1 text-sm font-medium">
+          <span>Status</span>
+          <select
+            value={companyStatus}
+            onChange={(e) => setCompanyStatus(e.target.value as 'active' | 'inactive')}
+            className="border-line bg-white/80 focus:ring-accent rounded-xl border px-3 py-2.5 outline-none focus:ring-2 dark:bg-stone-900/50 dark:border-line-dark"
+          >
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </label>
         <label className="flex flex-col gap-1 text-sm font-medium">
           Name
           <input
