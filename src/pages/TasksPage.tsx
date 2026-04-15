@@ -1,5 +1,5 @@
 import { Link, useSearchParams } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
 import { Check, ChevronDown, GripVertical, ListFilter, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -10,6 +10,7 @@ import { getSupabase } from '@/lib/supabase'
 import { formatDue } from '@/lib/dates'
 import { CompanyClientAvatar } from '@/components/companies/CompanyClientAvatar'
 import { Modal } from '@/components/ui/Modal'
+import { PageSpinner } from '@/components/ui/PageSpinner'
 import { useWorkTimer } from '@/work/WorkTimerContext'
 import { useToast } from '@/hooks/useToast'
 
@@ -100,6 +101,8 @@ export function TasksPage() {
   const tasksQ = useQuery({
     queryKey: ['tasks-page', uid],
     enabled: Boolean(supabase && uid),
+    staleTime: 20_000,
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('tasks')
@@ -661,8 +664,8 @@ export function TasksPage() {
       </div>
 
       <div className="border-stitch-on-surface/10 overflow-x-auto rounded-2xl border border-stone-200/80 bg-white/80 dark:border-stone-600 dark:bg-stone-900/50">
-        {tasksQ.isLoading ? (
-          <p className="text-ink-muted p-6 text-sm">Loading…</p>
+        {tasksQ.isLoading && !tasksQ.data ? (
+          <PageSpinner message="Loading tasks…" className="p-6" />
         ) : tasks.length === 0 ? (
           <p className="text-ink-muted p-6 text-sm">No tasks yet. Add one from the quick menu or a position page.</p>
         ) : filteredTasks.length === 0 ? (

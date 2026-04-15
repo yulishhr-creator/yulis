@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
+import { PageSpinner } from '@/components/ui/PageSpinner'
 import { logActivityEvent } from '@/lib/activityLog'
 import { assignmentStatusPill } from '@/lib/candidateStatus'
 import { useToast } from '@/hooks/useToast'
@@ -627,7 +628,7 @@ export function PositionsPage() {
       </div>
 
       {positionsQ.isLoading ? (
-        <p className="text-ink-muted text-sm">Loading…</p>
+        <PageSpinner message="Loading roles…" />
       ) : positions.length === 0 ? (
         <p className="text-ink-muted text-sm">No positions yet.</p>
       ) : filteredPositions.length === 0 ? (

@@ -10,6 +10,7 @@ import { logActivityEvent } from '@/lib/activityLog'
 import { candidateGlobalPill } from '@/lib/candidateStatus'
 import { logPositionCandidateTransition } from '@/lib/positionTransitions'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
+import { PageSpinner } from '@/components/ui/PageSpinner'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/hooks/useToast'
 import { formatDateTime } from '@/lib/dates'
@@ -811,7 +812,7 @@ export function CandidatesPage() {
       </div>
 
       {q.isLoading ? (
-        <p className="text-ink-muted text-sm">Loading…</p>
+        <PageSpinner message="Loading candidates…" />
       ) : rows.length === 0 ? (
         <p className="text-ink-muted text-sm">No candidates match this filter.</p>
       ) : filteredRows.length === 0 ? (

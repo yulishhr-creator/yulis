@@ -94,10 +94,10 @@ export function AppShell() {
     (location.pathname === '/' && !companyParam) ||
     (location.pathname === '/positions' && !companyParam)
 
+  /** Task sidebar links only set status — never inherit `company` from the current URL (client filter lives on /tasks). */
   function tasksLinkSearch(taskStatus: string | null): string {
     const p = new URLSearchParams()
     if (taskStatus) p.set('taskStatus', taskStatus)
-    if (companyParam) p.set('company', companyParam)
     const s = p.toString()
     return s ? `?${s}` : ''
   }
