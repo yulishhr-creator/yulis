@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import * as XLSX from 'xlsx'
 import {
   Check,
@@ -19,14 +19,16 @@ import {
   Settings,
   Banknote,
   Globe,
+  Pencil,
+  ArrowLeft,
+  GripVertical,
 } from 'lucide-react'
-import { differenceInCalendarDays, formatDistanceToNow } from 'date-fns'
+import { differenceInCalendarDays, format, formatDistanceToNow } from 'date-fns'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { normalizeEmail, normalizePhone } from '@/lib/normalize'
 import { formatDue } from '@/lib/dates'
-import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/hooks/useToast'
 import { criticalStageThreshold, logActivityEvent } from '@/lib/activityLog'
@@ -83,9 +85,27 @@ type ActivityRow = {
   position_candidate_id: string | null
 }
 
-function taskLinkedCandidateName(t: {
-  position_candidates?: { candidates?: { full_name?: string } | { full_name?: string }[] | null } | { candidates?: { full_name?: string } | { full_name?: string }[] | null }[] | null
-}): string | null {
+const POSITION_TASK_STATUS_ORDER = ['todo', 'in_progress', 'done'] as const
+type PositionTaskStatus = (typeof POSITION_TASK_STATUS_ORDER)[number]
+
+function isPositionTaskStatus(s: string): s is PositionTaskStatus {
+  return POSITION_TASK_STATUS_ORDER.includes(s as PositionTaskStatus)
+}
+
+type PositionTaskRow = {
+  id: string
+  title: string
+  description: string | null
+  note_in_progress: string | null
+  status: string
+  due_at: string | null
+  created_at: string
+  updated_at: string
+  position_candidate_id: string | null
+  position_candidates: unknown
+}
+
+function taskLinkedCandidateName(t: PositionTaskRow): string | null {
   const raw = t.position_candidates
   if (raw == null) return null
   const pc = Array.isArray(raw) ? raw[0] : raw
@@ -93,6 +113,126 @@ function taskLinkedCandidateName(t: {
   const cand = pc.candidates
   const profile = cand == null ? null : Array.isArray(cand) ? cand[0] : cand
   return profile?.full_name ?? null
+}
+
+function taskLinkedCandidate(t: PositionTaskRow): { id: string; full_name: string } | null {
+  const raw = t.position_candidates
+  if (raw == null) return null
+  const pc = Array.isArray(raw) ? raw[0] : raw
+  if (!pc) return null
+  const cand = pc.candidates as { id: string; full_name?: string } | { id: string; full_name?: string }[] | null | undefined
+  const profile = cand == null ? null : Array.isArray(cand) ? cand[0] : cand
+  if (!profile?.id) return null
+  return { id: profile.id, full_name: profile.full_name ?? 'Unnamed' }
+}
+
+function activityKindCopy(eventType: string): { label: string; explainer: string } {
+  const map: Record<string, { label: string; explainer: string }> = {
+    candidate_created: { label: 'Candidate added', explainer: 'Someone was added to this role.' },
+    candidate_stage_changed: { label: 'Moved to a stage', explainer: 'Pipeline stage updated for a candidate.' },
+    candidate_status_changed: { label: 'Assignment status', explainer: 'In progress, rejected, or withdrawn changed.' },
+    candidate_outcome_changed: { label: 'Outcome', explainer: 'Final outcome updated for a candidate.' },
+    candidate_reached_critical_stage: { label: 'Critical stage', explainer: 'A candidate reached an important step in the funnel.' },
+    position_status_changed: { label: 'Role status', explainer: 'This job was set to active, on hold, succeeded, or cancelled.' },
+    candidate_file_uploaded: { label: 'File', explainer: 'A document was attached to a candidate.' },
+    note_added: { label: 'Your note', explainer: 'A manual note you logged on this role.' },
+  }
+  return map[eventType] ?? { label: 'Event', explainer: 'Something changed on this role.' }
+}
+
+function DetailHoverField({
+  label,
+  value,
+  multiline,
+  rows,
+  onSave,
+  disabled,
+}: {
+  label: string
+  value: string
+  multiline?: boolean
+  rows?: number
+  onSave: (next: string) => void | Promise<void>
+  disabled?: boolean
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    if (!editing) setDraft(value)
+  }, [value, editing])
+  return (
+    <div className="group relative rounded-xl border border-transparent px-1 py-2 transition hover:border-stone-200/80 hover:bg-stone-50/60 dark:hover:border-stone-600 dark:hover:bg-stone-800/40">
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-stitch-muted text-[11px] font-bold tracking-wide uppercase dark:text-stone-500">{label}</p>
+          {!editing ? (
+            <p className="text-stitch-on-surface mt-0.5 whitespace-pre-wrap text-sm dark:text-stone-100">
+              {value.trim() ? value : '—'}
+            </p>
+          ) : multiline ? (
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={rows ?? 8}
+              className="border-line mt-1 w-full max-w-2xl rounded-lg border bg-white px-2 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
+              autoFocus
+            />
+          ) : (
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              className="border-line mt-1 w-full max-w-xl rounded-lg border bg-white px-2 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
+              autoFocus
+            />
+          )}
+        </div>
+        {!editing ? (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="text-ink-muted shrink-0 rounded-lg p-1.5 opacity-0 transition hover:bg-stone-200/90 hover:text-ink group-hover:opacity-100 dark:hover:bg-stone-600 dark:hover:text-stone-100"
+            aria-label={`Edit ${label}`}
+            disabled={disabled}
+          >
+            <Pencil className="h-4 w-4" aria-hidden />
+          </button>
+        ) : (
+          <div className="flex shrink-0 flex-col gap-1">
+            <button
+              type="button"
+              className="rounded-lg bg-emerald-600 p-1.5 text-white hover:bg-emerald-700 disabled:opacity-50"
+              aria-label="Save"
+              disabled={saving}
+              onClick={async () => {
+                setSaving(true)
+                try {
+                  await onSave(draft)
+                  setEditing(false)
+                } finally {
+                  setSaving(false)
+                }
+              }}
+            >
+              <Check className="h-4 w-4" aria-hidden />
+            </button>
+            <button
+              type="button"
+              className="border-line rounded-lg border bg-white p-1.5 dark:border-line-dark dark:bg-stone-800"
+              aria-label="Cancel"
+              disabled={saving}
+              onClick={() => {
+                setDraft(value)
+                setEditing(false)
+              }}
+            >
+              <X className="h-4 w-4" aria-hidden />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 export function PositionDetailPage() {
@@ -104,11 +244,12 @@ export function PositionDetailPage() {
   const [search, setSearch] = useSearchParams()
   const highlightCandidate = search.get('candidate')
 
-  type TabId = 'details' | 'candidates' | 'requirements' | 'approaches'
+  type TabId = 'details' | 'candidates' | 'openings' | 'tasks' | 'activity'
   const tab = useMemo<TabId>(() => {
     if (highlightCandidate) return 'candidates'
     const v = search.get('tab')
-    if (v === 'details' || v === 'candidates' || v === 'requirements' || v === 'approaches') return v
+    if (v === 'approaches') return 'openings'
+    if (v === 'details' || v === 'candidates' || v === 'openings' || v === 'tasks' || v === 'activity') return v
     return 'details'
   }, [search, highlightCandidate])
 
@@ -117,11 +258,13 @@ export function PositionDetailPage() {
       (prev) => {
         const next = new URLSearchParams(prev)
         next.set('tab', tid)
+        if (tid !== 'candidates') next.delete('candidate')
         return next
       },
       { replace: true },
     )
   }
+
   const resumeFileRef = useRef<HTMLInputElement>(null)
   const excelImportRef = useRef<HTMLInputElement>(null)
   const [resumePickForId, setResumePickForId] = useState<string | null>(null)
@@ -191,45 +334,31 @@ export function PositionDetailPage() {
     },
   })
 
-  const transitionsStatsQ = useQuery({
-    queryKey: ['position-transition-stats', id, user?.id],
-    enabled: Boolean(supabase && user && id),
-    queryFn: async () => {
-      const { data: pcRows, error: e1 } = await supabase!.from('position_candidates').select('id').eq('position_id', id!).eq('user_id', user!.id)
-      if (e1) throw e1
-      const pcs = (pcRows ?? []).map((r) => r.id as string)
-      if (pcs.length === 0) return [] as { to_stage_id: string | null; c: number }[]
-      const { data, error } = await supabase!
-        .from('position_candidate_transitions')
-        .select('to_stage_id, position_candidate_id')
-        .eq('user_id', user!.id)
-        .eq('transition_type', 'stage')
-        .in('position_candidate_id', pcs)
-      if (error) throw error
-      const byStage = new Map<string, Set<string>>()
-      for (const row of data ?? []) {
-        const k = (row as { to_stage_id: string | null; position_candidate_id: string }).to_stage_id
-        const pcid = (row as { position_candidate_id: string }).position_candidate_id
-        if (!k) continue
-        if (!byStage.has(k)) byStage.set(k, new Set())
-        byStage.get(k)!.add(pcid)
-      }
-      return [...byStage.entries()].map(([to_stage_id, set]) => ({ to_stage_id, c: set.size }))
-    },
-  })
-
   const tasksQ = useQuery({
     queryKey: ['position-tasks', id, user?.id],
     enabled: Boolean(supabase && user && id),
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('tasks')
-        .select('*, position_candidates ( candidates ( full_name ) )')
+        .select(
+          `
+          id,
+          title,
+          description,
+          note_in_progress,
+          status,
+          due_at,
+          created_at,
+          updated_at,
+          position_candidate_id,
+          position_candidates ( id, candidates ( id, full_name ) )
+        `,
+        )
         .eq('position_id', id!)
         .eq('user_id', user!.id)
         .order('due_at', { ascending: true, nullsFirst: false })
       if (error) throw error
-      return data ?? []
+      return (data ?? []) as PositionTaskRow[]
     },
   })
 
@@ -287,6 +416,18 @@ export function PositionDetailPage() {
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const [publicListOpen, setPublicListOpen] = useState(false)
   const [publicListUrl, setPublicListUrl] = useState<string | null>(null)
+  const [taskDropHover, setTaskDropHover] = useState<PositionTaskStatus | null>(null)
+  const [selectedPositionTask, setSelectedPositionTask] = useState<PositionTaskRow | null>(null)
+  const [headerStatusOpen, setHeaderStatusOpen] = useState(false)
+  const headerStatusRef = useRef<HTMLDivElement>(null)
+  const [candidateDragId, setCandidateDragId] = useState<string | null>(null)
+  const [candidateDropStage, setCandidateDropStage] = useState<string | null>(null)
+  const [newPositionTaskTitle, setNewPositionTaskTitle] = useState('')
+  const [newPositionTaskDescription, setNewPositionTaskDescription] = useState('')
+
+  useEffect(() => {
+    if (tab !== 'tasks') setSelectedPositionTask(null)
+  }, [tab])
 
   useEffect(() => {
     if (!position) return
@@ -340,6 +481,7 @@ export function PositionDetailPage() {
     await qc.invalidateQueries({ queryKey: ['positions'] })
     await qc.invalidateQueries({ queryKey: ['candidates'] })
     await qc.invalidateQueries({ queryKey: ['tasks-page'] })
+    await qc.invalidateQueries({ queryKey: ['position-tasks', id] })
     await qc.invalidateQueries({ queryKey: ['notification-count'] })
   }
 
@@ -670,15 +812,41 @@ export function PositionDetailPage() {
     }
   }
 
-  const deleteTask = useMutation({
-    mutationFn: async (taskId: string) => {
-      const { error } = await supabase!.from('tasks').delete().eq('id', taskId).eq('user_id', user!.id)
+  const updatePositionTaskStatus = useMutation({
+    mutationFn: async ({ taskId, status }: { taskId: string; status: PositionTaskStatus }) => {
+      const { error } = await supabase!.from('tasks').update({ status }).eq('id', taskId).eq('user_id', user!.id)
+      if (error) throw error
+    },
+    onSuccess: async (_d, { taskId, status }) => {
+      setSelectedPositionTask((prev) => (prev && prev.id === taskId ? { ...prev, status } : prev))
+      await qc.invalidateQueries({ queryKey: ['position-tasks', id] })
+      await qc.invalidateQueries({ queryKey: ['tasks-page'] })
+      await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
+      await qc.invalidateQueries({ queryKey: ['notification-count'] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const addPositionTask = useMutation({
+    mutationFn: async ({ title, description }: { title: string; description: string }) => {
+      const { error } = await supabase!.from('tasks').insert({
+        user_id: user!.id,
+        position_id: id!,
+        title: title.trim() || 'Task',
+        description: description.trim() || null,
+        status: 'todo',
+        due_at: null,
+      })
       if (error) throw error
     },
     onSuccess: async () => {
-      success('Task removed')
+      success('Task added')
+      setNewPositionTaskTitle('')
+      setNewPositionTaskDescription('')
       await qc.invalidateQueries({ queryKey: ['position-tasks', id] })
       await qc.invalidateQueries({ queryKey: ['tasks-page'] })
+      await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
+      await qc.invalidateQueries({ queryKey: ['notification-count'] })
     },
     onError: (e: Error) => toastError(e.message),
   })
@@ -969,26 +1137,80 @@ export function PositionDetailPage() {
     return rows
   }, [activityQ.data, activityFilter])
 
+  const activityByDay = useMemo(() => {
+    const groups: { dayKey: string; dayLabel: string; rows: ActivityRow[] }[] = []
+    const indexByKey = new Map<string, number>()
+    for (const a of filteredActivity) {
+      const d = new Date(a.created_at)
+      const dayKey = format(d, 'yyyy-MM-dd')
+      const dayLabel = format(d, 'EEEE, MMM d, yyyy')
+      let idx = indexByKey.get(dayKey)
+      if (idx === undefined) {
+        idx = groups.length
+        indexByKey.set(dayKey, idx)
+        groups.push({ dayKey, dayLabel, rows: [] })
+      }
+      groups[idx]!.rows.push(a)
+    }
+    return groups
+  }, [filteredActivity])
+
   const terminalPosition = status === 'succeeded' || status === 'cancelled'
-
-  const activePipelineCandidates = useMemo(
-    () => (candidatesQ.data ?? []).filter((c) => c.status === 'in_progress'),
-    [candidatesQ.data],
-  )
-
-  const funnelByStage = useMemo(() => {
-    const stats = transitionsStatsQ.data ?? []
-    const stages = stagesQ.data ?? []
-    return stages.map((s) => {
-      const hit = stats.find((x) => x.to_stage_id === s.id)
-      return { id: s.id, name: s.name, count: hit?.c ?? 0 }
-    })
-  }, [transitionsStatsQ.data, stagesQ.data])
 
   const filteredCandidates = useMemo(
     () => (candidatesQ.data ?? []).filter((c) => candStatusFilter.has(c.status as string)),
     [candidatesQ.data, candStatusFilter],
   )
+
+  const pipelineKanbanCandidates = useMemo(
+    () => (candidatesQ.data ?? []).filter((c) => c.status === 'in_progress'),
+    [candidatesQ.data],
+  )
+
+  const candidateTabCount = (candidatesQ.data ?? []).length
+
+  const positionTasksByStatus = useMemo(() => {
+    const m: Record<PositionTaskStatus, PositionTaskRow[]> = { todo: [], in_progress: [], done: [] }
+    for (const t of tasksQ.data ?? []) {
+      const s = t.status
+      if (isPositionTaskStatus(s)) m[s].push(t)
+    }
+    for (const st of POSITION_TASK_STATUS_ORDER) {
+      m[st].sort((a, b) => {
+        if (st === 'done') return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+        const ad = a.due_at ? new Date(a.due_at).getTime() : Infinity
+        const bd = b.due_at ? new Date(b.due_at).getTime() : Infinity
+        return ad - bd
+      })
+    }
+    return m
+  }, [tasksQ.data])
+
+  const candidateNameById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const c of candidatesQ.data ?? []) {
+      const p = nestedCandidate(c.candidates)
+      if (p?.id) m.set(p.id, p.full_name ?? 'Unnamed')
+    }
+    return m
+  }, [candidatesQ.data])
+
+  function stageDropSlot(stageId: string | null) {
+    return stageId ?? '__unassigned__'
+  }
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (!headerStatusRef.current?.contains(e.target as Node)) setHeaderStatusOpen(false)
+    }
+    if (headerStatusOpen) document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [headerStatusOpen])
+
+  const drawerCandidate = useMemo(() => {
+    if (!highlightCandidate) return null
+    return (candidatesQ.data ?? []).find((r) => nestedCandidate(r.candidates)?.id === highlightCandidate) ?? null
+  }, [candidatesQ.data, highlightCandidate])
 
   function toggleCandStatusFilter(key: string) {
     setCandStatusFilter((prev) => {
@@ -1027,9 +1249,113 @@ export function PositionDetailPage() {
     }
   }
 
+  function openCandidateDrawer(candId: string) {
+    setSearch(
+      (prev) => {
+        const n = new URLSearchParams(prev)
+        n.set('tab', 'candidates')
+        n.set('candidate', candId)
+        return n
+      },
+      { replace: true },
+    )
+  }
+
+  function closeCandidateDrawer() {
+    setSearch(
+      (prev) => {
+        const n = new URLSearchParams(prev)
+        n.delete('candidate')
+        return n
+      },
+      { replace: true },
+    )
+  }
+
+  function parseCandidateDragPayload(e: DragEvent): { pcId: string } | null {
+    try {
+      const raw = e.dataTransfer.getData('application/json')
+      if (!raw) return null
+      const o = JSON.parse(raw) as { kind?: string; pcId?: string }
+      if (o.kind !== 'position_candidate' || !o.pcId) return null
+      return { pcId: o.pcId }
+    } catch {
+      return null
+    }
+  }
+
+  function onCandidateDragOverStage(e: DragEvent, stageId: string | null) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setCandidateDropStage(stageDropSlot(stageId))
+  }
+
+  function onCandidateDragLeaveStage(e: DragEvent, stageId: string | null) {
+    const slot = stageDropSlot(stageId)
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setCandidateDropStage((h) => (h === slot ? null : h))
+    }
+  }
+
+  function onCandidateDropStage(e: DragEvent, stageId: string | null) {
+    e.preventDefault()
+    setCandidateDropStage(null)
+    setCandidateDragId(null)
+    const p = parseCandidateDragPayload(e)
+    if (!p) return
+    const row = (candidatesQ.data ?? []).find((c) => c.id === p.pcId)
+    if (!row || row.status !== 'in_progress') return
+    if (row.position_stage_id === stageId) return
+    void updateCandidateStage.mutateAsync({ positionCandidateId: p.pcId, stageId })
+  }
+
+  function parseTaskDragPayload(e: DragEvent): { id: string; status: PositionTaskStatus } | null {
+    try {
+      const raw = e.dataTransfer.getData('application/json')
+      if (!raw) return null
+      const o = JSON.parse(raw) as { id?: string; status?: string }
+      if (!o.id || !o.status || !isPositionTaskStatus(o.status)) return null
+      return { id: o.id, status: o.status }
+    } catch {
+      return null
+    }
+  }
+
+  function onTaskDragOverStatus(e: DragEvent, target: PositionTaskStatus) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setTaskDropHover(target)
+  }
+
+  function onTaskDropOnStatus(e: DragEvent, target: PositionTaskStatus) {
+    e.preventDefault()
+    setTaskDropHover(null)
+    const payload = parseTaskDragPayload(e)
+    if (!payload || payload.status === target) return
+    updatePositionTaskStatus.mutate({ taskId: payload.id, status: target })
+  }
+
+  function onTaskDragStart(e: DragEvent, row: PositionTaskRow) {
+    if (!isPositionTaskStatus(row.status)) return
+    e.dataTransfer.setData('application/json', JSON.stringify({ id: row.id, status: row.status }))
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  function positionTaskStatusLabel(s: PositionTaskStatus): string {
+    if (s === 'todo') return 'To do'
+    if (s === 'in_progress') return 'In progress'
+    return 'Done'
+  }
+
   if (posQ.isLoading || !position) {
     return <p className="text-ink-muted text-sm">Loading…</p>
   }
+
+  const createdAt = (position as { created_at?: string }).created_at
+  const daysSinceCreated = createdAt ? differenceInCalendarDays(new Date(), new Date(createdAt)) : 0
+  const openedLabel = createdAt
+    ? `Opened ${format(new Date(createdAt), 'MMM d, yyyy')}`
+    : 'Opened —'
 
   function renderCandidateCard(c: PositionCandidateJunction) {
     const prof = nestedCandidate(c.candidates)
@@ -1196,453 +1522,585 @@ export function PositionDetailPage() {
     )
   }
 
+  const statusLabelShort =
+    status === 'active' ? 'Active' : status === 'on_hold' ? 'On hold' : status === 'succeeded' ? 'Succeeded' : 'Cancelled'
+
   return (
-    <div className="flex flex-col gap-8">
-      <ScreenHeader
-        title={position.title}
-        subtitle={company?.name}
-        backTo="/positions"
-        right={
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-col gap-4 border-b border-stone-200/90 pb-5 dark:border-stone-700">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 flex-1 items-start gap-3">
+            <Link
+              to="/positions"
+              className="border-line text-ink-muted hover:bg-stone-100 dark:hover:bg-stone-800 mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-white/90 shadow-sm transition dark:border-line-dark dark:bg-stone-900"
+              aria-label="Back to positions"
+            >
+              <ArrowLeft className="h-5 w-5" aria-hidden />
+            </Link>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-accent text-2xl font-extrabold tracking-tight md:text-3xl dark:text-orange-300">
+                {position.title}
+              </h1>
+              <p className="text-ink-muted mt-0.5 text-sm font-medium dark:text-stone-400">
+                by {company?.name ?? '—'}
+              </p>
+              <p className="text-ink-muted mt-2 text-xs dark:text-stone-500">
+                {openedLabel}
+                <span aria-hidden className="mx-2">
+                  ·
+                </span>
+                <span title="Days since this role was created in Yulis">On books {daysSinceCreated}d</span>
+              </p>
+            </div>
+          </div>
           <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <div className="relative" ref={headerStatusRef}>
+              <button
+                type="button"
+                onClick={() => setHeaderStatusOpen((o) => !o)}
+                className="border-line flex items-center gap-2 rounded-xl border bg-white/95 px-3 py-2 text-sm font-bold shadow-sm dark:border-line-dark dark:bg-stone-900"
+                aria-expanded={headerStatusOpen}
+                aria-haspopup="listbox"
+              >
+                <span
+                  className={
+                    status === 'active'
+                      ? 'text-emerald-800 dark:text-emerald-300'
+                      : status === 'on_hold'
+                        ? 'text-amber-800 dark:text-amber-200'
+                        : status === 'succeeded'
+                          ? 'text-emerald-900 dark:text-emerald-200'
+                          : 'text-stone-600 dark:text-stone-300'
+                  }
+                >
+                  {statusLabelShort}
+                </span>
+                <ChevronDown className="h-4 w-4 opacity-60" aria-hidden />
+              </button>
+              {headerStatusOpen ? (
+                <div
+                  role="listbox"
+                  className="border-line absolute top-full right-0 z-50 mt-1 min-w-[12rem] rounded-xl border bg-white py-1 shadow-xl dark:border-line-dark dark:bg-stone-900"
+                >
+                  {!terminalPosition ? (
+                    <>
+                      <button
+                        type="button"
+                        role="option"
+                        className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full px-3 py-2 text-left text-sm font-semibold text-emerald-800 dark:text-emerald-300"
+                        onClick={() => {
+                          setHeaderStatusOpen(false)
+                          void setOpenPositionStatus.mutateAsync('active')
+                        }}
+                      >
+                        Active
+                      </button>
+                      <button
+                        type="button"
+                        role="option"
+                        className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full px-3 py-2 text-left text-sm font-semibold text-amber-800 dark:text-amber-200"
+                        onClick={() => {
+                          setHeaderStatusOpen(false)
+                          void setOpenPositionStatus.mutateAsync('on_hold')
+                        }}
+                      >
+                        On hold
+                      </button>
+                      <button
+                        type="button"
+                        role="option"
+                        className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full px-3 py-2 text-left text-sm text-stone-700 dark:text-stone-200"
+                        onClick={() => {
+                          setHeaderStatusOpen(false)
+                          if (window.confirm('Mark this role as succeeded?')) void setPositionTerminal.mutateAsync('succeeded')
+                        }}
+                      >
+                        Succeeded
+                      </button>
+                      <button
+                        type="button"
+                        role="option"
+                        className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full px-3 py-2 text-left text-sm text-stone-600 dark:text-stone-300"
+                        onClick={() => {
+                          setHeaderStatusOpen(false)
+                          if (window.confirm('Mark this role as cancelled?')) void setPositionTerminal.mutateAsync('cancelled')
+                        }}
+                      >
+                        Cancelled
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full px-3 py-2 text-left text-sm font-semibold"
+                      onClick={() => {
+                        setHeaderStatusOpen(false)
+                        void reopenPosition.mutateAsync()
+                      }}
+                    >
+                      Reopen as Active
+                    </button>
+                  )}
+                </div>
+              ) : null}
+            </div>
             <Link
               to={`/settings/positions/${id}/fees`}
-              title="Fees & milestones (Settings)"
+              title="Fees & milestones"
               aria-label="Fees and milestones"
-              className="border-line flex h-9 w-9 items-center justify-center rounded-xl border bg-white/90 text-stone-700 shadow-sm transition hover:bg-stone-100 dark:border-line-dark dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
+              className="border-line flex h-10 w-10 items-center justify-center rounded-xl border bg-white/90 text-stone-700 shadow-sm transition hover:bg-stone-100 dark:border-line-dark dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
             >
               <Banknote className="h-4 w-4" aria-hidden />
             </Link>
             <button
               type="button"
-              title="Role setup: recruitment stages & Excel import"
-              aria-label="Role setup: recruitment stages and import candidates"
+              title="Role setup"
+              aria-label="Role setup"
               onClick={() => setPositionSetupOpen(true)}
-              className="border-line flex h-9 w-9 items-center justify-center rounded-xl border bg-white/90 text-stone-700 shadow-sm transition hover:bg-stone-100 dark:border-line-dark dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
+              className="border-line flex h-10 w-10 items-center justify-center rounded-xl border bg-white/90 text-stone-700 shadow-sm transition hover:bg-stone-100 dark:border-line-dark dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
             >
               <Settings className="h-4 w-4" aria-hidden />
             </button>
             {!terminalPosition ? (
-              <>
-                <button
-                  type="button"
-                  title="Public list of candidates (shareable link)"
-                  aria-label="Public list of candidates"
-                  disabled={publicListTokenQ.isLoading || ensurePositionPublicListToken.isPending}
-                  onClick={async () => {
-                    if (!id) return
-                    let tok = publicListTokenQ.data ?? null
-                    if (tok == null) {
-                      try {
-                        tok = await ensurePositionPublicListToken.mutateAsync()
-                      } catch {
-                        return
-                      }
+              <button
+                type="button"
+                title="Published: public candidate list"
+                aria-label="Public candidate list"
+                disabled={publicListTokenQ.isLoading || ensurePositionPublicListToken.isPending}
+                onClick={async () => {
+                  if (!id) return
+                  let tok = publicListTokenQ.data ?? null
+                  if (tok == null) {
+                    try {
+                      tok = await ensurePositionPublicListToken.mutateAsync()
+                    } catch {
+                      return
                     }
-                    const url = `${window.location.origin}/pub/pos/${tok}`
-                    setPublicListUrl(url)
-                    setPublicListOpen(true)
-                    void navigator.clipboard.writeText(url).catch(() => {})
-                    success('Public link copied')
-                  }}
-                  className="border-line flex h-9 w-9 items-center justify-center rounded-xl border bg-white/90 text-stone-700 shadow-sm transition hover:bg-stone-100 disabled:opacity-50 dark:border-line-dark dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
-                >
-                  <Globe className="h-4 w-4" aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  title="Mark role succeeded"
-                  aria-label="Mark role succeeded"
-                  onClick={() => {
-                    if (!window.confirm('Are you sure you want to mark this role as succeeded?')) return
-                    void setPositionTerminal.mutateAsync('succeeded')
-                  }}
-                  className="border-line flex h-9 w-9 items-center justify-center rounded-xl border border-stone-300 bg-white text-stone-800 shadow-sm transition hover:bg-stone-50 dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800"
-                >
-                  <Check className="h-4 w-4 stroke-[2.5]" aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  title="Mark role cancelled"
-                  aria-label="Mark role cancelled"
-                  onClick={() => {
-                    if (!window.confirm('Are you sure you want to mark this role as cancelled?')) return
-                    void setPositionTerminal.mutateAsync('cancelled')
-                  }}
-                  className="border-line flex h-9 w-9 items-center justify-center rounded-xl border border-stone-300 bg-white text-stone-800 shadow-sm transition hover:bg-stone-50 dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800"
-                >
-                  <X className="h-4 w-4 stroke-[2.5]" aria-hidden />
-                </button>
-              </>
-            ) : (
-              <>
-                <span className="border-line rounded-full border bg-white/80 px-2.5 py-1 text-xs font-semibold dark:bg-stone-800">
-                  {status === 'succeeded' ? 'Succeeded' : 'Cancelled'}
-                </span>
-                <button type="button" onClick={() => void reopenPosition.mutateAsync()} className="text-accent text-xs font-semibold underline">
-                  Reopen
-                </button>
-              </>
-            )}
+                  }
+                  const url = `${window.location.origin}/pub/pos/${tok}`
+                  setPublicListUrl(url)
+                  setPublicListOpen(true)
+                  void navigator.clipboard.writeText(url).catch(() => {})
+                  success('Public link copied')
+                }}
+                className="border-line flex h-10 w-10 items-center justify-center rounded-xl border bg-white/90 text-stone-700 shadow-sm transition hover:bg-stone-100 disabled:opacity-50 dark:border-line-dark dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
+              >
+                <Globe className="h-4 w-4" aria-hidden />
+              </button>
+            ) : null}
           </div>
-        }
-      />
+        </div>
 
-      <nav
-        className="border-line -mx-1 flex flex-wrap gap-1 rounded-2xl border bg-white/50 p-1 dark:border-line-dark dark:bg-stone-900/40"
-        aria-label="Position sections"
-      >
-        {(
-          [
-            ['details', 'Details'],
-            ['candidates', 'Candidates'],
-            ['approaches', 'Approaches'],
-          ] as const
-        ).map(([tid, label]) => (
-          <button
-            key={tid}
-            type="button"
-            onClick={() => setTab(tid)}
-            className={`rounded-xl px-3 py-2 text-sm font-bold transition ${
-              tab === tid
-                ? 'bg-accent text-white shadow-sm'
-                : 'text-ink-muted hover:bg-white/80 dark:hover:bg-stone-800/80'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
-
-      {tab === 'details' ? (
-        <>
-      <section className="border-line bg-white/60 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40">
-        <h2 className="font-semibold">Position details</h2>
-        <form
-          className="mt-4 flex flex-col gap-3"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void savePos.mutateAsync()
-          }}
+        <nav
+          className="flex flex-wrap gap-1 rounded-full bg-stone-100/95 p-1 dark:bg-stone-800/80"
+          aria-label="Position sections"
         >
-          <label className="text-sm font-medium">
-            Title
-            <input value={title} onChange={(e) => setTitle(e.target.value)} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
-          </label>
-
-          <div className="flex flex-col gap-2">
-            <span className="text-sm font-medium">Role status</span>
-            {!terminalPosition ? (
-              <div className="flex flex-wrap gap-2">
-                {(['active', 'on_hold'] as const).map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    disabled={setOpenPositionStatus.isPending}
-                    onClick={() => void setOpenPositionStatus.mutateAsync(s)}
-                    className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                      status === s ? 'bg-accent text-white' : 'border-line border bg-white/80 hover:bg-stone-50 dark:border-line-dark dark:bg-stone-900/50 dark:hover:bg-stone-800'
-                    }`}
-                  >
-                    {s === 'active' ? 'Active' : 'On hold'}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  disabled={setPositionTerminal.isPending}
-                  onClick={() => {
-                    if (!window.confirm('Are you sure you want to mark this role as succeeded?')) return
-                    void setPositionTerminal.mutateAsync('succeeded')
-                  }}
-                  className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                    status === 'succeeded' ? 'bg-emerald-700 text-white' : 'border-line border bg-white/80 hover:bg-stone-50 dark:border-line-dark dark:bg-stone-900/50 dark:hover:bg-stone-800'
-                  }`}
-                >
-                  Succeeded
-                </button>
-                <button
-                  type="button"
-                  disabled={setPositionTerminal.isPending}
-                  onClick={() => {
-                    if (!window.confirm('Are you sure you want to mark this role as cancelled?')) return
-                    void setPositionTerminal.mutateAsync('cancelled')
-                  }}
-                  className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                    status === 'cancelled' ? 'bg-stone-600 text-white' : 'border-line border bg-white/80 hover:bg-stone-50 dark:border-line-dark dark:bg-stone-900/50 dark:hover:bg-stone-800'
-                  }`}
-                >
-                  Cancelled
-                </button>
-              </div>
-            ) : (
-              <p className="text-ink-muted text-xs">
-                This role is closed — use <span className="font-semibold">Reopen</span> in the header to work it again, or adjust status after reopening.
-              </p>
-            )}
-          </div>
-
-          <label className="block text-sm font-medium">
-            Requirements from client
-            <textarea
-              value={requirements}
-              onChange={(e) => setRequirements(e.target.value)}
-              disabled={savePos.isPending}
-              rows={12}
-              placeholder="Paste 8–12 lines from the client brief (one line per bullet is fine)."
-              className="border-line mt-1 w-full resize-y rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-            />
-          </label>
-
-          <p className="text-ink-muted text-xs dark:text-stone-500">
-            Planned/actual fees and milestone stage threshold:{' '}
-            <Link to={`/settings/positions/${id}/fees`} className="text-accent font-semibold underline dark:text-orange-300">
-              Settings → Fees for this role
-            </Link>
-            .
-          </p>
-          <button type="submit" className="bg-accent text-stone-50 w-fit rounded-full px-5 py-2 text-sm font-semibold" disabled={savePos.isPending}>
-            Save
-          </button>
-        </form>
-      </section>
-
-      <section className="border-line bg-white/60 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-semibold">Position activity</h2>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setActivityFilter('all')}
-              className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${activityFilter === 'all' ? 'bg-accent text-white' : 'border-line border'}`}
-            >
-              All
-            </button>
-            <button
-              type="button"
-              onClick={() => setActivityFilter('milestones')}
-              className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${activityFilter === 'milestones' ? 'bg-accent text-white' : 'border-line border'}`}
-            >
-              Milestones
-            </button>
-          </div>
-        </div>
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <input
-            value={noteText}
-            onChange={(e) => setNoteText(e.target.value)}
-            placeholder="Log a quick note (email sent, call, …)"
-            className="border-line min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/50"
-          />
-          <button type="button" onClick={() => void addNote.mutateAsync()} className="rounded-full bg-ink/90 px-4 py-2 text-sm font-medium text-white dark:bg-stone-200 dark:text-stone-900">
-            Add note
-          </button>
-        </div>
-        <ul className="mt-4 max-h-80 space-y-2 overflow-y-auto">
-          {activityQ.isLoading ? (
-            <li className="text-ink-muted text-sm">Loading…</li>
-          ) : filteredActivity.length === 0 ? (
-            <li className="text-ink-muted text-sm">No activity yet.</li>
-          ) : (
-            filteredActivity.map((a) => (
-              <li key={a.id} className="border-line flex gap-2 rounded-xl border bg-white/70 px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/50">
-                <ActivityIcon type={a.event_type} />
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium">{a.title}</p>
-                  {a.subtitle ? <p className="text-ink-muted text-xs">{a.subtitle}</p> : null}
-                  <p className="text-ink-muted mt-0.5 text-[10px] uppercase tracking-wide">
-                    {formatDistanceToNow(new Date(a.created_at), { addSuffix: true })}
-                  </p>
-                </div>
-              </li>
-            ))
-          )}
-        </ul>
-      </section>
-
-      <section className="border-line bg-white/60 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-semibold">Active in pipeline</h2>
-          <button type="button" onClick={() => setTab('candidates')} className="text-accent text-sm font-semibold underline dark:text-orange-300">
-            All candidates →
-          </button>
-        </div>
-        <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">
-          Assignments in progress on this role — open Candidates for imports, filters, and full cards.
-        </p>
-        {activePipelineCandidates.length === 0 ? (
-          <p className="text-ink-muted mt-3 text-sm">No in-progress assignments yet.</p>
-        ) : (
-          <ul className="mt-3 space-y-2">
-            {activePipelineCandidates.map((c) => {
-              const prof = nestedCandidate(c.candidates)
-              const candId = prof?.id
-              const days = differenceInCalendarDays(new Date(), new Date(c.created_at as string))
-              return (
-                <li
-                  key={c.id}
-                  className="border-line flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-white/70 px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/50"
-                >
-                  <Link
-                    to={candId ? `?tab=candidates&candidate=${candId}` : '?tab=candidates'}
-                    className="font-medium text-[#9b3e20] hover:underline dark:text-orange-300"
-                  >
-                    {prof?.full_name ?? 'Unnamed'}
-                  </Link>
-                  <span className="text-ink-muted text-xs">
-                    {nestedStageName(c.position_stages)} · {days}d
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section className="border-line bg-white/60 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40">
-        <h2 className="font-semibold">Pipeline reach</h2>
-        <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">
-          Distinct candidates who reached each stage (from assignment history). Updates when stages change.
-        </p>
-        {transitionsStatsQ.isLoading ? (
-          <p className="text-ink-muted mt-3 text-sm">Loading stats…</p>
-        ) : funnelByStage.length === 0 ? (
-          <p className="text-ink-muted mt-3 text-sm">No stages defined yet.</p>
-        ) : (
-          <ul className="mt-3 space-y-2">
-            {funnelByStage.map((row) => (
-              <li
-                key={row.id}
-                className="border-line flex items-center justify-between gap-2 rounded-lg border bg-white/70 px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/50"
-              >
-                <span className="font-medium">{row.name}</span>
-                <span className="text-ink-muted text-xs tabular-nums">{row.count} reached</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="border-line bg-white/60 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40">
-        <h2 className="font-semibold">Tasks for this role</h2>
-        <p className="text-ink-muted mt-1 text-sm">
-          To add a task, use the <span className="text-ink font-semibold">+</span> button in the bottom bar and choose{' '}
-          <span className="text-ink font-medium">Add task</span>. Company and position are filled from this page automatically.
-        </p>
-        <ul className="mt-3 space-y-2">
-          {(tasksQ.data ?? []).length === 0 ? (
-            <li className="text-ink-muted text-sm">No tasks linked to this role yet.</li>
-          ) : (
-            (tasksQ.data ?? []).map((t) => (
-              <li
-                key={t.id}
-                className="border-line bg-white/60 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/40"
-              >
-                <span className="pointer-events-none select-none">
-                  {t.title} · {t.status}
-                  {t.due_at ? <span className="text-ink-muted"> · due {formatDue(t.due_at)}</span> : null}
-                  {(() => {
-                    const linkedName = taskLinkedCandidateName(t)
-                    return linkedName ? <span className="text-ink-muted"> · {linkedName}</span> : null
-                  })()}
-                </span>
-                <button type="button" onClick={() => void deleteTask.mutateAsync(t.id)} className="text-red-600 text-xs font-semibold">
-                  Remove
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
-      </section>
-        </>
-      ) : null}
-
-      {tab === 'candidates' ? (
-      <section id="position-candidates-section" className="scroll-mt-24">
-        <h2 className="font-semibold">Candidates</h2>
-        <p className="text-ink-muted mt-2 text-sm">
-          Filter by assignment status (multi-select). Default shows in-progress pipeline only.
-        </p>
-        <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Filter candidates by status">
           {(
             [
-              { id: 'in_progress', label: 'In progress' },
-              { id: 'rejected', label: 'Rejected' },
-              { id: 'withdrawn', label: 'Withdrawn' },
+              ['details', 'Details', null],
+              ['candidates', 'Candidates', candidateTabCount],
+              ['openings', 'Openings', null],
+              ['tasks', 'Tasks', (tasksQ.data ?? []).length],
+              ['activity', 'Activity', (activityQ.data ?? []).length],
             ] as const
-          ).map(({ id, label }) => (
+          ).map(([tid, label, count]) => (
             <button
-              key={id}
+              key={tid}
               type="button"
-              onClick={() => toggleCandStatusFilter(id)}
-              className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                candStatusFilter.has(id) ? 'bg-accent text-white' : 'border-line border bg-white/80 dark:border-line-dark dark:bg-stone-900/50'
+              onClick={() => setTab(tid)}
+              className={`rounded-full px-4 py-2 text-sm font-bold transition ${
+                tab === tid
+                  ? 'bg-accent text-white shadow-sm dark:bg-orange-600'
+                  : 'text-ink-muted hover:bg-white/90 dark:text-stone-400 dark:hover:bg-stone-700/80'
               }`}
             >
               {label}
+              {count != null ? ` (${count})` : ''}
             </button>
           ))}
-        </div>
+        </nav>
+      </header>
 
-        <form
-          id="position-add-candidate"
-          className="border-line bg-white/60 mt-4 grid gap-2 scroll-mt-24 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40 sm:grid-cols-2"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void addCandidate.mutateAsync()
-          }}
-        >
-          <label className="text-sm">
-            Full name
-            <input value={cName} onChange={(e) => setCName(e.target.value)} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" required />
-          </label>
-          <label className="text-sm">
-            Source
-            <select value={cSource} onChange={(e) => setCSource(e.target.value as 'app' | 'external')} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50">
-              <option value="app">App</option>
-              <option value="external">External (import-style)</option>
-            </select>
-          </label>
-          <label className="text-sm">
-            Email
-            <input value={cEmail} onChange={(e) => setCEmail(e.target.value)} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
-          </label>
-          <label className="text-sm">
-            Phone
-            <input value={cPhone} onChange={(e) => setCPhone(e.target.value)} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
-          </label>
-          <button type="submit" className="bg-accent text-stone-50 sm:col-span-2 w-fit rounded-full px-4 py-2 text-sm font-semibold">
-            Add candidate
-          </button>
-        </form>
-
-        <input
-          ref={resumeFileRef}
-          type="file"
-          accept=".pdf,.doc,.docx,application/pdf"
-          className="sr-only"
-          tabIndex={-1}
-          onChange={(e) => {
-            const f = e.target.files?.[0] ?? null
-            const cid = resumePickForId
-            setResumePickForId(null)
-            e.target.value = ''
-            if (cid && f) void uploadResume(cid, f)
-          }}
-        />
-
-        <ul className="mt-4 space-y-3">
-          {filteredCandidates.length === 0 ? (
-            <li className="text-ink-muted text-sm">No candidates match the selected filters.</li>
-          ) : (
-            filteredCandidates.map(renderCandidateCard)
-          )}
-        </ul>
-      </section>
+      {tab === 'details' ? (
+        <section className="border-line max-w-3xl rounded-2xl border border-stone-200/80 bg-white/70 p-5 dark:border-line-dark dark:bg-stone-900/45">
+          <h2 className="text-stitch-on-surface text-xs font-extrabold tracking-wide uppercase dark:text-stone-300">
+            Position details
+          </h2>
+          <div className="mt-4 flex flex-col gap-1">
+            <DetailHoverField
+              label="Title"
+              value={title}
+              onSave={async (next) => {
+                const v = next.trim() || 'Untitled'
+                const { error } = await supabase!
+                  .from('positions')
+                  .update({ title: v })
+                  .eq('id', id!)
+                  .eq('user_id', user!.id)
+                if (error) toastError(error.message)
+                else {
+                  setTitle(v)
+                  success('Saved')
+                  await invalidateAll()
+                }
+              }}
+            />
+            <div className="rounded-xl px-1 py-2">
+              <p className="text-stitch-muted text-[11px] font-bold tracking-wide uppercase dark:text-stone-500">Role status</p>
+              {!terminalPosition ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(['active', 'on_hold'] as const).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      disabled={setOpenPositionStatus.isPending}
+                      onClick={() => void setOpenPositionStatus.mutateAsync(s)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                        status === s
+                          ? 'bg-accent text-white'
+                          : 'border border-stone-200 bg-white/90 hover:bg-stone-50 dark:border-stone-600 dark:bg-stone-900/60'
+                      }`}
+                    >
+                      {s === 'active' ? 'Active' : 'On hold'}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    disabled={setPositionTerminal.isPending}
+                    onClick={() => {
+                      if (!window.confirm('Mark this role as succeeded?')) return
+                      void setPositionTerminal.mutateAsync('succeeded')
+                    }}
+                    className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                      status === 'succeeded'
+                        ? 'bg-emerald-700 text-white'
+                        : 'border border-stone-200 bg-white/90 dark:border-stone-600 dark:bg-stone-900/60'
+                    }`}
+                  >
+                    Succeeded
+                  </button>
+                  <button
+                    type="button"
+                    disabled={setPositionTerminal.isPending}
+                    onClick={() => {
+                      if (!window.confirm('Mark this role as cancelled?')) return
+                      void setPositionTerminal.mutateAsync('cancelled')
+                    }}
+                    className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                      status === 'cancelled'
+                        ? 'bg-stone-600 text-white'
+                        : 'border border-stone-200 bg-white/90 dark:border-stone-600 dark:bg-stone-900/60'
+                    }`}
+                  >
+                    Cancelled
+                  </button>
+                </div>
+              ) : (
+                <p className="text-ink-muted mt-1 text-xs dark:text-stone-400">
+                  Closed role — use <span className="font-semibold">Reopen</span> in the header.
+                </p>
+              )}
+            </div>
+            <DetailHoverField
+              label="Requirements from client"
+              value={requirements}
+              multiline
+              rows={10}
+              onSave={async (next) => {
+                const { error } = await supabase!
+                  .from('positions')
+                  .update({ requirements: next.trim() || null })
+                  .eq('id', id!)
+                  .eq('user_id', user!.id)
+                if (error) toastError(error.message)
+                else {
+                  setRequirements(normalizeRequirementsText(next))
+                  success('Saved')
+                  await invalidateAll()
+                }
+              }}
+            />
+            <p className="text-ink-muted px-1 pt-2 text-xs dark:text-stone-500">
+              Fees &amp; milestones:{' '}
+              <Link to={`/settings/positions/${id}/fees`} className="text-accent font-semibold underline dark:text-orange-300">
+                Settings
+              </Link>
+            </p>
+          </div>
+        </section>
       ) : null}
 
-      {tab === 'approaches' ? (
-        <section className="border-line bg-white/60 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40">
-          <h2 className="font-semibold">Approaches</h2>
-          <p className="text-ink-muted mt-1 text-sm dark:text-stone-500">LinkedIn search and outreach snippets you can copy into messages.</p>
+      {tab === 'candidates' ? (
+        <div className="relative">
+          <section id="position-candidates-section" className="scroll-mt-24 space-y-4">
+            <p className="text-ink-muted text-sm dark:text-stone-400">
+              Pipeline board: drag cards between stages. Click a card for actions, résumé, and history. Add candidates below.
+            </p>
+
+            <form
+              id="position-add-candidate"
+              className="border-line grid scroll-mt-24 gap-2 rounded-2xl border border-stone-200/80 bg-white/70 p-4 dark:border-line-dark dark:bg-stone-900/45 sm:grid-cols-2"
+              onSubmit={(e) => {
+                e.preventDefault()
+                void addCandidate.mutateAsync()
+              }}
+            >
+              <label className="text-sm">
+                Full name
+                <input
+                  value={cName}
+                  onChange={(e) => setCName(e.target.value)}
+                  className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                  required
+                />
+              </label>
+              <label className="text-sm">
+                Source
+                <select
+                  value={cSource}
+                  onChange={(e) => setCSource(e.target.value as 'app' | 'external')}
+                  className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                >
+                  <option value="app">App</option>
+                  <option value="external">External (import-style)</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                Email
+                <input
+                  value={cEmail}
+                  onChange={(e) => setCEmail(e.target.value)}
+                  className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                />
+              </label>
+              <label className="text-sm">
+                Phone
+                <input
+                  value={cPhone}
+                  onChange={(e) => setCPhone(e.target.value)}
+                  className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                />
+              </label>
+              <button type="submit" className="bg-accent text-stone-50 w-fit rounded-full px-4 py-2 text-sm font-semibold sm:col-span-2">
+                Add candidate
+              </button>
+            </form>
+
+            <input
+              ref={resumeFileRef}
+              type="file"
+              accept=".pdf,.doc,.docx,application/pdf"
+              className="sr-only"
+              tabIndex={-1}
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null
+                const cid = resumePickForId
+                setResumePickForId(null)
+                e.target.value = ''
+                if (cid && f) void uploadResume(cid, f)
+              }}
+            />
+
+            <div className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]">
+              {((): ReactNode => {
+                const cols: ReactNode[] = []
+                cols.push(
+                  <div
+                    key="__unassigned__"
+                    className={`flex min-h-[min(50vh,22rem)] min-w-[220px] max-w-[280px] shrink-0 flex-col rounded-2xl border bg-white/85 p-2 dark:bg-stone-900/55 ${
+                      candidateDropStage === stageDropSlot(null)
+                        ? 'ring-2 ring-[#9b3e20]/45 dark:ring-orange-400/50'
+                        : 'border-stone-200/80 dark:border-stone-600'
+                    }`}
+                    onDragOver={(e) => onCandidateDragOverStage(e, null)}
+                    onDragLeave={(e) => onCandidateDragLeaveStage(e, null)}
+                    onDrop={(e) => onCandidateDropStage(e, null)}
+                  >
+                    <h3 className="text-ink px-1 text-[11px] font-extrabold tracking-wide uppercase dark:text-stone-200">No stage</h3>
+                    <p className="text-stitch-muted px-1 text-xs tabular-nums">
+                      {pipelineKanbanCandidates.filter((c) => !c.position_stage_id).length}
+                    </p>
+                    <div className="mt-2 flex flex-1 flex-col gap-2 overflow-y-auto">
+                      {pipelineKanbanCandidates
+                        .filter((c) => !c.position_stage_id)
+                        .map((c) => {
+                          const prof = nestedCandidate(c.candidates)
+                          const candId = prof?.id
+                          const days = differenceInCalendarDays(new Date(), new Date(c.created_at as string))
+                          return (
+                            <div
+                              key={c.id}
+                              role="button"
+                              tabIndex={0}
+                              draggable
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData(
+                                  'application/json',
+                                  JSON.stringify({ kind: 'position_candidate', pcId: c.id }),
+                                )
+                                e.dataTransfer.effectAllowed = 'move'
+                                setCandidateDragId(c.id)
+                              }}
+                              onDragEnd={() => setCandidateDragId(null)}
+                              onClick={() => candId && openCandidateDrawer(candId)}
+                              onKeyDown={(e) => {
+                                if ((e.key === 'Enter' || e.key === ' ') && candId) {
+                                  e.preventDefault()
+                                  openCandidateDrawer(candId)
+                                }
+                              }}
+                              className={`border-line cursor-grab rounded-xl border bg-white p-3 shadow-sm active:cursor-grabbing dark:border-line-dark dark:bg-stone-800 ${
+                                candidateDragId === c.id ? 'opacity-55' : ''
+                              }`}
+                            >
+                              <div className="flex items-start gap-2">
+                                <GripVertical className="text-ink-muted mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate font-semibold text-stone-900 dark:text-stone-100">{prof?.full_name ?? 'Unnamed'}</p>
+                                  <p className="text-ink-muted text-xs">On role {days}d</p>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                    </div>
+                  </div>,
+                )
+                for (const st of stagesQ.data ?? []) {
+                  const slotHot = candidateDropStage === stageDropSlot(st.id)
+                  const cards = pipelineKanbanCandidates.filter((c) => c.position_stage_id === st.id)
+                  cols.push(
+                    <div
+                      key={st.id}
+                      className={`flex min-h-[min(50vh,22rem)] min-w-[220px] max-w-[280px] shrink-0 flex-col rounded-2xl border bg-white/85 p-2 dark:bg-stone-900/55 ${
+                        slotHot ? 'ring-2 ring-[#9b3e20]/45 dark:ring-orange-400/50' : 'border-stone-200/80 dark:border-stone-600'
+                      }`}
+                      onDragOver={(e) => onCandidateDragOverStage(e, st.id)}
+                      onDragLeave={(e) => onCandidateDragLeaveStage(e, st.id)}
+                      onDrop={(e) => onCandidateDropStage(e, st.id)}
+                    >
+                      <h3 className="text-ink px-1 text-[11px] font-extrabold tracking-wide uppercase dark:text-stone-200">{st.name}</h3>
+                      <p className="text-stitch-muted px-1 text-xs tabular-nums">{cards.length}</p>
+                      <div className="mt-2 flex flex-1 flex-col gap-2 overflow-y-auto">
+                        {cards.map((c) => {
+                          const prof = nestedCandidate(c.candidates)
+                          const candId = prof?.id
+                          const days = differenceInCalendarDays(new Date(), new Date(c.created_at as string))
+                          return (
+                            <div
+                              key={c.id}
+                              role="button"
+                              tabIndex={0}
+                              draggable
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData(
+                                  'application/json',
+                                  JSON.stringify({ kind: 'position_candidate', pcId: c.id }),
+                                )
+                                e.dataTransfer.effectAllowed = 'move'
+                                setCandidateDragId(c.id)
+                              }}
+                              onDragEnd={() => setCandidateDragId(null)}
+                              onClick={() => candId && openCandidateDrawer(candId)}
+                              onKeyDown={(e) => {
+                                if ((e.key === 'Enter' || e.key === ' ') && candId) {
+                                  e.preventDefault()
+                                  openCandidateDrawer(candId)
+                                }
+                              }}
+                              className={`border-line cursor-grab rounded-xl border bg-white p-3 shadow-sm active:cursor-grabbing dark:border-line-dark dark:bg-stone-800 ${
+                                candidateDragId === c.id ? 'opacity-55' : ''
+                              }`}
+                            >
+                              <div className="flex items-start gap-2">
+                                <GripVertical className="text-ink-muted mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate font-semibold text-stone-900 dark:text-stone-100">{prof?.full_name ?? 'Unnamed'}</p>
+                                  <p className="text-ink-muted text-xs">On role {days}d</p>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>,
+                  )
+                }
+                return cols
+              })()}
+            </div>
+
+            <section className="rounded-2xl border border-stone-200/80 bg-white/60 p-4 dark:border-stone-600 dark:bg-stone-900/40">
+              <h3 className="text-sm font-bold text-stone-800 dark:text-stone-200">Rejected &amp; withdrawn</h3>
+              <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">Filter the list — same tools as before for these assignments.</p>
+              <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Filter candidates by status">
+                {(
+                  [
+                    { id: 'in_progress', label: 'In progress' },
+                    { id: 'rejected', label: 'Rejected' },
+                    { id: 'withdrawn', label: 'Withdrawn' },
+                  ] as const
+                ).map(({ id: fid, label }) => (
+                  <button
+                    key={fid}
+                    type="button"
+                    onClick={() => toggleCandStatusFilter(fid)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                      candStatusFilter.has(fid) ? 'bg-accent text-white' : 'border border-stone-200 bg-white/90 dark:border-stone-600 dark:bg-stone-900/60'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <ul className="mt-4 space-y-3">
+                {filteredCandidates.filter((c) => c.status !== 'in_progress').length === 0 ? (
+                  <li className="text-ink-muted text-sm">No rejected or withdrawn assignments with current filters.</li>
+                ) : (
+                  filteredCandidates.filter((c) => c.status !== 'in_progress').map(renderCandidateCard)
+                )}
+              </ul>
+            </section>
+          </section>
+
+          {drawerCandidate && highlightCandidate ? (
+            <>
+              <button
+                type="button"
+                className="fixed inset-0 z-40 bg-black/40"
+                aria-label="Close candidate panel"
+                onClick={closeCandidateDrawer}
+              />
+              <aside
+                className="border-line fixed top-0 right-0 z-50 flex h-full w-full max-w-md flex-col border-l bg-white shadow-2xl dark:border-line-dark dark:bg-stone-900"
+                aria-label="Candidate details"
+              >
+                <div className="flex items-center justify-between border-b border-stone-200/90 px-4 py-3 dark:border-stone-700">
+                  <h2 className="truncate text-lg font-bold text-stone-900 dark:text-stone-100">
+                    {nestedCandidate(drawerCandidate.candidates)?.full_name ?? 'Candidate'}
+                  </h2>
+                  <button
+                    type="button"
+                    className="rounded-lg p-2 hover:bg-stone-100 dark:hover:bg-stone-800"
+                    onClick={closeCandidateDrawer}
+                    aria-label="Close"
+                  >
+                    <X className="h-5 w-5" aria-hidden />
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                  <ul className="list-none space-y-0 p-0">{renderCandidateCard(drawerCandidate)}</ul>
+                </div>
+              </aside>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      {tab === 'openings' ? (
+        <section className="border-line rounded-2xl border border-stone-200/80 bg-white/70 p-5 dark:border-line-dark dark:bg-stone-900/45">
+          <h2 className="text-stitch-on-surface text-lg font-bold dark:text-stone-100">Openings</h2>
+          <p className="text-ink-muted mt-1 text-sm dark:text-stone-400">LinkedIn search and welcome messages for outreach.</p>
           <form
             className="mt-4 flex flex-col gap-4"
             onSubmit={(e) => {
@@ -1715,9 +2173,310 @@ export function PositionDetailPage() {
               <textarea value={welcome3} onChange={(e) => setWelcome3(e.target.value)} rows={4} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
             </div>
             <button type="submit" className="bg-accent text-stone-50 w-fit rounded-full px-5 py-2 text-sm font-semibold" disabled={savePos.isPending}>
-              Save approaches
+              Save openings
             </button>
           </form>
+        </section>
+      ) : null}
+
+      {tab === 'tasks' ? (
+        <section className="space-y-5">
+          <p className="text-ink-muted text-sm dark:text-stone-400">
+            Drag cards or table rows between To do, In progress, and Done. Click a task for details.{' '}
+            <Link to="/tasks" className="text-accent font-semibold underline dark:text-orange-300">
+              All tasks
+            </Link>
+          </p>
+          <form
+            className="border-line flex flex-col gap-3 rounded-2xl border border-stone-200/80 bg-white/70 p-4 dark:border-line-dark dark:bg-stone-900/45 sm:flex-row sm:flex-wrap sm:items-end"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void addPositionTask.mutateAsync({
+                title: newPositionTaskTitle,
+                description: newPositionTaskDescription,
+              })
+            }}
+          >
+            <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-sm font-medium">
+              New task
+              <input
+                value={newPositionTaskTitle}
+                onChange={(e) => setNewPositionTaskTitle(e.target.value)}
+                placeholder="Title"
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+              />
+            </label>
+            <label className="flex min-w-[12rem] flex-[2] flex-col gap-1 text-sm font-medium">
+              Description <span className="text-ink-muted font-normal">(optional)</span>
+              <input
+                value={newPositionTaskDescription}
+                onChange={(e) => setNewPositionTaskDescription(e.target.value)}
+                placeholder="Short context"
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+              />
+            </label>
+            <button
+              type="submit"
+              className="bg-accent text-stone-50 h-10 rounded-full px-5 text-sm font-semibold disabled:opacity-50"
+              disabled={addPositionTask.isPending}
+            >
+              Add task
+            </button>
+          </form>
+
+          <div className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]">
+            {POSITION_TASK_STATUS_ORDER.map((st) => (
+              <div
+                key={st}
+                className={`flex min-h-[min(40vh,18rem)] min-w-[200px] max-w-[260px] shrink-0 flex-col rounded-2xl border bg-white/85 p-2 dark:bg-stone-900/55 ${
+                  taskDropHover === st
+                    ? 'ring-2 ring-[#9b3e20]/45 dark:ring-orange-400/50'
+                    : 'border-stone-200/80 dark:border-stone-600'
+                }`}
+                onDragOver={(e) => onTaskDragOverStatus(e, st)}
+                onDragLeave={() => setTaskDropHover((h) => (h === st ? null : h))}
+                onDrop={(e) => onTaskDropOnStatus(e, st)}
+              >
+                <h3 className="text-ink px-1 text-[11px] font-extrabold tracking-wide uppercase dark:text-stone-200">
+                  {positionTaskStatusLabel(st)}
+                </h3>
+                <p className="text-stitch-muted px-1 text-xs tabular-nums">{positionTasksByStatus[st].length}</p>
+                <div className="mt-2 flex flex-1 flex-col gap-2 overflow-y-auto">
+                  {positionTasksByStatus[st].length === 0 ? (
+                    <p className="text-ink-muted px-1 text-xs italic dark:text-stone-500">Drop tasks here.</p>
+                  ) : (
+                    positionTasksByStatus[st].map((row) => {
+                      const cand = taskLinkedCandidateName(row)
+                      const dueLabel = row.due_at ? formatDue(row.due_at) : null
+                      return (
+                        <div
+                          key={row.id}
+                          role="button"
+                          tabIndex={0}
+                          draggable
+                          onDragStart={(e) => onTaskDragStart(e, row)}
+                          onDragEnd={() => setTaskDropHover(null)}
+                          onClick={() => setSelectedPositionTask(row)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              setSelectedPositionTask(row)
+                            }
+                          }}
+                          className="border-line cursor-grab rounded-xl border bg-white p-3 shadow-sm active:cursor-grabbing dark:border-line-dark dark:bg-stone-800"
+                        >
+                          <div className="flex items-start gap-2">
+                            <GripVertical className="text-ink-muted mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-semibold text-stone-900 dark:text-stone-100">{row.title}</p>
+                              {cand ? <p className="text-ink-muted truncate text-xs dark:text-stone-400">{cand}</p> : null}
+                              {dueLabel ? (
+                                <p className="text-ink-muted mt-0.5 text-xs tabular-nums dark:text-stone-500">Due {dueLabel}</p>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="overflow-x-auto rounded-2xl border border-stone-200/80 bg-white/80 dark:border-stone-600 dark:bg-stone-900/50">
+            {tasksQ.isLoading ? (
+              <p className="text-ink-muted p-6 text-sm">Loading…</p>
+            ) : (tasksQ.data ?? []).length === 0 ? (
+              <p className="text-ink-muted p-6 text-sm">No tasks for this role yet.</p>
+            ) : (
+              <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+                <thead>
+                  <tr className="border-b border-stone-200/90 bg-stone-50/90 dark:border-stone-600 dark:bg-stone-800/80">
+                    <th className="w-8 px-2 py-3" aria-hidden />
+                    <th className="px-3 py-3 font-bold">Task</th>
+                    <th className="px-3 py-3 font-bold">Due</th>
+                    <th className="px-3 py-3 font-bold">Candidate</th>
+                  </tr>
+                </thead>
+                {POSITION_TASK_STATUS_ORDER.map((st) => (
+                  <tbody
+                    key={st}
+                    className={`border-b border-stone-200/70 dark:border-stone-600 ${
+                      taskDropHover === st ? 'bg-[#97daff]/12 dark:bg-cyan-950/30' : ''
+                    }`}
+                    onDragOver={(e) => onTaskDragOverStatus(e, st)}
+                    onDragLeave={() => setTaskDropHover((h) => (h === st ? null : h))}
+                    onDrop={(e) => onTaskDropOnStatus(e, st)}
+                  >
+                    <tr className="bg-stone-100/95 dark:bg-stone-800/90">
+                      <td colSpan={4} className="px-3 py-2 text-xs font-extrabold tracking-wide text-stone-600 uppercase dark:text-stone-300">
+                        {positionTaskStatusLabel(st)} ({positionTasksByStatus[st].length})
+                      </td>
+                    </tr>
+                    {positionTasksByStatus[st].length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="text-ink-muted px-3 py-4 text-xs italic dark:text-stone-500">
+                          Drop a task here or drag from the board above.
+                        </td>
+                      </tr>
+                    ) : (
+                      positionTasksByStatus[st].map((row) => {
+                        const cand = taskLinkedCandidateName(row)
+                        const dueLabel = row.due_at ? formatDue(row.due_at) : '—'
+                        return (
+                          <tr
+                            key={row.id}
+                            draggable
+                            onDragStart={(e) => onTaskDragStart(e, row)}
+                            onDragEnd={() => setTaskDropHover(null)}
+                            className="border-t border-stone-100 transition hover:bg-stone-50/90 dark:border-stone-700/80 dark:hover:bg-stone-800/60"
+                          >
+                            <td className="px-1 py-2 align-middle">
+                              <span className="text-ink-muted inline-flex cursor-grab p-1 active:cursor-grabbing" aria-hidden>
+                                <GripVertical className="h-4 w-4" />
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 align-middle">
+                              <button
+                                type="button"
+                                className="text-left font-semibold text-[#302e2b] underline-offset-2 hover:underline dark:text-stone-100"
+                                onClick={() => setSelectedPositionTask(row)}
+                              >
+                                {row.title}
+                              </button>
+                            </td>
+                            <td className="text-ink-muted px-3 py-2 align-middle tabular-nums dark:text-stone-400">{dueLabel}</td>
+                            <td className="px-3 py-2 align-middle">
+                              {cand ? (
+                                <span className="text-ink-muted dark:text-stone-400">{cand}</span>
+                              ) : (
+                                <span className="text-ink-muted dark:text-stone-500">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })
+                    )}
+                  </tbody>
+                ))}
+              </table>
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {tab === 'activity' ? (
+        <section className="space-y-5">
+          <div className="rounded-2xl border border-stone-200/80 bg-white/70 p-4 dark:border-line-dark dark:bg-stone-900/45">
+            <h2 className="text-stitch-on-surface text-sm font-bold dark:text-stone-100">What you are seeing</h2>
+            <p className="text-ink-muted mt-2 text-sm dark:text-stone-400">
+              This is a chronological log of changes on this role — who moved in the pipeline, status updates, files, and
+              notes. Each card explains the type of event in plain language, then shows the technical detail we stored.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Activity filter">
+              <button
+                type="button"
+                onClick={() => setActivityFilter('all')}
+                className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                  activityFilter === 'all'
+                    ? 'bg-accent text-white'
+                    : 'border border-stone-200 bg-white/90 dark:border-stone-600 dark:bg-stone-900/60'
+                }`}
+              >
+                All activity
+              </button>
+              <button
+                type="button"
+                onClick={() => setActivityFilter('milestones')}
+                className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
+                  activityFilter === 'milestones'
+                    ? 'bg-accent text-white'
+                    : 'border border-stone-200 bg-white/90 dark:border-stone-600 dark:bg-stone-900/60'
+                }`}
+              >
+                Highlights only
+              </button>
+            </div>
+          </div>
+
+          <div className="border-line rounded-2xl border border-stone-200/80 bg-white/70 p-4 dark:border-line-dark dark:bg-stone-900/45">
+            <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100">Add a note</h3>
+            <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">
+              {highlightCandidate && candidateNameById.get(highlightCandidate)
+                ? `This note will be linked to ${candidateNameById.get(highlightCandidate)} (candidate panel is open).`
+                : 'Saved as a role note. Open a candidate from the Candidates tab to attach notes to a person.'}
+            </p>
+            <textarea
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              rows={3}
+              placeholder="What happened? What should the team know?"
+              className="border-line mt-2 w-full rounded-xl border px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/50"
+            />
+            <button
+              type="button"
+              className="bg-accent text-stone-50 mt-2 rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-50"
+              disabled={addNote.isPending}
+              onClick={() => void addNote.mutateAsync()}
+            >
+              Save note
+            </button>
+          </div>
+
+          <div className="space-y-6">
+            {activityByDay.length === 0 ? (
+              <p className="text-ink-muted text-sm">No activity yet.</p>
+            ) : (
+              activityByDay.map((group) => (
+                <div key={group.dayKey}>
+                  <h3 className="text-ink border-b border-stone-200/90 pb-2 text-xs font-extrabold tracking-wide uppercase dark:border-stone-600 dark:text-stone-200">
+                    {group.dayLabel}
+                  </h3>
+                  <ul className="mt-3 space-y-3">
+                    {group.rows.map((a) => {
+                      const kind = activityKindCopy(a.event_type)
+                      const whoLabel =
+                        a.candidate_id != null ? (candidateNameById.get(a.candidate_id) ?? 'Candidate') : null
+                      return (
+                        <li
+                          key={a.id}
+                          className="border-line flex gap-3 rounded-2xl border border-stone-200/80 bg-white/80 p-3 dark:border-stone-600 dark:bg-stone-900/50"
+                        >
+                          <ActivityIcon type={a.event_type} />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-accent text-[11px] font-extrabold uppercase tracking-wide dark:text-orange-300">
+                              {kind.label}
+                            </p>
+                            <p className="text-ink-muted text-xs dark:text-stone-500">{kind.explainer}</p>
+                            <p className="text-stitch-on-surface mt-1 text-sm font-semibold dark:text-stone-100">{a.title}</p>
+                            {a.subtitle ? (
+                              <p className="text-ink-muted mt-0.5 whitespace-pre-wrap text-sm dark:text-stone-400">{a.subtitle}</p>
+                            ) : null}
+                            <div className="text-ink-muted mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                              {a.candidate_id ? (
+                                <Link
+                                  to={`/candidates/${a.candidate_id}`}
+                                  className="font-medium text-[#006384] hover:underline dark:text-cyan-300"
+                                >
+                                  About: {whoLabel}
+                                </Link>
+                              ) : (
+                                <span>Role-wide event</span>
+                              )}
+                              <time className="tabular-nums" dateTime={a.created_at}>
+                                {format(new Date(a.created_at), 'p')}
+                              </time>
+                            </div>
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              ))
+            )}
+          </div>
         </section>
       ) : null}
 
@@ -1875,6 +2634,74 @@ export function PositionDetailPage() {
           </div>
         </div>
       </Modal>
+
+      {selectedPositionTask ? (
+        <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-labelledby="position-task-drawer-title">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40 backdrop-blur-[1px]"
+            aria-label="Close task panel"
+            onClick={() => setSelectedPositionTask(null)}
+          />
+          <aside className="border-line relative flex h-full w-full max-w-md flex-col border-l bg-white shadow-2xl dark:border-line-dark dark:bg-stone-900">
+            <div className="border-line flex items-start justify-between gap-2 border-b px-4 py-4 dark:border-line-dark">
+              <h2 id="position-task-drawer-title" className="text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
+                {selectedPositionTask.title}
+              </h2>
+              <button
+                type="button"
+                className="rounded-xl p-2 text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
+                onClick={() => setSelectedPositionTask(null)}
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-4 text-sm">
+              <p className="text-ink-muted text-xs font-bold uppercase">Status</p>
+              <p className="mt-1 font-semibold capitalize">{selectedPositionTask.status.replace('_', ' ')}</p>
+
+              <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Due</p>
+              <p className="mt-1">{selectedPositionTask.due_at ? formatDue(selectedPositionTask.due_at) : 'Not set'}</p>
+
+              {(() => {
+                const cand = taskLinkedCandidate(selectedPositionTask)
+                return cand ? (
+                  <>
+                    <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Candidate</p>
+                    <p className="mt-1">
+                      <Link
+                        to={`/positions/${id}?tab=candidates&candidate=${cand.id}`}
+                        className="font-semibold text-[#006384] hover:underline dark:text-cyan-300"
+                        onClick={() => setSelectedPositionTask(null)}
+                      >
+                        {cand.full_name}
+                      </Link>
+                    </p>
+                  </>
+                ) : null
+              })()}
+
+              {selectedPositionTask.description ? (
+                <>
+                  <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Description</p>
+                  <p className="mt-1 whitespace-pre-wrap text-[#302e2b] dark:text-stone-200">{selectedPositionTask.description}</p>
+                </>
+              ) : null}
+
+              {selectedPositionTask.note_in_progress ? (
+                <>
+                  <p className="text-ink-muted mt-4 text-xs font-bold uppercase">In progress notes</p>
+                  <p className="mt-1 whitespace-pre-wrap text-[#302e2b] dark:text-stone-200">{selectedPositionTask.note_in_progress}</p>
+                </>
+              ) : null}
+
+              <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Updated</p>
+              <p className="mt-1 tabular-nums">{new Date(selectedPositionTask.updated_at).toLocaleString()}</p>
+            </div>
+          </aside>
+        </div>
+      ) : null}
 
       <Modal open={shareOpen} onClose={() => setShareOpen(false)} title="Share link" size="sm">
         <p className="text-ink-muted text-sm">Anyone with this link can view a summary (expires in 7 days).</p>
