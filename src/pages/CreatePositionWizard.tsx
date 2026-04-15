@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { Briefcase, Building2, Coins, Plus, Sparkles } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
@@ -65,6 +65,32 @@ function emptyStage(): StageDraft {
 function wizardSectionClass(): string {
   return 'rounded-2xl border border-stone-200/90 bg-stone-50/40 p-4 dark:border-stone-600/80 dark:bg-stone-900/35'
 }
+
+/** Keeps label text, * and “(optional)” on one line; avoids flex-col splitting text and * into separate rows. */
+function FieldLabel({
+  children,
+  required,
+  optionalHint,
+}: {
+  children: ReactNode
+  required?: boolean
+  optionalHint?: string
+}) {
+  return (
+    <span className="inline-flex max-w-full flex-wrap items-baseline gap-x-1">
+      <span className="min-w-0">{children}</span>
+      {required ? (
+        <abbr title="Required" className="shrink-0 cursor-help text-rose-600 no-underline dark:text-rose-400">
+          *
+        </abbr>
+      ) : null}
+      {optionalHint ? <span className="text-ink-muted shrink-0 font-normal">{optionalHint}</span> : null}
+    </span>
+  )
+}
+
+const dateInputClass =
+  'border-line w-full max-w-full rounded-xl border bg-white px-3 py-2.5 text-left text-base shadow-sm [direction:ltr] dark:border-line-dark dark:bg-stone-900/80 [&::-webkit-datetime-edit]:inline-flex [&::-webkit-datetime-edit]:justify-start'
 
 function parseOptionalNumber(raw: string): number | null {
   const t = raw.trim().replace(/\s/g, '').replace(',', '.')
@@ -300,7 +326,7 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
                 Client
               </div>
               <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-                Company
+                <FieldLabel required>Company</FieldLabel>
                 <select
                   value={companyId}
                   onChange={(e) => setCompanyId(e.target.value)}
@@ -324,16 +350,16 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
               </div>
               <div className="flex flex-col gap-4">
                 <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-                  Opened on
+                  <FieldLabel required>Opened on</FieldLabel>
                   <input
                     type="date"
                     value={openedAt}
                     onChange={(e) => setOpenedAt(e.target.value)}
-                    className="border-line rounded-xl border bg-white px-3 py-2.5 text-base shadow-sm dark:border-line-dark dark:bg-stone-900/80"
+                    className={dateInputClass}
                   />
                 </label>
                 <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-                  Role title <span className="text-rose-600 dark:text-rose-400">*</span>
+                  <FieldLabel required>Role title</FieldLabel>
                   <input
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
@@ -343,7 +369,7 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
                   />
                 </label>
                 <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-                  Industry <span className="text-ink-muted font-normal">(optional)</span>
+                  <FieldLabel optionalHint="(optional)">Industry</FieldLabel>
                   <input
                     value={industry}
                     onChange={(e) => setIndustry(e.target.value)}
@@ -357,7 +383,7 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
 
             <div className={wizardSectionClass()}>
               <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-                Job description <span className="text-ink-muted font-normal">(optional)</span>
+                <FieldLabel optionalHint="(optional)">Job description</FieldLabel>
                 <textarea
                   value={requirements}
                   onChange={(e) => setRequirements(e.target.value)}
@@ -376,7 +402,7 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
               </div>
               <div className="flex flex-col gap-4">
                 <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-                  Client salary budget <span className="text-ink-muted font-normal">(optional, single amount)</span>
+                  <FieldLabel optionalHint="(optional, single amount)">Client salary budget</FieldLabel>
                   <input
                     value={salaryBudget}
                     onChange={(e) => setSalaryBudget(e.target.value)}
@@ -387,7 +413,7 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
                   />
                 </label>
                 <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-                  Recruitment fee (₪) <span className="text-ink-muted font-normal">(optional)</span>
+                  <FieldLabel optionalHint="(optional)">Recruitment fee (₪)</FieldLabel>
                   <input
                     value={plannedFee}
                     onChange={(e) => setPlannedFee(e.target.value)}
@@ -403,24 +429,37 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
             <div className={wizardSectionClass()}>
               <div className="text-ink-muted mb-3 text-xs font-bold tracking-wide uppercase dark:text-stone-500">Hiring manager</div>
               <div className="flex flex-col gap-3">
-                <input
-                  value={hiringManagerName}
-                  onChange={(e) => setHiringManagerName(e.target.value)}
-                  placeholder="Name"
-                  className="border-line rounded-xl border bg-white px-3 py-2.5 text-sm dark:border-line-dark dark:bg-stone-900/80"
-                />
-                <input
-                  value={hiringManagerEmail}
-                  onChange={(e) => setHiringManagerEmail(e.target.value)}
-                  placeholder="Email"
-                  className="border-line rounded-xl border bg-white px-3 py-2.5 text-sm dark:border-line-dark dark:bg-stone-900/80"
-                />
-                <input
-                  value={hiringManagerPhone}
-                  onChange={(e) => setHiringManagerPhone(e.target.value)}
-                  placeholder="Phone"
-                  className="border-line rounded-xl border bg-white px-3 py-2.5 text-sm dark:border-line-dark dark:bg-stone-900/80"
-                />
+                <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                  <FieldLabel optionalHint="(optional)">Name</FieldLabel>
+                  <input
+                    value={hiringManagerName}
+                    onChange={(e) => setHiringManagerName(e.target.value)}
+                    placeholder="Full name"
+                    className="border-line rounded-xl border bg-white px-3 py-2.5 text-sm dark:border-line-dark dark:bg-stone-900/80"
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                  <FieldLabel optionalHint="(optional)">Email</FieldLabel>
+                  <input
+                    value={hiringManagerEmail}
+                    onChange={(e) => setHiringManagerEmail(e.target.value)}
+                    placeholder="name@company.com"
+                    type="email"
+                    autoComplete="email"
+                    className="border-line rounded-xl border bg-white px-3 py-2.5 text-sm dark:border-line-dark dark:bg-stone-900/80"
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                  <FieldLabel optionalHint="(optional)">Phone</FieldLabel>
+                  <input
+                    value={hiringManagerPhone}
+                    onChange={(e) => setHiringManagerPhone(e.target.value)}
+                    placeholder="+972…"
+                    type="tel"
+                    autoComplete="tel"
+                    className="border-line rounded-xl border bg-white px-3 py-2.5 text-sm dark:border-line-dark dark:bg-stone-900/80"
+                  />
+                </label>
               </div>
             </div>
           </div>
@@ -466,36 +505,45 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
                       </button>
                     </div>
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <input
-                      value={s.name}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setStages((prev) => prev.map((row, j) => (j === i ? { ...row, name: v } : row)))
-                      }}
-                      placeholder="Stage name *"
-                      className="border-line rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
-                    />
-                    <input
-                      value={s.description}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setStages((prev) => prev.map((row, j) => (j === i ? { ...row, description: v } : row)))
-                      }}
-                      placeholder="Short description"
-                      className="border-line rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
-                    />
-                    <input
-                      value={s.interviewers}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setStages((prev) => prev.map((row, j) => (j === i ? { ...row, interviewers: v } : row)))
-                      }}
-                      placeholder="Interviewers"
-                      className="border-line rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
-                    />
-                    <div className="flex flex-wrap items-center gap-3">
-                      <label className="flex items-center gap-2 text-sm">
+                  <div className="flex flex-col gap-3">
+                    <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                      <FieldLabel required>Stage name</FieldLabel>
+                      <input
+                        value={s.name}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setStages((prev) => prev.map((row, j) => (j === i ? { ...row, name: v } : row)))
+                        }}
+                        placeholder="e.g. Phone screen"
+                        className="border-line rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                      <FieldLabel optionalHint="(optional)">Short description</FieldLabel>
+                      <input
+                        value={s.description}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setStages((prev) => prev.map((row, j) => (j === i ? { ...row, description: v } : row)))
+                        }}
+                        placeholder="What happens in this stage"
+                        className="border-line rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                      <FieldLabel optionalHint="(optional)">Interviewers</FieldLabel>
+                      <input
+                        value={s.interviewers}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setStages((prev) => prev.map((row, j) => (j === i ? { ...row, interviewers: v } : row)))
+                        }}
+                        placeholder="Names or emails"
+                        className="border-line rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
+                      />
+                    </label>
+                    <div className="flex flex-wrap items-end gap-3">
+                      <label className="flex items-center gap-2 text-sm font-medium text-[#302e2b] dark:text-stone-200">
                         <input
                           type="checkbox"
                           checked={s.isRemote}
@@ -504,18 +552,19 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
                             setStages((prev) => prev.map((row, j) => (j === i ? { ...row, isRemote: v } : row)))
                           }}
                         />
-                        Remote
+                        <FieldLabel optionalHint="(optional)">Remote interview</FieldLabel>
                       </label>
-                      <label className="flex flex-1 min-w-[8rem] flex-col gap-1 text-xs">
-                        Duration (minutes)
+                      <label className="flex min-w-[8rem] flex-1 flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                        <FieldLabel optionalHint="(optional)">Duration (minutes)</FieldLabel>
                         <input
                           value={s.durationMinutes}
                           onChange={(e) => {
                             const v = e.target.value
                             setStages((prev) => prev.map((row, j) => (j === i ? { ...row, durationMinutes: v } : row)))
                           }}
-                          className="border-line rounded-xl border bg-white px-2 py-1.5 dark:border-line-dark dark:bg-stone-900/80"
+                          className="border-line rounded-xl border bg-white px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/80"
                           inputMode="numeric"
+                          placeholder="e.g. 45"
                         />
                       </label>
                     </div>
@@ -529,36 +578,48 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
         {step === 2 ? (
           <div className="flex flex-col gap-5">
             <div className={wizardSectionClass()}>
-              <p className="text-ink-muted mb-2 text-xs font-bold uppercase dark:text-stone-500">Welcome approaches</p>
-              <textarea
-                value={welcome1}
-                onChange={(e) => setWelcome1(e.target.value)}
-                rows={3}
-                placeholder="Welcome message 1"
-                className="border-line mb-2 w-full rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
-              />
-              <textarea
-                value={welcome2}
-                onChange={(e) => setWelcome2(e.target.value)}
-                rows={3}
-                placeholder="Welcome message 2"
-                className="border-line mb-2 w-full rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
-              />
-              <textarea
-                value={welcome3}
-                onChange={(e) => setWelcome3(e.target.value)}
-                rows={3}
-                placeholder="Welcome message 3"
-                className="border-line w-full rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
-              />
+              <p className="text-ink-muted mb-3 text-xs font-bold uppercase dark:text-stone-500">Welcome approaches</p>
+              <div className="flex flex-col gap-4">
+                <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                  <FieldLabel optionalHint="(optional)">Welcome message 1</FieldLabel>
+                  <textarea
+                    value={welcome1}
+                    onChange={(e) => setWelcome1(e.target.value)}
+                    rows={3}
+                    placeholder="First outreach angle…"
+                    className="border-line w-full rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                  <FieldLabel optionalHint="(optional)">Welcome message 2</FieldLabel>
+                  <textarea
+                    value={welcome2}
+                    onChange={(e) => setWelcome2(e.target.value)}
+                    rows={3}
+                    placeholder="Second angle…"
+                    className="border-line w-full rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                  <FieldLabel optionalHint="(optional)">Welcome message 3</FieldLabel>
+                  <textarea
+                    value={welcome3}
+                    onChange={(e) => setWelcome3(e.target.value)}
+                    rows={3}
+                    placeholder="Third angle…"
+                    className="border-line w-full rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
+                  />
+                </label>
+              </div>
             </div>
-            <label className="flex flex-col gap-1.5 text-sm font-medium">
-              LinkedIn saved filter URL
+            <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+              <FieldLabel optionalHint="(optional)">LinkedIn saved filter URL</FieldLabel>
               <input
                 value={linkedinUrl}
                 onChange={(e) => setLinkedinUrl(e.target.value)}
                 className="border-line rounded-xl border bg-white px-3 py-2 dark:border-line-dark dark:bg-stone-900/80"
                 placeholder="https://…"
+                autoComplete="off"
               />
             </label>
             <p className="text-ink-muted text-xs dark:text-stone-500">
