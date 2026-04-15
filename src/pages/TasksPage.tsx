@@ -447,17 +447,6 @@ export function TasksPage() {
 
   return (
     <div className="flex flex-col gap-8 md:gap-10">
-      <motion.section
-        className="border-stitch-on-surface/10 relative overflow-hidden rounded-3xl border bg-gradient-to-br from-lume-jade/18 via-white to-lume-sky/14 p-6 shadow-sm md:p-8 dark:from-teal-950/35 dark:via-stone-900 dark:to-cyan-950/25"
-        initial={reduceMotion ? false : { opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <h1 className="text-page-title text-2xl font-extrabold tracking-tight md:text-3xl">Tasks</h1>
-        <p className="text-ink-muted mt-2 max-w-2xl text-sm dark:text-stone-400">
-          Drag rows between status groups to update progress. Open a task for full details.
-        </p>
-      </motion.section>
-
       {kpis ? (
         <motion.section aria-label="Task counts" initial={reduceMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
@@ -476,11 +465,7 @@ export function TasksPage() {
               <button
                 key={card.key}
                 type="button"
-                onClick={() => {
-                  if (card.key === 'done') setStatusUrl('done')
-                  else if (card.key === 'todo') setStatusUrl('todo')
-                  else setStatusUrl('in_progress')
-                }}
+                onClick={() => setStatusUrl(card.key)}
                 className={`rounded-2xl border px-4 py-4 text-left transition dark:border-stone-600 ${
                   urlStatusFilter === card.key
                     ? 'border-[#9b3e20] bg-[#fd8863]/12 ring-2 ring-[#9b3e20]/30 dark:bg-orange-950/40'
