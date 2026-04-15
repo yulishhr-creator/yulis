@@ -283,7 +283,6 @@ export function DashboardPage() {
       await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
       await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
       await qc.invalidateQueries({ queryKey: ['position-tasks'] })
-      await qc.invalidateQueries({ queryKey: ['notifications-overdue-tasks'] })
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
     },
     onError: (e: Error) => toastError(e.message),
@@ -333,7 +332,6 @@ export function DashboardPage() {
       await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
       await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
       await qc.invalidateQueries({ queryKey: ['position-tasks'] })
-      await qc.invalidateQueries({ queryKey: ['notifications-overdue-tasks'] })
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
     },
   })

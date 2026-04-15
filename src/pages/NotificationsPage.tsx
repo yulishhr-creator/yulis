@@ -1,7 +1,7 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Bell, CalendarClock, Trash2, AlertTriangle, CalendarDays, Star, Check } from 'lucide-react'
+import { Bell, CalendarClock, Trash2, CalendarDays, Star, Check } from 'lucide-react'
 import { format } from 'date-fns'
 import { useState } from 'react'
 
@@ -184,24 +184,6 @@ export function NotificationsPage() {
     },
   })
 
-  const overdueQ = useQuery({
-    queryKey: ['notifications-overdue-tasks', uid],
-    enabled: Boolean(supabase && uid),
-    queryFn: async () => {
-      const now = new Date().toISOString()
-      const { data, error } = await supabase!
-        .from('tasks')
-        .select('id, title, due_at, position_id, positions ( title )')
-        .eq('user_id', uid!)
-        .neq('status', 'done')
-        .not('due_at', 'is', null)
-        .lt('due_at', now)
-        .order('due_at', { ascending: true })
-      if (error) throw error
-      return data ?? []
-    },
-  })
-
   const addReminder = useMutation({
     mutationFn: async () => {
       if (!remTitle.trim()) throw new Error('Enter a title')
@@ -247,36 +229,6 @@ export function NotificationsPage() {
     onError: (e: Error) => toastError(e.message),
   })
 
-  const completeOverdueTask = useMutation({
-    mutationFn: async (taskId: string) => {
-      const { error } = await supabase!.from('tasks').update({ status: 'done' }).eq('id', taskId).eq('user_id', uid!)
-      if (error) throw error
-    },
-    onSuccess: async () => {
-      success('Task completed')
-      await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
-      await qc.invalidateQueries({ queryKey: ['position-tasks'] })
-      await qc.invalidateQueries({ queryKey: ['notifications-overdue-tasks'] })
-      await qc.invalidateQueries({ queryKey: ['notification-count'] })
-    },
-    onError: (e: Error) => toastError(e.message),
-  })
-
-  const deleteOverdueTask = useMutation({
-    mutationFn: async (taskId: string) => {
-      const { error } = await supabase!.from('tasks').delete().eq('id', taskId).eq('user_id', uid!)
-      if (error) throw error
-    },
-    onSuccess: async () => {
-      success('Task deleted')
-      await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
-      await qc.invalidateQueries({ queryKey: ['position-tasks'] })
-      await qc.invalidateQueries({ queryKey: ['notifications-overdue-tasks'] })
-      await qc.invalidateQueries({ queryKey: ['notification-count'] })
-    },
-    onError: (e: Error) => toastError(e.message),
-  })
-
   const clearCalendarEventReminder = useMutation({
     mutationFn: async (eventId: string) => {
       const { error } = await supabase!
@@ -310,7 +262,6 @@ export function NotificationsPage() {
   })
 
   const reminders = remindersQ.data ?? []
-  const overdue = overdueQ.data ?? []
   const upcomingEvents = upcomingEventsQ.data ?? []
   const upcomingImportant = upcomingEvents.filter((e) => e.is_important)
   const upcomingRest = upcomingEvents.filter((e) => !e.is_important)
@@ -319,7 +270,7 @@ export function NotificationsPage() {
     <div className="flex flex-col gap-8">
       <ScreenHeader
         title="Notifications"
-        subtitle="Overdue tasks, upcoming calendar events, and reminders. Calendar events live on your grid; reminders are separate nudges."
+        subtitle="Upcoming calendar events and reminders. Events live on your grid; reminders are separate nudges."
         backTo="/"
       />
 
@@ -390,86 +341,7 @@ export function NotificationsPage() {
         </form>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:items-start lg:gap-6">
-        <section aria-labelledby="overdue-heading" className="min-w-0">
-          <h2
-            id="overdue-heading"
-            className="text-ink-muted mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.2em] uppercase dark:text-stone-400"
-          >
-            <AlertTriangle className="h-4 w-4" aria-hidden />
-            Overdue tasks
-          </h2>
-          {overdueQ.isLoading ? (
-            <p className="text-stitch-muted text-sm">Loading…</p>
-          ) : overdue.length === 0 ? (
-            <p className="text-stitch-muted rounded-2xl border border-emerald-200/80 bg-emerald-50/80 px-4 py-3 text-sm dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-stone-400">
-              You’re all caught up — no overdue tasks with a due date.
-            </p>
-          ) : (
-            <ul className="space-y-3">
-              {overdue.map((t, i) => {
-                const pos = t.positions as unknown as { title: string } | null
-                const pid = t.position_id
-                const taskBusyId =
-                  completeOverdueTask.isPending ? completeOverdueTask.variables
-                  : deleteOverdueTask.isPending ? deleteOverdueTask.variables
-                  : undefined
-                const rowBusy = taskBusyId === t.id
-                const body = (
-                  <>
-                    <span className="text-stitch-on-surface font-bold dark:text-stone-100">{t.title}</span>
-                    <span className="text-stitch-muted text-sm dark:text-stone-400">
-                      {pos?.title ?? 'Position'} · was due {formatDue(t.due_at)}
-                    </span>
-                  </>
-                )
-                return (
-                  <motion.li
-                    key={t.id}
-                    initial={reduceMotion ? false : { opacity: 0, x: -8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: reduceMotion ? 0 : i * 0.04 }}
-                  >
-                    <div className="border-stitch-on-surface/10 flex min-h-[4.5rem] items-stretch overflow-hidden rounded-2xl border-b-4 border-b-red-400 bg-white shadow-[0_16px_36px_rgba(48,46,43,0.08)] dark:border-stone-700 dark:bg-stone-900">
-                      {pid ?
-                        <Link
-                          to={`/positions/${pid}`}
-                          className="flex min-w-0 flex-1 flex-col justify-center gap-1 border-r border-stone-100 p-4 text-inherit no-underline transition hover:bg-stone-50/80 dark:border-stone-700 dark:hover:bg-stone-800/40"
-                        >
-                          {body}
-                        </Link>
-                      : <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 border-r border-stone-100 p-4 dark:border-stone-700">
-                          {body}
-                        </div>
-                      }
-                      <div className="flex shrink-0 flex-col justify-center gap-0.5 px-1 py-2">
-                        <button
-                          type="button"
-                          onClick={() => void completeOverdueTask.mutateAsync(t.id)}
-                          disabled={rowBusy}
-                          className={`${notifActionBtn} hover:text-emerald-600 dark:hover:text-emerald-400`}
-                          aria-label="Mark task done"
-                        >
-                          <Check className="h-5 w-5" strokeWidth={2.5} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void deleteOverdueTask.mutateAsync(t.id)}
-                          disabled={rowBusy}
-                          className={`${notifActionBtn} hover:text-red-600 dark:hover:text-red-400`}
-                          aria-label="Delete task"
-                        >
-                          <Trash2 className="h-5 w-5" />
-                        </button>
-                      </div>
-                    </div>
-                  </motion.li>
-                )
-              })}
-            </ul>
-          )}
-        </section>
-
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:items-start lg:gap-6">
         <section aria-labelledby="calendar-events-heading" className="min-w-0">
           <h2
             id="calendar-events-heading"
@@ -479,7 +351,7 @@ export function NotificationsPage() {
             Upcoming calendar events
           </h2>
           <p className="text-ink-muted mb-3 text-xs dark:text-stone-500">
-            Scheduled on your calendar (next 14 days). You can set an event reminder on the calendar; standalone reminders stay in the third column.
+            Scheduled on your calendar (next 14 days). You can set an event reminder on the calendar; standalone reminders are listed beside this column.
           </p>
           {upcomingEventsQ.isLoading ? (
             <p className="text-stitch-muted text-sm">Loading…</p>
