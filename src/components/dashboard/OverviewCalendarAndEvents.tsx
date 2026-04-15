@@ -251,28 +251,11 @@ export function OverviewCalendarAndEvents() {
             const dayEvents = eventsByDay.get(key) ?? []
             const inMonth = isSameMonth(day, cursor)
             const isToday = isSameDay(day, new Date())
-                       return (
+            return (
               <button
                 key={key}
                 type="button"
-                onClick={() => {
-                  // #region agent log
-                  fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ce4a42' },
-                    body: JSON.stringify({
-                      sessionId: 'ce4a42',
-                      runId: 'post-fix',
-                      hypothesisId: 'H1-verify',
-                      location: 'OverviewCalendarAndEvents.tsx:dayCell',
-                      message: 'dashboard_calendar_day_opens_local_modal',
-                      data: { dateKey: key, dayEventCount: dayEvents.length },
-                      timestamp: Date.now(),
-                    }),
-                  }).catch(() => {})
-                  // #endregion
-                  setPicked(day)
-                }}
+                onClick={() => setPicked(day)}
                 className={`flex min-h-[4.5rem] flex-col rounded-xl border border-stone-200/80 p-1 text-left text-[10px] transition hover:bg-stone-50/90 sm:min-h-[5rem] sm:text-xs dark:border-stone-600 dark:hover:bg-stone-800/50 ${
                   inMonth ? 'bg-white/90 dark:bg-stone-900/60' : 'opacity-40'
                 } ${isToday ? 'ring-2 ring-[#006384]/50 dark:ring-cyan-400/45' : ''}`}
