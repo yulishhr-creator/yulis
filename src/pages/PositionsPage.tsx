@@ -138,20 +138,12 @@ function PositionCard({
             >
               {p.title}
             </Link>
-            <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-1.5">
-              <span
-                className="rounded-xl bg-gradient-to-br from-[#006384]/20 to-[#97daff]/35 px-2.5 py-1 text-xs font-extrabold tabular-nums text-[#006384] ring-1 ring-[#006384]/25 dark:from-cyan-500/25 dark:to-teal-500/20 dark:text-cyan-200 dark:ring-cyan-400/30"
-                title="Days since role opened (opened-on date)"
-              >
-                {daysSinceOpened}d open
-              </span>
-              <span
-                className="rounded-xl bg-gradient-to-br from-[#fd8863]/35 to-[#97daff]/40 px-2.5 py-1 text-xs font-extrabold tabular-nums text-[#9b3e20] ring-1 ring-[#9b3e20]/25 dark:from-orange-500/30 dark:to-cyan-500/25 dark:text-orange-200 dark:ring-orange-400/35"
-                title="Days since this position was created in the system"
-              >
-                {daysSinceCreated}d new
-              </span>
-            </div>
+            <span
+              className="text-stitch-muted shrink-0 tabular-nums text-xs font-normal dark:text-stone-500"
+              title="Days open (role opened-on) / days since record created"
+            >
+              {daysSinceOpened}d / {daysSinceCreated}d
+            </span>
           </div>
           <div className="text-ink-muted mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs dark:text-stone-500">
             {showCompanyName ? (
@@ -215,32 +207,14 @@ function dropSlotKey(companyId: string, zone: DropZone): string {
 
 function columnHeading(zone: DropZone, title: string) {
   const base =
-    'mb-3 w-full text-center text-[11px] font-extrabold uppercase tracking-[0.18em] sm:text-xs'
+    'mb-3 w-full border-b-2 pb-2 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-800 sm:text-xs dark:text-stone-200'
   if (zone === 'live') {
-    return (
-      <h4
-        className={`${base} rounded-2xl bg-gradient-to-r from-orange-100/95 via-amber-50 to-cyan-100/90 py-2.5 text-[#9b3e20] shadow-sm dark:from-orange-950/60 dark:via-stone-900/80 dark:to-cyan-950/40 dark:text-orange-200`}
-      >
-        {title}
-      </h4>
-    )
+    return <h4 className={`${base} border-[#9b3e20]`}>{title}</h4>
   }
   if (zone === 'succeeded') {
-    return (
-      <h4
-        className={`${base} rounded-2xl bg-gradient-to-r from-emerald-100 to-teal-50 py-2.5 text-emerald-900 shadow-sm dark:from-emerald-950/70 dark:to-teal-950/50 dark:text-emerald-100`}
-      >
-        {title}
-      </h4>
-    )
+    return <h4 className={`${base} border-emerald-700 dark:border-emerald-600`}>{title}</h4>
   }
-  return (
-    <h4
-      className={`${base} rounded-2xl bg-gradient-to-r from-stone-200/90 to-stone-100 py-2.5 text-stone-700 shadow-sm dark:from-stone-800 dark:to-stone-900 dark:text-stone-200`}
-    >
-      {title}
-    </h4>
-  )
+  return <h4 className={`${base} border-stone-400 dark:border-stone-500`}>{title}</h4>
 }
 
 function CompanyBoardColumn({
@@ -563,7 +537,7 @@ export function PositionsPage() {
     clientPipelineHeadlineLoading || (Boolean(scopedCompanyId) && clientTaskKpisPending)
   const clientCandCount = clientHeadline?.activeCandidateCount ?? 0
   const clientPosCount = clientHeadline?.activePositionCount ?? 0
-  const clientOpenTasksCount = (clientTaskKpis?.todo ?? 0) + (clientTaskKpis?.inProgress ?? 0)
+  const clientOpenTasksCount = clientTaskKpis?.open ?? 0
 
   /** Drop stale ?company= from URL once we know client list */
   useEffect(() => {

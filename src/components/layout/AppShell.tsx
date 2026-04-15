@@ -62,9 +62,8 @@ const myTasksGroup = {
 } as const
 
 const TASK_STATUS_SIDEBAR = [
-  { param: 'todo' as const, label: 'To do', countKey: 'todo' as const },
-  { param: 'in_progress' as const, label: 'In progress', countKey: 'inProgress' as const },
-  { param: 'done' as const, label: 'Done', countKey: 'done' as const },
+  { param: 'open' as const, label: 'Open', countKey: 'open' as const },
+  { param: 'closed' as const, label: 'Closed', countKey: 'closed' as const },
 ] as const
 
 function greeting(): string {

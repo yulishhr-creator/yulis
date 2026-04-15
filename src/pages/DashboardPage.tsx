@@ -74,11 +74,11 @@ function DashboardHome() {
             <p className="text-stitch-muted mt-0.5 text-xs dark:text-stone-500">Open or on-hold roles with someone in the pipeline</p>
           </div>
           <div className="rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 dark:border-stone-600 dark:bg-stone-900/70">
-            <p className="text-ink-muted text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Tasks waiting</p>
+            <p className="text-ink-muted text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Open tasks</p>
             <p className="text-stitch-on-surface mt-1 text-2xl font-extrabold tabular-nums dark:text-stone-100">
-              {taskKpisPending ? '–' : (taskKpis?.todo ?? 0) + (taskKpis?.inProgress ?? 0)}
+              {taskKpisPending ? '–' : taskKpis?.open ?? 0}
             </p>
-            <p className="text-stitch-muted mt-0.5 text-xs dark:text-stone-500">To do + in progress</p>
+            <p className="text-stitch-muted mt-0.5 text-xs dark:text-stone-500">Waiting to be completed</p>
           </div>
           <Link
             to="/tasks"
@@ -87,9 +87,9 @@ function DashboardHome() {
             <p className="text-ink-muted text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Task completion</p>
             <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className="text-stitch-on-surface text-2xl font-extrabold tabular-nums dark:text-stone-100">
-                {taskKpisPending ? '–' : taskKpis?.done ?? 0}
+                {taskKpisPending ? '–' : taskKpis?.closed ?? 0}
               </span>
-              <span className="text-stitch-muted text-sm dark:text-stone-500">done</span>
+              <span className="text-stitch-muted text-sm dark:text-stone-500">closed</span>
             </div>
             <p className="text-accent mt-2 text-xs font-bold underline dark:text-orange-300">Open tasks →</p>
           </Link>

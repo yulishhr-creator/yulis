@@ -4,9 +4,9 @@ import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 
 export type DashboardTaskKpis = {
-  todo: number
-  inProgress: number
-  done: number
+  open: number
+  closed: number
+  archived: number
 }
 
 /**
@@ -34,23 +34,23 @@ export function useDashboardTaskKpis(companyId?: string | null, options?: { enab
         if (pe) throw pe
         positionIds = (posRows ?? []).map((r) => r.id as string)
         if (positionIds.length === 0) {
-          return { todo: 0, inProgress: 0, done: 0 }
+          return { open: 0, closed: 0, archived: 0 }
         }
       }
 
-      const baseTodo = supabase!.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', uid!).eq('status', 'todo')
-      const baseInProgress = supabase!.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', uid!).eq('status', 'in_progress')
-      const baseDone = supabase!.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', uid!).eq('status', 'done')
+      const baseOpen = supabase!.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', uid!).eq('status', 'open')
+      const baseClosed = supabase!.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', uid!).eq('status', 'closed')
+      const baseArchived = supabase!.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', uid!).eq('status', 'archived')
 
-      const todoQ = positionIds ? baseTodo.in('position_id', positionIds) : baseTodo
-      const inProgressQ = positionIds ? baseInProgress.in('position_id', positionIds) : baseInProgress
-      const doneQ = positionIds ? baseDone.in('position_id', positionIds) : baseDone
+      const openQ = positionIds ? baseOpen.in('position_id', positionIds) : baseOpen
+      const closedQ = positionIds ? baseClosed.in('position_id', positionIds) : baseClosed
+      const archivedQ = positionIds ? baseArchived.in('position_id', positionIds) : baseArchived
 
-      const [todoR, inProgressR, doneR] = await Promise.all([todoQ, inProgressQ, doneQ])
+      const [openR, closedR, archivedR] = await Promise.all([openQ, closedQ, archivedQ])
       return {
-        todo: todoR.count ?? 0,
-        inProgress: inProgressR.count ?? 0,
-        done: doneR.count ?? 0,
+        open: openR.count ?? 0,
+        closed: closedR.count ?? 0,
+        archived: archivedR.count ?? 0,
       }
     },
   })
