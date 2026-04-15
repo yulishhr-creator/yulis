@@ -38,7 +38,7 @@ import { useToast } from '@/hooks/useToast'
 import { criticalStageThreshold, logActivityEvent } from '@/lib/activityLog'
 import { formatAssignmentStatus } from '@/lib/candidateStatus'
 import { logPositionCandidateTransition } from '@/lib/positionTransitions'
-import { normalizeRequirementsText } from '@/lib/requirementValues'
+import { isMissingRequirementsColumnError, normalizeRequirementsText, parseRequirementTokens } from '@/lib/requirementValues'
 
 type StageRow = {
   id: string
@@ -415,6 +415,11 @@ export function PositionDetailPage() {
 
   const [title, setTitle] = useState('')
   const [requirements, setRequirements] = useState('')
+  const [hiringManagerName, setHiringManagerName] = useState('')
+  const [hiringManagerEmail, setHiringManagerEmail] = useState('')
+  const [hiringManagerPhone, setHiringManagerPhone] = useState('')
+  const [salaryBudgetStr, setSalaryBudgetStr] = useState('')
+  const [recruitmentFeeStr, setRecruitmentFeeStr] = useState('')
   const [welcome1, setWelcome1] = useState('')
   const [welcome2, setWelcome2] = useState('')
   const [welcome3, setWelcome3] = useState('')
@@ -444,16 +449,30 @@ export function PositionDetailPage() {
   useEffect(() => {
     if (!position) return
     setTitle(position.title ?? '')
-    setRequirements(normalizeRequirementsText((position as { requirements?: unknown }).requirements))
+    const pos = position as {
+      requirements?: unknown
+      requirement_item_values?: unknown
+      hiring_manager_name?: string | null
+      hiring_manager_email?: string | null
+      hiring_manager_phone?: string | null
+      salary_budget?: number | null
+      planned_fee_ils?: number | null
+    }
+    let reqText = normalizeRequirementsText(pos.requirements)
+    if (!reqText && Array.isArray(pos.requirement_item_values)) {
+      reqText = (pos.requirement_item_values as string[]).filter(Boolean).join('\n')
+    }
+    setRequirements(reqText)
+    setHiringManagerName(pos.hiring_manager_name ?? '')
+    setHiringManagerEmail(pos.hiring_manager_email ?? '')
+    setHiringManagerPhone(pos.hiring_manager_phone ?? '')
+    setSalaryBudgetStr(pos.salary_budget != null ? String(pos.salary_budget) : '')
+    setRecruitmentFeeStr(pos.planned_fee_ils != null ? String(pos.planned_fee_ils) : '')
     setWelcome1(position.welcome_1 ?? '')
     setWelcome2(position.welcome_2 ?? '')
     setWelcome3(position.welcome_3 ?? '')
     setLinkedinSearchUrl((position as { linkedin_saved_search_url?: string | null }).linkedin_saved_search_url ?? '')
     setStatus(position.status ?? 'active')
-    const pf = position as { planned_fee_ils?: number | null; actual_fee_ils?: number | null; critical_stage_sort_order?: number | null }
-    setFeePlanned(pf.planned_fee_ils != null ? String(pf.planned_fee_ils) : '')
-    setFeeActual(pf.actual_fee_ils != null ? String(pf.actual_fee_ils) : '')
-    setFeeCriticalN(pf.critical_stage_sort_order != null ? String(pf.critical_stage_sort_order) : '3')
   }, [position])
 
   useEffect(() => {
@@ -492,27 +511,73 @@ export function PositionDetailPage() {
     await qc.invalidateQueries({ queryKey: ['position-activity', id] })
     await qc.invalidateQueries({ queryKey: ['position-public-list-token', id] })
     await qc.invalidateQueries({ queryKey: ['positions'] })
+    await qc.invalidateQueries({ queryKey: ['companies-positions-income'] })
     await qc.invalidateQueries({ queryKey: ['candidates'] })
     await qc.invalidateQueries({ queryKey: ['tasks-page'] })
     await qc.invalidateQueries({ queryKey: ['position-tasks', id] })
     await qc.invalidateQueries({ queryKey: ['notification-count'] })
   }
 
-  const savePos = useMutation({
-    mutationFn: async () => {
-      const { error } = await supabase!
+  async function saveJobDescription(next: string) {
+    const trimmed = next.trim() || null
+    const { error } = await supabase!
+      .from('positions')
+      .update({ requirements: trimmed })
+      .eq('id', id!)
+      .eq('user_id', user!.id)
+    if (!error) {
+      setRequirements(normalizeRequirementsText(trimmed ?? ''))
+      success('Saved')
+      await invalidateAll()
+      return
+    }
+    if (isMissingRequirementsColumnError(error.message)) {
+      const tokens = parseRequirementTokens(next)
+      const { error: e2 } = await supabase!
         .from('positions')
-        .update({
-          title: title.trim() || 'Untitled',
-          requirements: requirements.trim() || null,
-          welcome_1: welcome1.trim() || null,
-          welcome_2: welcome2.trim() || null,
-          welcome_3: welcome3.trim() || null,
-          linkedin_saved_search_url: linkedinSearchUrl.trim() || null,
-          status,
-        })
+        .update({ requirement_item_values: tokens } as never)
         .eq('id', id!)
         .eq('user_id', user!.id)
+      if (e2) {
+        toastError(e2.message)
+        return
+      }
+      setRequirements(tokens.length ? tokens.join('\n') : '')
+      success('Saved')
+      await invalidateAll()
+      return
+    }
+    toastError(error.message)
+  }
+
+  function parseIlsAmountInput(raw: string): number | null | 'invalid' {
+    const t = raw.replace(/,/g, '').trim()
+    if (!t) return null
+    const n = Number(t)
+    return Number.isFinite(n) ? n : 'invalid'
+  }
+
+  const savePos = useMutation({
+    mutationFn: async () => {
+      const base = {
+        title: title.trim() || 'Untitled',
+        welcome_1: welcome1.trim() || null,
+        welcome_2: welcome2.trim() || null,
+        welcome_3: welcome3.trim() || null,
+        linkedin_saved_search_url: linkedinSearchUrl.trim() || null,
+        status,
+      }
+      const withRequirements = { ...base, requirements: requirements.trim() || null }
+      let { error } = await supabase!.from('positions').update(withRequirements).eq('id', id!).eq('user_id', user!.id)
+      if (error && isMissingRequirementsColumnError(error.message)) {
+        const tokens = parseRequirementTokens(requirements)
+        const { error: e2 } = await supabase!
+          .from('positions')
+          .update({ ...base, requirement_item_values: tokens } as never)
+          .eq('id', id!)
+          .eq('user_id', user!.id)
+        error = e2
+      }
       if (error) throw error
     },
     onSuccess: async () => {
@@ -654,33 +719,6 @@ export function PositionDetailPage() {
     await supabase!.from('position_stages').update({ sort_order: a.sort_order }).eq('id', b.id)
     await qc.invalidateQueries({ queryKey: ['position-stages', id] })
   }
-
-  const [feePlanned, setFeePlanned] = useState('')
-  const [feeActual, setFeeActual] = useState('')
-  const [feeCriticalN, setFeeCriticalN] = useState('3')
-
-  const saveFees = useMutation({
-    mutationFn: async () => {
-      const crit = feeCriticalN.trim() ? Number(feeCriticalN) : null
-      const { error } = await supabase!
-        .from('positions')
-        .update({
-          planned_fee_ils: feePlanned.trim() ? Number(feePlanned) : null,
-          actual_fee_ils: feeActual.trim() ? Number(feeActual) : null,
-          critical_stage_sort_order: crit != null && !Number.isNaN(crit) ? crit : null,
-        })
-        .eq('id', id!)
-        .eq('user_id', user!.id)
-      if (error) throw error
-    },
-    onSuccess: async () => {
-      success('Fees saved')
-      await qc.invalidateQueries({ queryKey: ['position', id] })
-      await qc.invalidateQueries({ queryKey: ['positions'] })
-      await qc.invalidateQueries({ queryKey: ['companies-positions-income'] })
-    },
-    onError: (e: Error) => toastError(e.message),
-  })
 
   const [importError, setImportError] = useState<string | null>(null)
 
@@ -1763,9 +1801,7 @@ export function PositionDetailPage() {
 
       {tab === 'details' ? (
         <section className="border-line max-w-3xl rounded-2xl border border-stone-200/80 bg-white/70 p-5 dark:border-line-dark dark:bg-stone-900/45">
-          <h2 className="text-stitch-on-surface text-xs font-extrabold tracking-wide uppercase dark:text-stone-300">
-            Position details
-          </h2>
+          <h2 className="text-stitch-on-surface text-lg font-extrabold tracking-tight dark:text-stone-100">Details</h2>
           <div className="mt-4 flex flex-col gap-1">
             <DetailHoverField
               label="Title"
@@ -1786,74 +1822,119 @@ export function PositionDetailPage() {
               }}
             />
             <DetailHoverField
-              label="Requirements from client"
+              label="Job description"
               value={requirements}
               multiline
               rows={10}
               onSave={async (next) => {
+                await saveJobDescription(next)
+              }}
+            />
+            <DetailHoverField
+              label="Interviewer (hiring manager)"
+              value={hiringManagerName}
+              onSave={async (next) => {
+                const v = next.trim() || null
                 const { error } = await supabase!
                   .from('positions')
-                  .update({ requirements: next.trim() || null })
+                  .update({ hiring_manager_name: v })
                   .eq('id', id!)
                   .eq('user_id', user!.id)
                 if (error) toastError(error.message)
                 else {
-                  setRequirements(normalizeRequirementsText(next))
+                  setHiringManagerName(v ?? '')
                   success('Saved')
                   await invalidateAll()
                 }
               }}
             />
-            <div className="mt-4 rounded-xl border border-stone-200/80 bg-white/50 px-1 py-3 dark:border-stone-600 dark:bg-stone-900/30">
-              <p className="text-stitch-muted px-1 text-[11px] font-bold tracking-wide uppercase dark:text-stone-500">Fees &amp; milestones</p>
-              <p className="text-ink-muted mt-1 px-1 text-xs dark:text-stone-500">
-                Planned and actual fees (ILS) and when a candidate counts as reaching a milestone stage (by stage sort order).
-              </p>
-              <form
-                className="mt-3 max-w-lg space-y-3 px-1"
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  void saveFees.mutateAsync()
-                }}
-              >
-                <label className="block text-sm font-medium">
-                  Critical stage threshold (sort order ≥ this = milestone)
-                  <input
-                    value={feeCriticalN}
-                    onChange={(e) => setFeeCriticalN(e.target.value)}
-                    inputMode="numeric"
-                    className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                  />
-                </label>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="text-sm font-medium">
-                    Planned fee (ILS)
-                    <input
-                      value={feePlanned}
-                      onChange={(e) => setFeePlanned(e.target.value)}
-                      inputMode="decimal"
-                      className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                    />
-                  </label>
-                  <label className="text-sm font-medium">
-                    Actual fee (ILS)
-                    <input
-                      value={feeActual}
-                      onChange={(e) => setFeeActual(e.target.value)}
-                      inputMode="decimal"
-                      className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                    />
-                  </label>
-                </div>
-                <button
-                  type="submit"
-                  disabled={saveFees.isPending}
-                  className="bg-accent text-stone-50 rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-50"
-                >
-                  {saveFees.isPending ? 'Saving…' : 'Save fees'}
-                </button>
-              </form>
-            </div>
+            <DetailHoverField
+              label="Hiring manager email"
+              value={hiringManagerEmail}
+              onSave={async (next) => {
+                const v = next.trim() || null
+                const { error } = await supabase!
+                  .from('positions')
+                  .update({ hiring_manager_email: v })
+                  .eq('id', id!)
+                  .eq('user_id', user!.id)
+                if (error) toastError(error.message)
+                else {
+                  setHiringManagerEmail(v ?? '')
+                  success('Saved')
+                  await invalidateAll()
+                }
+              }}
+            />
+            <DetailHoverField
+              label="Hiring manager phone"
+              value={hiringManagerPhone}
+              onSave={async (next) => {
+                const v = next.trim() || null
+                const { error } = await supabase!
+                  .from('positions')
+                  .update({ hiring_manager_phone: v })
+                  .eq('id', id!)
+                  .eq('user_id', user!.id)
+                if (error) toastError(error.message)
+                else {
+                  setHiringManagerPhone(v ?? '')
+                  success('Saved')
+                  await invalidateAll()
+                }
+              }}
+            />
+            <DetailHoverField
+              label="Client salary budget (ILS)"
+              value={salaryBudgetStr}
+              onSave={async (next) => {
+                const parsed = parseIlsAmountInput(next)
+                if (parsed === 'invalid') {
+                  toastError('Enter a valid number or leave empty.')
+                  return
+                }
+                const { error } = await supabase!
+                  .from('positions')
+                  .update({ salary_budget: parsed })
+                  .eq('id', id!)
+                  .eq('user_id', user!.id)
+                if (error) toastError(error.message)
+                else {
+                  setSalaryBudgetStr(parsed != null ? String(parsed) : '')
+                  success('Saved')
+                  await invalidateAll()
+                }
+              }}
+            />
+          </div>
+
+          <h2 className="text-stitch-on-surface mt-10 text-lg font-extrabold tracking-tight dark:text-stone-100">Milestones &amp; fees</h2>
+          <p className="text-ink-muted mt-2 text-xs dark:text-stone-500">
+            Recruitment fee for this role — the amount you expect from the client (same as in the creation flow).
+          </p>
+          <div className="mt-3 flex flex-col gap-1">
+            <DetailHoverField
+              label="Recruitment fee (ILS)"
+              value={recruitmentFeeStr}
+              onSave={async (next) => {
+                const parsed = parseIlsAmountInput(next)
+                if (parsed === 'invalid') {
+                  toastError('Enter a valid number or leave empty.')
+                  return
+                }
+                const { error } = await supabase!
+                  .from('positions')
+                  .update({ planned_fee_ils: parsed })
+                  .eq('id', id!)
+                  .eq('user_id', user!.id)
+                if (error) toastError(error.message)
+                else {
+                  setRecruitmentFeeStr(parsed != null ? String(parsed) : '')
+                  success('Saved')
+                  await invalidateAll()
+                }
+              }}
+            />
           </div>
         </section>
       ) : null}
