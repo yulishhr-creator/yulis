@@ -30,7 +30,6 @@ import { useWorkTimer } from '@/work/WorkTimerContext'
 import { useToast } from '@/hooks/useToast'
 import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
 import { useSidebarOpenPositionCounts } from '@/hooks/useSidebarOpenPositionCounts'
-import { sidebarDailyPhrase } from '@/lib/sidebarDailyPhrases'
 
 /** Section: Candidates & Positions (dashboard + client-scoped positions) */
 const candidatesPositionsGroup = {
@@ -255,8 +254,8 @@ export function AppShell() {
                 <p className="text-ink truncate text-sm font-semibold dark:text-stone-100">
                   {greeting()}, {displayName}
                 </p>
-                <p className="text-ink-muted line-clamp-2 text-[10px] font-semibold tracking-wide dark:text-stone-400" title={sidebarDailyPhrase()}>
-                  {sidebarDailyPhrase()}
+                <p className="text-ink-muted text-[10px] font-semibold tracking-wide dark:text-stone-400">
+                  Keep pushing Forward
                 </p>
               </motion.div>
               <button
@@ -363,27 +362,6 @@ export function AppShell() {
               <span className="text-ink text-[11px] font-bold tracking-[0.14em] dark:text-stone-300">Tasks</span>
             </div>
             <ul className="border-line ml-2 space-y-0.5 border-l border-dashed pl-2 dark:border-line-dark" role="list">
-              <li>
-                <NavLink
-                  to={`/tasks${tasksLinkSearch(null)}`}
-                  className={`group relative flex items-center justify-between gap-2 overflow-hidden rounded-lg py-2 pr-2 pl-3 text-sm font-medium transition-all duration-200 ${
-                    tasksPathActive && !taskStatusParam
-                      ? `bg-gradient-to-r text-stitch-on-surface shadow-sm ring-1 dark:text-stone-100 ${myTasksGroup.activeRow}`
-                      : 'text-ink-muted hover:bg-white/75 hover:text-ink dark:text-stone-400 dark:hover:bg-stone-800/85 dark:hover:text-stone-100'
-                  }`}
-                >
-                  <span className="relative z-10 min-w-0 flex-1 truncate">All tasks</span>
-                  <span
-                    className={`relative z-10 tabular-nums rounded-lg px-2 py-0.5 text-xs font-bold ${
-                      tasksPathActive && !taskStatusParam
-                        ? 'bg-white/55 text-stitch-on-surface dark:bg-stone-900/40 dark:text-stone-100'
-                        : 'bg-stone-200/80 text-ink dark:bg-stone-800 dark:text-stone-300'
-                    }`}
-                  >
-                    {taskKpisPending ? '–' : String((taskKpis?.todo ?? 0) + (taskKpis?.inProgress ?? 0) + (taskKpis?.done ?? 0))}
-                  </span>
-                </NavLink>
-              </li>
               {TASK_STATUS_SIDEBAR.map(({ param, label, countKey }) => {
                 const count = taskKpis?.[countKey]
                 const displayCount = taskKpisPending && count === undefined ? '–' : String(count ?? 0)
