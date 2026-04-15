@@ -1,10 +1,10 @@
-import { weekProgressBarPhrase } from '@/lib/weekProgressBarPhrases'
+import { sidebarDailyProgressQuote } from '@/lib/weekProgressBarPhrases'
 
 const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const
 
 function weekTowardFriday(now: Date) {
   const d = now.getDay()
-  const phrase = weekProgressBarPhrase(now)
+  const phrase = sidebarDailyProgressQuote(now)
   if (d === 6) {
     return {
       step: 0,
