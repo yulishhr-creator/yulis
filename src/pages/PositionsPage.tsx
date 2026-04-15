@@ -313,7 +313,7 @@ function CompanyBoardColumn({
 export function PositionsPage() {
   const { user } = useAuth()
   const supabase = getSupabase()
-  const [search] = useSearchParams()
+  const [search, setSearchParams] = useSearchParams()
   const qc = useQueryClient()
   const { success, error: toastError } = useToast()
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -478,7 +478,22 @@ export function PositionsPage() {
     if (companyTab === 'all') return
     if (tabCompanies.some((c) => c.id === companyTab)) return
     setCompanyTab('all')
-  }, [companyTab, tabCompanies])
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('company')
+        return next
+      },
+      { replace: true },
+    )
+  }, [companyTab, tabCompanies, setSearchParams])
+
+  const companyFromUrl = search.get('company')
+  useEffect(() => {
+    if (!companyFromUrl) return
+    if (!tabCompanies.some((c) => c.id === companyFromUrl)) return
+    setCompanyTab(companyFromUrl)
+  }, [companyFromUrl, tabCompanies])
 
   return (
     <div className="flex flex-col gap-6">
@@ -546,7 +561,17 @@ export function PositionsPage() {
               type="button"
               role="tab"
               aria-selected={companyTab === 'all'}
-              onClick={() => setCompanyTab('all')}
+              onClick={() => {
+                setCompanyTab('all')
+                setSearchParams(
+                  (prev) => {
+                    const next = new URLSearchParams(prev)
+                    next.delete('company')
+                    return next
+                  },
+                  { replace: true },
+                )
+              }}
               className={`rounded-full px-4 py-2 text-xs font-bold transition ${
                 companyTab === 'all'
                   ? 'bg-[#9b3e20] text-white dark:bg-orange-600'
@@ -561,7 +586,17 @@ export function PositionsPage() {
                 type="button"
                 role="tab"
                 aria-selected={companyTab === c.id}
-                onClick={() => setCompanyTab(c.id)}
+                onClick={() => {
+                  setCompanyTab(c.id)
+                  setSearchParams(
+                    (prev) => {
+                      const next = new URLSearchParams(prev)
+                      next.set('company', c.id)
+                      return next
+                    },
+                    { replace: true },
+                  )
+                }}
                 className={`max-w-[14rem] truncate rounded-full px-4 py-2 text-xs font-bold transition ${
                   companyTab === c.id
                     ? 'bg-[#9b3e20] text-white dark:bg-orange-600'

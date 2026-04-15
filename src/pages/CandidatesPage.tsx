@@ -93,6 +93,7 @@ export function CandidatesPage() {
   const navigate = useNavigate()
   const { success, error: toastError } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
+  const companyFromUrl = searchParams.get('company')
   const showAssignHint = searchParams.get('assign') === '1'
   const openNewCandidateFromQuery = searchParams.get('new') === '1'
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'archived'>('active')
@@ -141,6 +142,21 @@ export function CandidatesPage() {
       { replace: true },
     )
   }, [openNewCandidateFromQuery, setSearchParams])
+
+  const companiesQ = useQuery({
+    queryKey: ['companies', uid],
+    enabled: Boolean(supabase && uid),
+    queryFn: async () => {
+      const { data, error } = await supabase!
+        .from('companies')
+        .select('id, name')
+        .eq('user_id', uid!)
+        .is('deleted_at', null)
+        .order('name')
+      if (error) throw error
+      return (data ?? []) as { id: string; name: string }[]
+    },
+  })
 
   const q = useQuery({
     queryKey: ['all-candidates', uid, statusFilter],
@@ -350,11 +366,38 @@ export function CandidatesPage() {
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
   }, [rows])
 
+  const clientTabs = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const c of companiesQ.data ?? []) {
+      map.set(c.id, c.name?.trim() || 'Client')
+    }
+    for (const c of companiesInView) {
+      map.set(c.id, c.name)
+    }
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+  }, [companiesQ.data, companiesInView])
+
   useEffect(() => {
     if (companyTab === 'all') return
-    if (companiesInView.some((co) => co.id === companyTab)) return
+    if (clientTabs.some((co) => co.id === companyTab)) return
     setCompanyTab('all')
-  }, [companiesInView, companyTab])
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('company')
+        return next
+      },
+      { replace: true },
+    )
+  }, [clientTabs, companyTab, setSearchParams])
+
+  useEffect(() => {
+    if (!companyFromUrl) return
+    if (!clientTabs.some((co) => co.id === companyFromUrl)) return
+    setCompanyTab(companyFromUrl)
+  }, [companyFromUrl, clientTabs])
 
   const filteredRows = useMemo(() => {
     let list = rows.filter((c) => candidateMatchesSearch(c, search))
@@ -569,7 +612,7 @@ export function CandidatesPage() {
           </div>
         </div>
 
-        {companiesInView.length > 0 ? (
+        {clientTabs.length > 0 ? (
           <div>
             <p className="text-ink-muted mb-2 text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Client</p>
             <div className="flex flex-wrap gap-2" role="tablist" aria-label="Filter by client">
@@ -577,7 +620,17 @@ export function CandidatesPage() {
                 type="button"
                 role="tab"
                 aria-selected={companyTab === 'all'}
-                onClick={() => setCompanyTab('all')}
+                onClick={() => {
+                  setCompanyTab('all')
+                  setSearchParams(
+                    (prev) => {
+                      const next = new URLSearchParams(prev)
+                      next.delete('company')
+                      return next
+                    },
+                    { replace: true },
+                  )
+                }}
                 className={`rounded-full px-3 py-1 text-xs font-bold transition ${
                   companyTab === 'all'
                     ? 'bg-[#006384] text-white dark:bg-cyan-700'
@@ -586,13 +639,23 @@ export function CandidatesPage() {
               >
                 All clients
               </button>
-              {companiesInView.map((co) => (
+              {clientTabs.map((co) => (
                 <button
                   key={co.id}
                   type="button"
                   role="tab"
                   aria-selected={companyTab === co.id}
-                  onClick={() => setCompanyTab(co.id)}
+                  onClick={() => {
+                    setCompanyTab(co.id)
+                    setSearchParams(
+                      (prev) => {
+                        const next = new URLSearchParams(prev)
+                        next.set('company', co.id)
+                        return next
+                      },
+                      { replace: true },
+                    )
+                  }}
                   className={`max-w-[14rem] truncate rounded-full px-3 py-1 text-xs font-bold transition ${
                     companyTab === co.id
                       ? 'bg-[#006384] text-white dark:bg-cyan-700'

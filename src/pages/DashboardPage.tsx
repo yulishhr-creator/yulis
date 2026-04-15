@@ -44,6 +44,7 @@ export function DashboardPage() {
   const [taskTemplateId, setTaskTemplateId] = useState('')
   const [saveTaskAsTemplate, setSaveTaskAsTemplate] = useState(false)
   const taskStatusParam = searchParams.get('taskStatus')
+  const companyParam = searchParams.get('company')
   const taskStatusFilter =
     taskStatusParam === 'todo' || taskStatusParam === 'in_progress' || taskStatusParam === 'done' ? taskStatusParam : null
 
@@ -241,6 +242,17 @@ export function DashboardPage() {
   }, [tasks, companyTaskFilter])
 
   useEffect(() => {
+    if (!companyParam) return
+    setCompanyTaskFilter(new Set([companyParam]))
+  }, [companyParam])
+
+  const displayTopPositions = useMemo(() => {
+    const rows = topPositionsQ.data ?? []
+    if (!companyParam) return rows
+    return rows.filter((p) => p.company_id === companyParam)
+  }, [topPositionsQ.data, companyParam])
+
+  useEffect(() => {
     function onDoc(e: MouseEvent) {
       if (!companyFilterRef.current?.contains(e.target as Node)) setCompanyFilterOpen(false)
     }
@@ -329,7 +341,7 @@ export function DashboardPage() {
   })
 
   const pipelineHints = useMemo(() => {
-    const rows = topPositionsQ.data ?? []
+    const rows = displayTopPositions
     const stuck: string[] = []
     const stale: string[] = []
     const now = new Date()
@@ -354,7 +366,7 @@ export function DashboardPage() {
       }
     }
     return { stuck, stale }
-  }, [topPositionsQ.data])
+  }, [displayTopPositions])
 
   useEffect(() => {
     if (!trackOpen) return
@@ -914,11 +926,11 @@ export function DashboardPage() {
         <div className="border-stitch-on-surface/10 border-t px-4 pb-4 dark:border-stone-700">
           {topPositionsQ.isLoading ? (
             <p className="text-stitch-muted text-sm">Loading…</p>
-          ) : (topPositionsQ.data ?? []).length === 0 ? (
+          ) : displayTopPositions.length === 0 ? (
             <p className="text-stitch-muted text-sm">No positions yet.</p>
           ) : (
             <ul className="space-y-3">
-              {(topPositionsQ.data ?? []).map((p) => {
+              {displayTopPositions.map((p) => {
                 const company = (p.companies as unknown as { name: string } | null)?.name
                 const cands =
                   (p.position_candidates as unknown as Array<{
