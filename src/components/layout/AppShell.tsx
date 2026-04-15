@@ -29,6 +29,7 @@ import { PwaInstallPrompt } from '@/components/pwa/PwaInstallPrompt'
 import { useWorkTimer } from '@/work/WorkTimerContext'
 import { useToast } from '@/hooks/useToast'
 import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
+import { useSidebarOpenPositionCounts } from '@/hooks/useSidebarOpenPositionCounts'
 
 /** Section: Candidates & Positions (dashboard + client-scoped positions) */
 const candidatesPositionsGroup = {
@@ -116,6 +117,7 @@ export function AppShell() {
   }
   const positionsPathActive = location.pathname === '/positions'
   const { data: taskKpis, isPending: taskKpisPending } = useDashboardTaskKpis()
+  const { data: openPositionCounts, isPending: openPositionCountsPending } = useSidebarOpenPositionCounts()
   const { data: sidebarCompanies = [] } = useQuery({
     queryKey: ['companies', user?.id],
     enabled: Boolean(supabase && user?.id),
@@ -286,46 +288,75 @@ export function AppShell() {
               to="/"
               aria-current={candidatesSectionAllActive ? 'page' : undefined}
               title="All candidates and positions"
-              className={`group flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-bold tracking-wide uppercase transition-all duration-200 ${
+              aria-label={
+                openPositionCountsPending
+                  ? 'Candidates and positions, loading count'
+                  : `Candidates and positions, ${openPositionCounts?.total ?? 0} open or on-hold roles`
+              }
+              className={`group flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs font-bold tracking-wide uppercase transition-all duration-200 ${
                 candidatesSectionAllActive
                   ? `bg-gradient-to-r text-stitch-on-surface shadow-sm ring-1 dark:text-stone-100 ${candidatesPositionsGroup.activeRow}`
                   : 'text-ink-muted hover:bg-white/75 dark:text-stone-500 dark:hover:bg-stone-800/85'
               }`}
             >
-              <span
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br transition-all ${
-                  candidatesSectionAllActive
-                    ? candidatesPositionsGroup.activeIcon
-                    : `${candidatesPositionsGroup.idleIcon} group-hover:brightness-105 dark:group-hover:brightness-110`
-                }`}
-              >
-                <LayoutDashboard className="h-[18px] w-[18px]" aria-hidden />
+              <span className="flex min-w-0 flex-1 items-center gap-3">
+                <span
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br transition-all ${
+                    candidatesSectionAllActive
+                      ? candidatesPositionsGroup.activeIcon
+                      : `${candidatesPositionsGroup.idleIcon} group-hover:brightness-105 dark:group-hover:brightness-110`
+                  }`}
+                >
+                  <LayoutDashboard className="h-[18px] w-[18px]" aria-hidden />
+                </span>
+                <span
+                  className={`min-w-0 truncate text-[11px] font-bold tracking-[0.14em] ${
+                    candidatesSectionAllActive ? '' : 'text-ink dark:text-stone-300'
+                  }`}
+                >
+                  Candidates &amp; Positions
+                </span>
               </span>
               <span
-                className={`min-w-0 flex-1 text-[11px] font-bold tracking-[0.14em] ${
-                  candidatesSectionAllActive ? '' : 'text-ink dark:text-stone-300'
+                className={`relative z-10 shrink-0 tabular-nums rounded-lg px-2 py-0.5 text-[11px] font-bold ${
+                  candidatesSectionAllActive
+                    ? 'bg-white/55 text-stitch-on-surface dark:bg-stone-900/40 dark:text-stone-100'
+                    : 'bg-stone-200/80 text-ink dark:bg-stone-800 dark:text-stone-300'
                 }`}
               >
-                Candidates &amp; Positions
+                {openPositionCountsPending ? '–' : String(openPositionCounts?.total ?? 0)}
               </span>
             </Link>
             <ul className="border-line ml-2 space-y-0.5 border-l border-dashed pl-2 dark:border-line-dark" role="list">
               {sidebarCompanies.map((co) => {
                 const isActive = positionsPathActive && companyParam === co.id
+                const coCount = openPositionCounts?.byCompany[co.id] ?? 0
+                const displayCoCount = openPositionCountsPending ? '–' : String(coCount)
                 return (
                   <li key={co.id}>
                     <NavLink
                       to={{ pathname: '/positions', search: `?company=${encodeURIComponent(co.id)}` }}
                       aria-current={isActive ? 'page' : undefined}
-                      className={`group relative flex items-center gap-2 overflow-hidden rounded-lg py-2 pr-2 pl-3 text-sm font-medium transition-all duration-200 ${
+                      className={`group relative flex items-center justify-between gap-2 overflow-hidden rounded-lg py-2 pr-2 pl-3 text-sm font-medium transition-all duration-200 ${
                         isActive
                           ? `bg-gradient-to-r text-stitch-on-surface shadow-sm ring-1 dark:text-stone-100 ${candidatesPositionsGroup.activeRow}`
                           : 'text-ink-muted hover:bg-white/75 hover:text-ink dark:text-stone-400 dark:hover:bg-stone-800/85 dark:hover:text-stone-100'
                       }`}
                       title={co.name}
                     >
-                      <Building2 className="text-ink-muted relative z-10 h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-                      <span className="relative z-10 min-w-0 flex-1 truncate">{co.name}</span>
+                      <span className="relative z-10 flex min-w-0 flex-1 items-center gap-2">
+                        <Building2 className="text-ink-muted h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                        <span className="min-w-0 truncate">{co.name}</span>
+                      </span>
+                      <span
+                        className={`relative z-10 shrink-0 tabular-nums rounded-lg px-2 py-0.5 text-xs font-bold ${
+                          isActive
+                            ? 'bg-white/55 text-stitch-on-surface dark:bg-stone-900/40 dark:text-stone-100'
+                            : 'bg-stone-200/80 text-ink dark:bg-stone-800 dark:text-stone-300'
+                        }`}
+                      >
+                        {displayCoCount}
+                      </span>
                     </NavLink>
                   </li>
                 )
