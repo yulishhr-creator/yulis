@@ -87,6 +87,14 @@ function formatTenureOnRoleShort(createdAt: string): string {
   return `${w}w`
 }
 
+/** Matches positions board column headers (PositionsPage columnHeading). */
+const pipelineStageHeadingClass =
+  'mb-3 w-full border-b-2 pb-2 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-800 sm:text-xs dark:text-stone-200 border-[#9b3e20]'
+
+/** Subsection heading — grey accent bar like cancelled column on positions board. */
+const pipelineSubsectionHeadingClass =
+  'mb-3 w-full border-b-2 border-stone-400 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-800 sm:text-xs dark:border-stone-500 dark:text-stone-200'
+
 type ActivityRow = {
   id: string
   event_type: string
@@ -1588,19 +1596,31 @@ export function PositionDetailPage() {
             openCandidateDrawer(candId)
           }
         }}
-        className={`border-line relative cursor-grab rounded-xl border bg-white p-3 pt-3 pr-3 shadow-sm active:cursor-grabbing dark:border-line-dark dark:bg-stone-800 ${
-          candidateDragId === c.id ? 'opacity-55' : ''
+        className={`border-line flex cursor-grab rounded-2xl border bg-white/70 transition-[opacity,box-shadow] active:cursor-grabbing dark:border-line-dark dark:bg-stone-900/45 ${
+          candidateDragId === c.id ? 'opacity-60 shadow-lg ring-2 ring-[#9b3e20]/30' : 'shadow-sm'
         }`}
       >
-        <span
-          className="absolute top-2 right-2 rounded-lg bg-gradient-to-br from-[#fd8863]/35 to-[#97daff]/40 px-2 py-0.5 text-[10px] font-extrabold tabular-nums text-[#9b3e20] ring-1 ring-[#9b3e20]/25 dark:from-orange-500/30 dark:to-cyan-500/25 dark:text-orange-200 dark:ring-orange-400/35"
-          title="Time on role"
+        <div
+          className="text-ink-muted hover:text-ink flex w-9 shrink-0 cursor-grab items-center justify-center border-r border-stone-200/80 active:cursor-grabbing dark:border-stone-600"
+          aria-hidden
         >
-          {tenure}
-        </span>
-        <div className="flex items-start gap-2 pr-12">
-          <GripVertical className="text-ink-muted mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-          <p className="min-w-0 flex-1 truncate font-semibold text-stone-900 dark:text-stone-100">{prof?.full_name ?? 'Unnamed'}</p>
+          <GripVertical className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1 px-3 py-2.5">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <p
+              className="min-w-0 flex-1 truncate text-base leading-snug font-semibold text-[#302e2b] dark:text-stone-100"
+              title={prof?.full_name ?? 'Unnamed'}
+            >
+              {prof?.full_name ?? 'Unnamed'}
+            </p>
+            <span
+              className="text-stitch-muted shrink-0 tabular-nums text-xs font-normal dark:text-stone-500"
+              title="Time on role"
+            >
+              {tenure}
+            </span>
+          </div>
         </div>
       </div>
     )
@@ -1989,7 +2009,7 @@ export function PositionDetailPage() {
       {tab === 'candidates' ? (
         <div className="relative">
           <section id="position-candidates-section" className="scroll-mt-24 space-y-4">
-            <p className="text-ink-muted text-sm dark:text-stone-400">
+            <p className="text-ink-muted text-xs dark:text-stone-400">
               Pipeline board: drag cards between stages. Click a card for actions, résumé, and history.
             </p>
 
@@ -2008,16 +2028,20 @@ export function PositionDetailPage() {
               }}
             />
 
-            <div className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]">
+            <div className="flex gap-4 overflow-x-auto pb-2 [scrollbar-width:thin]">
               {((): ReactNode => {
                 const stages = stagesQ.data ?? []
                 if (!stages.length) {
                   return (
-                    <div className="border-line flex min-h-[min(50vh,22rem)] min-w-[220px] max-w-[280px] shrink-0 flex-col rounded-2xl border border-stone-200/80 bg-white/85 p-2 dark:border-stone-600 dark:bg-stone-900/55">
-                      <h3 className="text-ink px-1 text-[11px] font-extrabold tracking-wide uppercase dark:text-stone-200">Pipeline</h3>
-                      <p className="text-ink-muted px-1 text-xs dark:text-stone-500">Add stages in workflow to organize candidates by step.</p>
-                      <div className="mt-2 flex flex-1 flex-col gap-2 overflow-y-auto">
-                        {pipelineKanbanCandidates.map((c) => renderPipelineKanbanCard(c))}
+                    <div className="border-line flex min-h-[min(50vh,22rem)] min-w-[220px] max-w-[280px] shrink-0 flex-col rounded-2xl border bg-white/50 p-3 shadow-sm dark:border-line-dark dark:bg-stone-900/40">
+                      <h3 className={pipelineStageHeadingClass}>Pipeline</h3>
+                      <p className="text-ink-muted px-1 py-3 text-xs dark:text-stone-500">Add stages in workflow to organize candidates by step.</p>
+                      <div className="mt-2 flex flex-1 flex-col gap-2 overflow-y-auto pt-1">
+                        {pipelineKanbanCandidates.length === 0 ? (
+                          <p className="text-ink-muted px-1 py-3 text-xs">None — drop a candidate here.</p>
+                        ) : (
+                          pipelineKanbanCandidates.map((c) => renderPipelineKanbanCard(c))
+                        )}
                       </div>
                     </div>
                   )
@@ -2031,24 +2055,30 @@ export function PositionDetailPage() {
                   return (
                     <div
                       key={st.id}
-                      className={`flex min-h-[min(50vh,22rem)] min-w-[220px] max-w-[280px] shrink-0 flex-col rounded-2xl border bg-white/85 p-2 dark:bg-stone-900/55 ${
-                        slotHot ? 'ring-2 ring-[#9b3e20]/45 dark:ring-orange-400/50' : 'border-stone-200/80 dark:border-stone-600'
+                      className={`border-line flex min-h-[min(50vh,22rem)] min-w-[220px] max-w-[280px] shrink-0 flex-col rounded-2xl border bg-white/50 p-3 shadow-sm dark:border-line-dark dark:bg-stone-900/40 ${
+                        slotHot ? 'ring-2 ring-[#9b3e20]/45 ring-offset-1 ring-offset-white dark:ring-orange-400/50 dark:ring-offset-stone-900' : ''
                       }`}
                       onDragOver={(e) => onCandidateDragOverStage(e, st.id)}
                       onDragLeave={(e) => onCandidateDragLeaveStage(e, st.id)}
                       onDrop={(e) => onCandidateDropStage(e, st.id)}
                     >
-                      <h3 className="text-ink px-1 text-[11px] font-extrabold tracking-wide uppercase dark:text-stone-200">{st.name}</h3>
-                      <div className="mt-2 flex flex-1 flex-col gap-2 overflow-y-auto">{cards.map((c) => renderPipelineKanbanCard(c))}</div>
+                      <h3 className={pipelineStageHeadingClass}>{st.name}</h3>
+                      <div className="flex flex-1 flex-col gap-2 overflow-y-auto pt-1">
+                        {cards.length === 0 ? (
+                          <p className="text-ink-muted px-1 py-3 text-xs">None — drop a candidate here.</p>
+                        ) : (
+                          cards.map((c) => renderPipelineKanbanCard(c))
+                        )}
+                      </div>
                     </div>
                   )
                 })
               })()}
             </div>
 
-            <section className="rounded-2xl border border-stone-200/80 bg-white/60 p-4 dark:border-stone-600 dark:bg-stone-900/40">
-              <h3 className="text-sm font-bold text-stone-800 dark:text-stone-200">Rejected &amp; withdrawn</h3>
-              <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">Filter the list — same tools as before for these assignments.</p>
+            <section className="border-line rounded-2xl border bg-white/50 p-4 shadow-sm dark:border-line-dark dark:bg-stone-900/40">
+              <h3 className={pipelineSubsectionHeadingClass}>Rejected &amp; withdrawn</h3>
+              <p className="text-ink-muted px-1 text-xs dark:text-stone-500">Filter the list — same tools as before for these assignments.</p>
               <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Filter candidates by status">
                 {(
                   [
