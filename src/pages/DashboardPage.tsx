@@ -8,7 +8,7 @@ import { differenceInCalendarDays } from 'date-fns'
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
-import { formatAssignmentStatus, positionLifecyclePill } from '@/lib/candidateStatus'
+import { assignmentStatusPill, positionLifecyclePill } from '@/lib/candidateStatus'
 
 function nestedOne<T>(v: T | T[] | null | undefined): T | null {
   if (v == null) return null
@@ -96,7 +96,7 @@ function DashboardHome() {
         .from('position_candidates')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', uid!)
-        .eq('status', 'in_progress')
+        .in('status', ['in_progress'])
         .in('position_id', posIds)
       if (cErr) throw cErr
       return { activeCandidateCount: count ?? 0, activePositionCount: posIds.length }
@@ -181,7 +181,7 @@ function DashboardHome() {
                   <>You&apos;re currently working on…</>
                 ) : (
                   <>
-                    You&apos;re currently working on {pipelineStats?.activeCandidateCount ?? 0} candidates within{' '}
+                    You&apos;re currently working on {pipelineStats?.activeCandidateCount ?? 0} active candidates within{' '}
                     {pipelineStats?.activePositionCount ?? 0}{' '}
                     {pipelineStats?.activePositionCount === 1 ? 'position' : 'positions'}.
                   </>
@@ -205,7 +205,7 @@ function DashboardHome() {
             <p className="text-stitch-on-surface mt-1 text-2xl font-extrabold tabular-nums dark:text-stone-100">
               {pipelineStats.activeCandidateCount}
             </p>
-            <p className="text-stitch-muted mt-0.5 text-xs dark:text-stone-500">In progress on open roles</p>
+            <p className="text-stitch-muted mt-0.5 text-xs dark:text-stone-500">In progress only — not rejected or withdrawn</p>
           </div>
           <div className="rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 dark:border-stone-600 dark:bg-stone-900/70">
             <p className="text-ink-muted text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Open positions</p>
@@ -340,7 +340,7 @@ function DashboardHome() {
                       updated_at: string
                       candidate_id: string
                       candidates: { id: string; full_name: string } | { id: string; full_name: string }[] | null
-                      position_stages: { name: string } | null
+                      position_stages: { name: string } | { name: string }[] | null
                     }>) ?? []
                   const pill = positionLifecyclePill(p.status as string)
                   return (
@@ -385,6 +385,8 @@ function DashboardHome() {
                             const cand = nestedOne(pc.candidates)
                             const cid = cand?.id ?? pc.candidate_id
                             const daysOnRole = differenceInCalendarDays(new Date(), new Date(pc.created_at))
+                            const stageName = nestedOne(pc.position_stages)?.name ?? '—'
+                            const stPill = assignmentStatusPill(pc.status)
                             return (
                               <li key={pc.id} className="flex flex-wrap items-center gap-2 text-sm">
                                 <Link
@@ -399,8 +401,11 @@ function DashboardHome() {
                                 >
                                   {daysOnRole}d
                                 </span>
-                                <span className="text-stitch-muted text-xs">
-                                  {pc.position_stages?.name ?? '—'} · {formatAssignmentStatus(pc.status)}
+                                <span className="text-stitch-muted text-xs">{stageName}</span>
+                                <span
+                                  className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${stPill.className}`}
+                                >
+                                  {stPill.label}
                                 </span>
                               </li>
                             )
