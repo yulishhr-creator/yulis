@@ -2,7 +2,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { differenceInCalendarDays, formatDistanceToNow } from 'date-fns'
-import { Mail, Phone, Search, UserPlus } from 'lucide-react'
+import { Mail, Phone, Plus, Search, UserPlus } from 'lucide-react'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
@@ -81,9 +81,6 @@ function candidateMatchesSearch(c: CandidateRow, raw: string): boolean {
   }
   return false
 }
-
-const newCandidateButtonClass =
-  'inline-flex shrink-0 items-center rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-4 py-2 text-sm font-bold text-white shadow-sm dark:from-orange-700 dark:to-orange-500'
 
 export function CandidatesPage() {
   const { user } = useAuth()
@@ -678,7 +675,9 @@ export function CandidatesPage() {
         right={
           <button
             type="button"
-            className={newCandidateButtonClass}
+            className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] text-white shadow-sm transition hover:brightness-105 dark:from-orange-700 dark:to-orange-500"
+            aria-label="New candidate"
+            title="New candidate"
             onClick={() => {
               setNewName('')
               setNewEmail('')
@@ -687,7 +686,7 @@ export function CandidatesPage() {
               setNewCandidateOpen(true)
             }}
           >
-            New
+            <Plus className="h-7 w-7 stroke-[2.5]" strokeLinecap="round" strokeLinejoin="round" aria-hidden />
           </button>
         }
       />
