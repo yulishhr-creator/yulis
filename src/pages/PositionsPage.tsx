@@ -8,10 +8,11 @@ import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { logActivityEvent } from '@/lib/activityLog'
-import { assignmentStatusPill, positionLifecyclePill } from '@/lib/candidateStatus'
+import { assignmentStatusPill } from '@/lib/candidateStatus'
 import { useToast } from '@/hooks/useToast'
 import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
 import { usePipelineHeadlineStats } from '@/hooks/usePipelineHeadlineStats'
+import { CompanyClientAvatar } from '@/components/companies/CompanyClientAvatar'
 import { CreatePositionWizard } from '@/pages/CreatePositionWizard'
 
 /** Tenure on role: days under a week, else rounded weeks (e.g. 5d, 2w). */
@@ -79,6 +80,7 @@ type PositionListItem = {
   company_id: string
   created_at: string
   updated_at?: string
+  opened_at?: string
   companies: unknown
   position_candidates?: BoardAssignmentRow[] | null
 }
@@ -97,8 +99,9 @@ function PositionCard({
   showCompanyName?: boolean
 }) {
   const co = p.companies as { name: string } | null
-  const daysSince = differenceInCalendarDays(new Date(), new Date(p.created_at))
-  const pill = positionLifecyclePill(p.status)
+  const openedRef = p.opened_at ? `${p.opened_at}T12:00:00` : p.created_at
+  const daysSinceOpened = differenceInCalendarDays(new Date(), new Date(openedRef))
+  const daysSinceCreated = differenceInCalendarDays(new Date(), new Date(p.created_at))
   const cands = (p.position_candidates ?? []).filter((pc) => {
     const c = boardCandidateOne(pc.candidates)
     return c && !c.deleted_at
@@ -135,12 +138,20 @@ function PositionCard({
             >
               {p.title}
             </Link>
-            <span
-              className="shrink-0 rounded-xl bg-gradient-to-br from-[#fd8863]/35 to-[#97daff]/40 px-2.5 py-1 text-xs font-extrabold tabular-nums text-[#9b3e20] ring-1 ring-[#9b3e20]/25 dark:from-orange-500/30 dark:to-cyan-500/25 dark:text-orange-200 dark:ring-orange-400/35"
-              title="Days since this position was created"
-            >
-              {daysSince}d
-            </span>
+            <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-1.5">
+              <span
+                className="rounded-xl bg-gradient-to-br from-[#006384]/20 to-[#97daff]/35 px-2.5 py-1 text-xs font-extrabold tabular-nums text-[#006384] ring-1 ring-[#006384]/25 dark:from-cyan-500/25 dark:to-teal-500/20 dark:text-cyan-200 dark:ring-cyan-400/30"
+                title="Days since role opened (opened-on date)"
+              >
+                {daysSinceOpened}d open
+              </span>
+              <span
+                className="rounded-xl bg-gradient-to-br from-[#fd8863]/35 to-[#97daff]/40 px-2.5 py-1 text-xs font-extrabold tabular-nums text-[#9b3e20] ring-1 ring-[#9b3e20]/25 dark:from-orange-500/30 dark:to-cyan-500/25 dark:text-orange-200 dark:ring-orange-400/35"
+                title="Days since this position was created in the system"
+              >
+                {daysSinceCreated}d new
+              </span>
+            </div>
           </div>
           <div className="text-ink-muted mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs dark:text-stone-500">
             {showCompanyName ? (
@@ -151,14 +162,6 @@ function PositionCard({
                 </span>
               </>
             ) : null}
-            <span
-              className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${pill.className}`}
-            >
-              {pill.label}
-            </span>
-            <span aria-hidden className="select-none">
-              ·
-            </span>
             <button
               type="button"
               draggable={false}
@@ -210,9 +213,40 @@ function dropSlotKey(companyId: string, zone: DropZone): string {
   return `${companyId}:${zone}`
 }
 
+function columnHeading(zone: DropZone, title: string) {
+  const base =
+    'mb-3 w-full text-center text-[11px] font-extrabold uppercase tracking-[0.18em] sm:text-xs'
+  if (zone === 'live') {
+    return (
+      <h4
+        className={`${base} rounded-2xl bg-gradient-to-r from-orange-100/95 via-amber-50 to-cyan-100/90 py-2.5 text-[#9b3e20] shadow-sm dark:from-orange-950/60 dark:via-stone-900/80 dark:to-cyan-950/40 dark:text-orange-200`}
+      >
+        {title}
+      </h4>
+    )
+  }
+  if (zone === 'succeeded') {
+    return (
+      <h4
+        className={`${base} rounded-2xl bg-gradient-to-r from-emerald-100 to-teal-50 py-2.5 text-emerald-900 shadow-sm dark:from-emerald-950/70 dark:to-teal-950/50 dark:text-emerald-100`}
+      >
+        {title}
+      </h4>
+    )
+  }
+  return (
+    <h4
+      className={`${base} rounded-2xl bg-gradient-to-r from-stone-200/90 to-stone-100 py-2.5 text-stone-700 shadow-sm dark:from-stone-800 dark:to-stone-900 dark:text-stone-200`}
+    >
+      {title}
+    </h4>
+  )
+}
+
 function CompanyBoardColumn({
   companyId,
   companyName,
+  companyAvatarUrl,
   positions: colPositions,
   showCompanyOnCards,
   layout = 'scroll',
@@ -225,6 +259,7 @@ function CompanyBoardColumn({
 }: {
   companyId: string
   companyName: string
+  companyAvatarUrl?: string | null
   positions: PositionListItem[]
   showCompanyOnCards: boolean
   layout?: 'scroll' | 'kanban'
@@ -253,7 +288,7 @@ function CompanyBoardColumn({
     return `${base} bg-[#fd8863]/10 ring-2 ring-[#9b3e20]/35 dark:bg-orange-500/10 dark:ring-orange-400/40`
   }
 
-  function sectionShell(zone: DropZone, title: string, hint: string, list: PositionListItem[]) {
+  function sectionShell(zone: DropZone, title: string, list: PositionListItem[]) {
     const slot = dropSlotKey(companyId, zone)
     return (
       <section
@@ -270,8 +305,7 @@ function CompanyBoardColumn({
             : ''
         }
       >
-        <h4 className="text-xs font-extrabold tracking-wide text-[#302e2b] uppercase dark:text-stone-200">{title}</h4>
-        <p className="text-ink-muted text-[11px] leading-snug dark:text-stone-500">{hint}</p>
+        {columnHeading(zone, title)}
         <div className={bucketClass(zone)}>
           {list.length === 0 ? (
             <p className="text-ink-muted px-1 py-3 text-xs">None — drop a role here.</p>
@@ -302,28 +336,31 @@ function CompanyBoardColumn({
 
   const statusBlocks = (
     <>
-      {sectionShell('live', 'Active & on hold', 'Open and paused roles — drag here to reopen as Active.', live)}
-      {sectionShell('succeeded', 'Succeeded', 'Fulfilled placements.', succeeded)}
-      {sectionShell('cancelled', 'Cancelled', 'Closed without hire.', cancelled)}
+      {sectionShell('live', 'Active & on hold', live)}
+      {sectionShell('succeeded', 'Succeeded', succeeded)}
+      {sectionShell('cancelled', 'Cancelled', cancelled)}
     </>
   )
 
   if (layout === 'kanban') {
     const zones = [
-      { zone: 'live' as const, title: 'Active & on hold', hint: 'Open and paused roles — drag here to reopen as Active.', list: live },
-      { zone: 'succeeded' as const, title: 'Succeeded', hint: 'Fulfilled placements.', list: succeeded },
-      { zone: 'cancelled' as const, title: 'Cancelled', hint: 'Closed without hire.', list: cancelled },
+      { zone: 'live' as const, title: 'Active & on hold', list: live },
+      { zone: 'succeeded' as const, title: 'Succeeded', list: succeeded },
+      { zone: 'cancelled' as const, title: 'Cancelled', list: cancelled },
     ]
     return (
       <div className="flex flex-col gap-4">
-        <h2 className="text-ink text-lg font-extrabold tracking-tight dark:text-stone-100">{companyName}</h2>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+          <CompanyClientAvatar companyId={companyId} companyName={companyName} avatarUrl={companyAvatarUrl} />
+          <h2 className="text-ink text-lg font-extrabold tracking-tight dark:text-stone-100">{companyName}</h2>
+        </div>
         <div className="flex gap-4 overflow-x-auto pb-2 [scrollbar-width:thin] md:grid md:min-h-0 md:grid-cols-2 md:overflow-visible md:pb-0 xl:grid-cols-3">
-          {zones.map(({ zone, title, hint, list }) => (
+          {zones.map(({ zone, title, list }) => (
             <div
               key={zone}
               className="border-line bg-white/50 flex min-h-[min(60vh,28rem)] min-w-[min(100%,17.5rem)] shrink-0 flex-col rounded-2xl border p-3 shadow-sm md:min-h-[min(70vh,32rem)] md:min-w-0 dark:border-line-dark dark:bg-stone-900/40"
             >
-              {sectionShell(zone, title, hint, list)}
+              {sectionShell(zone, title, list)}
             </div>
           ))}
         </div>
@@ -357,7 +394,7 @@ export function PositionsPage() {
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('companies')
-        .select('id, name, status')
+        .select('id, name, status, avatar_url')
         .eq('user_id', user!.id)
         .is('deleted_at', null)
         .order('name')
@@ -374,7 +411,7 @@ export function PositionsPage() {
         .from('positions')
         .select(
           `
-          id, title, status, company_id, created_at, updated_at,
+          id, title, status, company_id, created_at, updated_at, opened_at,
           companies ( name ),
           position_candidates (
             id,
@@ -495,13 +532,17 @@ export function PositionsPage() {
   )
 
   const tabCompanies = useMemo(() => {
-    const list = companies.map((c) => ({ id: c.id, name: c.name }))
+    const list = companies.map((c) => ({
+      id: c.id,
+      name: c.name,
+      avatar_url: (c as { avatar_url?: string | null }).avatar_url ?? null,
+    }))
     const ids = new Set(list.map((c) => c.id))
     for (const p of filteredPositions) {
       if (!ids.has(p.company_id)) {
         ids.add(p.company_id)
         const nm = (p.companies as { name?: string } | null)?.name?.trim() || 'Unknown client'
-        list.push({ id: p.company_id, name: nm })
+        list.push({ id: p.company_id, name: nm, avatar_url: null })
       }
     }
     return list.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
@@ -641,6 +682,7 @@ export function PositionsPage() {
             <CompanyBoardColumn
               companyId={scopedCompanyId}
               companyName={tabCompanies.find((c) => c.id === scopedCompanyId)?.name ?? 'Company'}
+              companyAvatarUrl={tabCompanies.find((c) => c.id === scopedCompanyId)?.avatar_url}
               layout="kanban"
               positions={filteredPositions.filter((p) => p.company_id === scopedCompanyId)}
               showCompanyOnCards={false}
