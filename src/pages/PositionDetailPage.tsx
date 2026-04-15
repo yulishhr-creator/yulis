@@ -342,7 +342,8 @@ export function PositionDetailPage() {
       // #endregion
       const { data, error } = await supabase!
         .from('positions')
-        .select('*, companies ( id, name, contact_email, avatar_url )')
+        // Omit companies.avatar_url unless migration 016 is applied (Postgres 42703 undefined_column).
+        .select('*, companies ( id, name, contact_email )')
         .eq('id', id!)
         .eq('user_id', user!.id)
         .single()
