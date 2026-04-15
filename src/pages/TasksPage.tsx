@@ -571,7 +571,7 @@ export function TasksPage() {
                 <th className="px-3 py-3 font-bold">Candidate</th>
               </tr>
             </thead>
-            {statusGroupOrder.map((st) => (
+            {STATUS_ORDER.map((st) => (
               <tbody
                 key={st}
                 className={`border-b border-stone-200/70 dark:border-stone-600 ${
