@@ -1,8 +1,7 @@
-import { Link, NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink, useLocation, useSearchParams } from 'react-router-dom'
 import {
   LayoutDashboard,
   Building2,
-  Briefcase,
   Settings,
   User,
   LogOut,
@@ -11,7 +10,7 @@ import {
   Clock,
   ChevronLeft,
   PanelLeft,
-  Users,
+  ListTodo,
 } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
@@ -27,68 +26,57 @@ import { WeekProgressCard } from '@/components/layout/WeekProgressCard'
 import { PwaInstallPrompt } from '@/components/pwa/PwaInstallPrompt'
 import { useWorkTimer } from '@/work/WorkTimerContext'
 import { useToast } from '@/hooks/useToast'
+import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
 
-const nav = [
-  {
-    to: '/',
-    label: 'Overview',
-    icon: LayoutDashboard,
-    end: true,
-    activeRow:
-      'from-lume-coral/30 to-lume-sky/22 ring-orange-500/20 dark:from-orange-500/25 dark:to-cyan-500/18 dark:ring-orange-400/30',
-    idleIcon:
-      'from-lume-coral/18 to-lume-sky/12 text-[#8b3a18] dark:from-orange-500/20 dark:to-cyan-500/12 dark:text-orange-200/90',
-    activeIcon:
-      'from-white to-orange-50/95 text-[#7a3318] shadow-inner dark:from-stone-800 dark:to-orange-950/60 dark:text-orange-100',
-  },
-  {
-    to: '/positions',
-    label: 'Positions',
-    icon: Briefcase,
-    end: false,
-    activeRow:
-      'from-lume-violet/28 to-fuchsia-500/20 ring-violet-500/25 dark:from-violet-500/22 dark:to-fuchsia-500/15 dark:ring-violet-400/35',
-    idleIcon:
-      'from-violet-500/16 to-fuchsia-500/10 text-violet-900/85 dark:from-violet-500/18 dark:to-fuchsia-500/12 dark:text-violet-200/90',
-    activeIcon:
-      'from-white to-violet-50/95 text-violet-900 shadow-inner dark:from-stone-800 dark:to-violet-950/50 dark:text-violet-100',
-  },
-  {
-    to: '/candidates',
-    label: 'Candidates',
-    icon: Users,
-    end: false,
-    activeRow:
-      'from-lume-jade/26 to-emerald-400/18 ring-teal-500/20 dark:from-teal-500/20 dark:to-emerald-500/14 dark:ring-teal-400/30',
-    idleIcon:
-      'from-teal-500/16 to-emerald-500/10 text-teal-900/85 dark:from-teal-500/18 dark:to-emerald-500/12 dark:text-teal-200/90',
-    activeIcon:
-      'from-white to-teal-50/95 text-teal-900 shadow-inner dark:from-stone-800 dark:to-teal-950/50 dark:text-teal-100',
-  },
-  {
-    to: '/companies',
-    label: 'Clients',
-    icon: Building2,
-    end: false,
-    activeRow:
-      'from-lume-sky/28 to-blue-500/18 ring-sky-500/25 dark:from-sky-500/22 dark:to-blue-500/14 dark:ring-sky-400/35',
-    idleIcon:
-      'from-sky-500/16 to-blue-500/10 text-sky-900/85 dark:from-sky-500/18 dark:to-blue-500/12 dark:text-sky-200/90',
-    activeIcon:
-      'from-white to-sky-50/95 text-sky-900 shadow-inner dark:from-stone-800 dark:to-sky-950/50 dark:text-sky-100',
-  },
-  {
-    to: '/settings',
-    label: 'Settings',
-    icon: Settings,
-    end: false,
-    activeRow:
-      'from-lume-gold/25 to-amber-600/15 ring-amber-500/20 dark:from-amber-500/18 dark:to-stone-600/20 dark:ring-amber-400/28',
-    idleIcon:
-      'from-amber-500/14 to-stone-400/10 text-amber-900/80 dark:from-amber-500/16 dark:to-stone-500/12 dark:text-amber-200/85',
-    activeIcon:
-      'from-white to-amber-50/95 text-amber-950 shadow-inner dark:from-stone-800 dark:to-amber-950/40 dark:text-amber-100',
-  },
+const overviewNav = {
+  to: '/',
+  label: 'Overview',
+  icon: LayoutDashboard,
+  activeRow:
+    'from-lume-coral/30 to-lume-sky/22 ring-orange-500/20 dark:from-orange-500/25 dark:to-cyan-500/18 dark:ring-orange-400/30',
+  idleIcon:
+    'from-lume-coral/18 to-lume-sky/12 text-[#8b3a18] dark:from-orange-500/20 dark:to-cyan-500/12 dark:text-orange-200/90',
+  activeIcon:
+    'from-white to-orange-50/95 text-[#7a3318] shadow-inner dark:from-stone-800 dark:to-orange-950/60 dark:text-orange-100',
+} as const
+
+const clientsNav = {
+  to: '/companies',
+  label: 'Clients',
+  icon: Building2,
+  activeRow:
+    'from-lume-sky/28 to-blue-500/18 ring-sky-500/25 dark:from-sky-500/22 dark:to-blue-500/14 dark:ring-sky-400/35',
+  idleIcon:
+    'from-sky-500/16 to-blue-500/10 text-sky-900/85 dark:from-sky-500/18 dark:to-blue-500/12 dark:text-sky-200/90',
+  activeIcon:
+    'from-white to-sky-50/95 text-sky-900 shadow-inner dark:from-stone-800 dark:to-sky-950/50 dark:text-sky-100',
+} as const
+
+const settingsNav = {
+  to: '/settings',
+  label: 'Settings',
+  icon: Settings,
+  activeRow:
+    'from-lume-gold/25 to-amber-600/15 ring-amber-500/20 dark:from-amber-500/18 dark:to-stone-600/20 dark:ring-amber-400/28',
+  idleIcon:
+    'from-amber-500/14 to-stone-400/10 text-amber-900/80 dark:from-amber-500/16 dark:to-stone-500/12 dark:text-amber-200/85',
+  activeIcon:
+    'from-white to-amber-50/95 text-amber-950 shadow-inner dark:from-stone-800 dark:to-amber-950/40 dark:text-amber-100',
+} as const
+
+const myTasksGroup = {
+  activeRow:
+    'from-lume-jade/26 to-emerald-400/18 ring-teal-500/20 dark:from-teal-500/20 dark:to-emerald-500/14 dark:ring-teal-400/30',
+  idleIcon:
+    'from-teal-500/16 to-emerald-500/10 text-teal-900/85 dark:from-teal-500/18 dark:to-emerald-500/12 dark:text-teal-200/90',
+  activeIcon:
+    'from-white to-teal-50/95 text-teal-900 shadow-inner dark:from-stone-800 dark:to-teal-950/50 dark:text-teal-100',
+} as const
+
+const TASK_STATUS_SIDEBAR = [
+  { param: 'todo' as const, label: 'To do', countKey: 'todo' as const },
+  { param: 'in_progress' as const, label: 'In progress', countKey: 'inProgress' as const },
+  { param: 'done' as const, label: 'Done', countKey: 'done' as const },
 ] as const
 
 function greeting(): string {
@@ -109,6 +97,11 @@ function formatTimer(sec: number): string {
 export function AppShell() {
   const { user, signOut } = useAuth()
   const location = useLocation()
+  const [searchParams] = useSearchParams()
+  const taskStatusParam = searchParams.get('taskStatus')
+  const overviewNavActive = location.pathname === '/' && !taskStatusParam
+  const { data: taskKpis, isPending: taskKpisPending } = useDashboardTaskKpis()
+  const OverviewNavIcon = overviewNav.icon
   const [menuOpen, setMenuOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [quickActionsOpen, setQuickActionsOpen] = useState(false)
@@ -260,24 +253,88 @@ export function AppShell() {
         ) : null}
 
         <nav className="flex flex-1 flex-col gap-1 p-3" aria-label="Main">
-          {nav.map(({ to, label, icon: Icon, end, activeRow, idleIcon, activeIcon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                `group relative flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
-                  isActive
-                    ? `bg-gradient-to-r text-stitch-on-surface shadow-sm ring-1 dark:text-stone-100 ${activeRow}`
-                    : 'text-ink-muted hover:bg-white/75 hover:text-ink dark:text-stone-400 dark:hover:bg-stone-800/85 dark:hover:text-stone-100'
-                }`
-              }
+          <div className="rounded-xl pb-1">
+            <div className="text-ink-muted flex items-center gap-3 px-3 py-2 text-xs font-bold tracking-wide uppercase dark:text-stone-500">
+              <span
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${myTasksGroup.idleIcon}`}
+              >
+                <ListTodo className="h-[18px] w-[18px]" aria-hidden />
+              </span>
+              <span className="text-ink text-[11px] font-bold tracking-[0.14em] dark:text-stone-300">My tasks</span>
+            </div>
+            <ul className="border-line ml-2 space-y-0.5 border-l border-dashed pl-2 dark:border-line-dark" role="list">
+              {TASK_STATUS_SIDEBAR.map(({ param, label, countKey }) => {
+                const count = taskKpis?.[countKey]
+                const displayCount = taskKpisPending && count === undefined ? '–' : String(count ?? 0)
+                const isActive = location.pathname === '/' && taskStatusParam === param
+                return (
+                  <li key={param}>
+                    <NavLink
+                      to={{ pathname: '/', search: `?taskStatus=${param}` }}
+                      className={`group relative flex items-center justify-between gap-2 overflow-hidden rounded-lg py-2 pr-2 pl-3 text-sm font-medium transition-all duration-200 ${
+                        isActive
+                          ? `bg-gradient-to-r text-stitch-on-surface shadow-sm ring-1 dark:text-stone-100 ${myTasksGroup.activeRow}`
+                          : 'text-ink-muted hover:bg-white/75 hover:text-ink dark:text-stone-400 dark:hover:bg-stone-800/85 dark:hover:text-stone-100'
+                      }`}
+                    >
+                      <span className="relative z-10 min-w-0 flex-1 truncate">{label}</span>
+                      <span
+                        className={`relative z-10 tabular-nums rounded-lg px-2 py-0.5 text-xs font-bold ${
+                          isActive
+                            ? 'bg-white/55 text-stitch-on-surface dark:bg-stone-900/40 dark:text-stone-100'
+                            : 'bg-stone-200/80 text-ink dark:bg-stone-800 dark:text-stone-300'
+                        }`}
+                      >
+                        {displayCount}
+                      </span>
+                    </NavLink>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+
+          <Link
+            to="/"
+            aria-current={overviewNavActive ? 'page' : undefined}
+            className={`group relative flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+              overviewNavActive
+                ? `bg-gradient-to-r text-stitch-on-surface shadow-sm ring-1 dark:text-stone-100 ${overviewNav.activeRow}`
+                : 'text-ink-muted hover:bg-white/75 hover:text-ink dark:text-stone-400 dark:hover:bg-stone-800/85 dark:hover:text-stone-100'
+            }`}
+          >
+            <motion.span
+              className={`relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br transition-all ${
+                overviewNavActive
+                  ? overviewNav.activeIcon
+                  : `${overviewNav.idleIcon} group-hover:brightness-105 dark:group-hover:brightness-110`
+              }`}
+              whileHover={reduceMotion ? undefined : { scale: 1.06, rotate: -3 }}
+              whileTap={reduceMotion ? undefined : { scale: 0.96 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 22 }}
             >
-              {({ isActive }) => (
+              <OverviewNavIcon className="h-[18px] w-[18px]" aria-hidden />
+            </motion.span>
+            <span className="relative z-10 flex-1">{overviewNav.label}</span>
+          </Link>
+
+          <NavLink
+            to="/companies"
+            className={({ isActive }) =>
+              `group relative flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+                isActive
+                  ? `bg-gradient-to-r text-stitch-on-surface shadow-sm ring-1 dark:text-stone-100 ${clientsNav.activeRow}`
+                  : 'text-ink-muted hover:bg-white/75 hover:text-ink dark:text-stone-400 dark:hover:bg-stone-800/85 dark:hover:text-stone-100'
+              }`
+            }
+          >
+            {({ isActive }) => {
+              const Icon = clientsNav.icon
+              return (
                 <>
                   <motion.span
                     className={`relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br transition-all ${
-                      isActive ? activeIcon : `${idleIcon} group-hover:brightness-105 dark:group-hover:brightness-110`
+                      isActive ? clientsNav.activeIcon : `${clientsNav.idleIcon} group-hover:brightness-105 dark:group-hover:brightness-110`
                     }`}
                     whileHover={reduceMotion ? undefined : { scale: 1.06, rotate: -3 }}
                     whileTap={reduceMotion ? undefined : { scale: 0.96 }}
@@ -285,11 +342,41 @@ export function AppShell() {
                   >
                     <Icon className="h-[18px] w-[18px]" aria-hidden />
                   </motion.span>
-                  <span className="relative z-10 flex-1">{label}</span>
+                  <span className="relative z-10 flex-1">{clientsNav.label}</span>
                 </>
-              )}
-            </NavLink>
-          ))}
+              )
+            }}
+          </NavLink>
+
+          <NavLink
+            to="/settings"
+            className={({ isActive }) =>
+              `group relative flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+                isActive
+                  ? `bg-gradient-to-r text-stitch-on-surface shadow-sm ring-1 dark:text-stone-100 ${settingsNav.activeRow}`
+                  : 'text-ink-muted hover:bg-white/75 hover:text-ink dark:text-stone-400 dark:hover:bg-stone-800/85 dark:hover:text-stone-100'
+              }`
+            }
+          >
+            {({ isActive }) => {
+              const Icon = settingsNav.icon
+              return (
+                <>
+                  <motion.span
+                    className={`relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br transition-all ${
+                      isActive ? settingsNav.activeIcon : `${settingsNav.idleIcon} group-hover:brightness-105 dark:group-hover:brightness-110`
+                    }`}
+                    whileHover={reduceMotion ? undefined : { scale: 1.06, rotate: -3 }}
+                    whileTap={reduceMotion ? undefined : { scale: 0.96 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+                  >
+                    <Icon className="h-[18px] w-[18px]" aria-hidden />
+                  </motion.span>
+                  <span className="relative z-10 flex-1">{settingsNav.label}</span>
+                </>
+              )
+            }}
+          </NavLink>
         </nav>
 
         <div className="border-line border-t px-3 pt-2 pb-1 dark:border-line-dark">

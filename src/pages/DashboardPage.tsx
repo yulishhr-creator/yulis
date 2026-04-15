@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { differenceInCalendarDays } from 'date-fns'
 
 import { useAuth } from '@/auth/useAuth'
+import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
 import { getSupabase } from '@/lib/supabase'
 import { formatDue } from '@/lib/dates'
 import { Modal } from '@/components/ui/Modal'
@@ -65,11 +66,15 @@ export function DashboardPage() {
   const [taskModalOpen, setTaskModalOpen] = useState(false)
   const [newTaskTitle, setNewTaskTitle] = useState('')
   const [newTaskPositionId, setNewTaskPositionId] = useState('')
+  const taskStatusParam = searchParams.get('taskStatus')
+  const taskStatusFilter =
+    taskStatusParam === 'todo' || taskStatusParam === 'in_progress' || taskStatusParam === 'done' ? taskStatusParam : null
+
   const tasksQ = useQuery({
-    queryKey: ['dashboard-tasks', uid],
+    queryKey: ['dashboard-tasks', uid, taskStatusFilter],
     enabled: Boolean(supabase && uid),
     queryFn: async () => {
-      const { data, error } = await supabase!
+      let q = supabase!
         .from('tasks')
         .select(
           `
@@ -84,37 +89,25 @@ export function DashboardPage() {
         `,
         )
         .eq('user_id', uid!)
-        .neq('status', 'done')
-        .order('due_at', { ascending: true, nullsFirst: false })
 
+      if (taskStatusFilter) {
+        q = q.eq('status', taskStatusFilter)
+      } else {
+        q = q.neq('status', 'done')
+      }
+
+      const ordered =
+        taskStatusFilter === 'done'
+          ? q.order('updated_at', { ascending: false })
+          : q.order('due_at', { ascending: true, nullsFirst: false })
+
+      const { data, error } = await ordered
       if (error) throw error
       return data ?? []
     },
   })
 
-  const kpisQ = useQuery({
-    queryKey: ['dashboard-task-kpis', uid],
-    enabled: Boolean(supabase && uid),
-    queryFn: async () => {
-      const now = new Date().toISOString()
-      const [open, inProgress, overdue] = await Promise.all([
-        supabase!.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', uid!).eq('status', 'todo'),
-        supabase!.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', uid!).eq('status', 'in_progress'),
-        supabase!
-          .from('tasks')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', uid!)
-          .neq('status', 'done')
-          .not('due_at', 'is', null)
-          .lt('due_at', now),
-      ])
-      return {
-        todo: open.count ?? 0,
-        inProgress: inProgress.count ?? 0,
-        overdue: overdue.count ?? 0,
-      }
-    },
-  })
+  const kpisQ = useDashboardTaskKpis()
 
   const topPositionsQ = useQuery({
     queryKey: ['dashboard-top-positions', uid, positionsScope],
@@ -454,7 +447,13 @@ export function DashboardPage() {
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-lume-jade/25 to-lume-sky/20 text-teal-900 shadow-sm dark:from-teal-500/25 dark:to-cyan-500/20 dark:text-teal-100">
               <Check className="h-5 w-5 stroke-[2.5]" aria-hidden />
             </span>
-            Your tasks
+            {taskStatusFilter === 'todo'
+              ? 'Tasks · To do'
+              : taskStatusFilter === 'in_progress'
+                ? 'Tasks · In progress'
+                : taskStatusFilter === 'done'
+                  ? 'Tasks · Done'
+                  : 'Your tasks'}
           </h2>
           <div className="relative shrink-0" ref={companyFilterRef}>
             <button
@@ -533,7 +532,13 @@ export function DashboardPage() {
             ) : null}
           </div>
         </div>
-        <p className="text-stitch-muted mt-1 text-sm">Everything open — sorted by due date.</p>
+        <p className="text-stitch-muted mt-1 text-sm">
+          {taskStatusFilter === 'done'
+            ? 'Recently completed — newest first.'
+            : taskStatusFilter
+              ? 'Filtered from the sidebar — sorted by due date.'
+              : 'Everything open — sorted by due date.'}
+        </p>
         {tasksQ.isLoading ? (
           <p className="text-stitch-muted mt-4 text-sm">Loading…</p>
         ) : tasks.length === 0 ? (
@@ -542,11 +547,25 @@ export function DashboardPage() {
             initial={reduceMotion ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
           >
-            No open tasks. Use the <span className="font-semibold">+</span> button (Add task) or open a{' '}
-            <Link to="/positions" className="text-ink font-semibold underline dark:text-stone-200">
-              position
-            </Link>
-            .
+            {taskStatusFilter === 'done' ? (
+              <>No completed tasks yet.</>
+            ) : taskStatusFilter ? (
+              <>
+                No tasks in this status.{' '}
+                <Link to="/" className="text-ink font-semibold underline dark:text-stone-200">
+                  View all open tasks
+                </Link>
+                .
+              </>
+            ) : (
+              <>
+                No open tasks. Use the <span className="font-semibold">+</span> button (Add task) or open a{' '}
+                <Link to="/positions" className="text-ink font-semibold underline dark:text-stone-200">
+                  position
+                </Link>
+                .
+              </>
+            )}
           </motion.p>
         ) : filteredTasks.length === 0 && companyTaskFilter !== 'all' ? (
           <p className="text-stitch-muted mt-4 rounded-2xl border border-dashed border-stone-300 px-4 py-6 text-center text-sm dark:border-stone-600">
@@ -604,20 +623,25 @@ export function DashboardPage() {
                         In progress
                       </p>
                     ) : null}
+                    {row.status === 'done' ? (
+                      <p className="text-ink-muted mt-2 text-xs font-semibold uppercase tracking-wide dark:text-stone-400">Done</p>
+                    ) : null}
                   </div>
-                  <button
-                    type="button"
-                    className="text-stitch-muted hover:bg-emerald-500/15 hover:text-emerald-700 dark:hover:text-emerald-300 mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-2xl border border-emerald-200/60 bg-white/80 transition dark:border-emerald-800/60 dark:bg-stone-800/80"
-                    aria-label={`Mark done: ${row.title}`}
-                    disabled={markTaskDone.isPending && markTaskDone.variables === row.id}
-                    onClick={() => markTaskDone.mutate(row.id)}
-                  >
-                    {markTaskDone.isPending && markTaskDone.variables === row.id ? (
-                      <span className="h-5 w-5 animate-pulse rounded-full bg-emerald-400/50" aria-hidden />
-                    ) : (
-                      <Check className="h-5 w-5 stroke-[2.75] text-emerald-700 dark:text-emerald-400" aria-hidden />
-                    )}
-                  </button>
+                  {row.status === 'done' ? null : (
+                    <button
+                      type="button"
+                      className="text-stitch-muted hover:bg-emerald-500/15 hover:text-emerald-700 dark:hover:text-emerald-300 mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-2xl border border-emerald-200/60 bg-white/80 transition dark:border-emerald-800/60 dark:bg-stone-800/80"
+                      aria-label={`Mark done: ${row.title}`}
+                      disabled={markTaskDone.isPending && markTaskDone.variables === row.id}
+                      onClick={() => markTaskDone.mutate(row.id)}
+                    >
+                      {markTaskDone.isPending && markTaskDone.variables === row.id ? (
+                        <span className="h-5 w-5 animate-pulse rounded-full bg-emerald-400/50" aria-hidden />
+                      ) : (
+                        <Check className="h-5 w-5 stroke-[2.75] text-emerald-700 dark:text-emerald-400" aria-hidden />
+                      )}
+                    </button>
+                  )}
                 </motion.li>
               )
             })}
