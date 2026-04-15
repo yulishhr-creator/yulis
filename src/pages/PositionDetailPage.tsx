@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import * as XLSX from 'xlsx'
 import {
@@ -34,6 +34,7 @@ import { getSupabase } from '@/lib/supabase'
 import { normalizeEmail, normalizePhone } from '@/lib/normalize'
 import { formatDue } from '@/lib/dates'
 import { Modal } from '@/components/ui/Modal'
+import { PageSpinner } from '@/components/ui/PageSpinner'
 import { useToast } from '@/hooks/useToast'
 import { criticalStageThreshold, logActivityEvent } from '@/lib/activityLog'
 import { formatAssignmentStatus } from '@/lib/candidateStatus'
@@ -1334,8 +1335,30 @@ export function PositionDetailPage() {
     void updateCandidateStage.mutateAsync({ positionCandidateId: p.pcId, stageId })
   }
 
-  if (posQ.isLoading || !position) {
-    return <p className="text-ink-muted text-sm">Loading…</p>
+  if (!id) {
+    return <Navigate to="/positions" replace />
+  }
+
+  if (!supabase || !user?.id) {
+    return <PageSpinner message="Getting ready…" className="min-h-[50vh]" />
+  }
+
+  if (posQ.isError) {
+    return (
+      <div className="bg-paper text-ink flex min-h-dvh flex-col items-center justify-center gap-3 px-6 dark:bg-paper-dark dark:text-stone-100">
+        <p className="text-center text-sm font-semibold text-stone-800 dark:text-stone-100">We couldn&apos;t load this role.</p>
+        <p className="text-ink-muted max-w-sm text-center text-xs dark:text-stone-400">
+          It may have been removed, or you don&apos;t have access to it.
+        </p>
+        <Link to="/positions" className="text-accent text-sm font-semibold underline dark:text-orange-300">
+          Back to positions
+        </Link>
+      </div>
+    )
+  }
+
+  if (!position) {
+    return <PageSpinner message="Loading role…" className="min-h-[50vh]" />
   }
 
   const createdAt = (position as { created_at?: string }).created_at
@@ -2172,8 +2195,8 @@ export function PositionDetailPage() {
           </p>
 
           <div className="border-stitch-on-surface/10 overflow-x-auto rounded-2xl border border-stone-200/80 bg-white/80 dark:border-stone-600 dark:bg-stone-900/50">
-            {tasksQ.isLoading && !tasksQ.data ? (
-              <p className="text-ink-muted p-6 text-sm">Loading…</p>
+            {tasksQ.isPending && !tasksQ.data ? (
+              <PageSpinner message="Loading tasks…" className="p-6" />
             ) : (tasksQ.data ?? []).length === 0 ? (
               <p className="text-ink-muted p-6 text-sm">No tasks for this role yet.</p>
             ) : (
