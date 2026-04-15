@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 
-/** Overdue tasks + calendar events starting within 48h + reminders (any). Events vs reminders are distinct product concepts. */
+/** Open tasks with a due date before now + calendar events starting within 48h + reminders (any). Events vs reminders are distinct product concepts. */
 export function useNotificationCount() {
   const { user } = useAuth()
   const supabase = getSupabase()
