@@ -1645,7 +1645,7 @@ export function PositionDetailPage() {
               <ArrowLeft className="h-5 w-5" aria-hidden />
             </Link>
             <div className="min-w-0 flex-1">
-              <h1 className="text-accent text-2xl font-extrabold tracking-tight md:text-3xl dark:text-orange-300">
+              <h1 className="border-b-2 border-[#9b3e20] pb-2 text-xl font-semibold uppercase tracking-[0.14em] text-stone-800 sm:text-2xl md:text-3xl dark:border-orange-400/90 dark:text-stone-100">
                 {position.title}
               </h1>
               <p className="text-ink-muted mt-0.5 text-sm font-medium dark:text-stone-400">
