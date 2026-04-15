@@ -219,7 +219,7 @@ function CompanyBoardColumn({
   companyName: string
   positions: PositionListItem[]
   showCompanyOnCards: boolean
-  layout?: 'scroll' | 'single'
+  layout?: 'scroll' | 'kanban'
   draggingId: string | null
   setDraggingId: Dispatch<SetStateAction<string | null>>
   dropHover: string | null
@@ -292,20 +292,48 @@ function CompanyBoardColumn({
     )
   }
 
-  const colShell =
-    layout === 'single'
-      ? 'border-line bg-white/50 mx-auto w-full max-w-xl flex flex-col gap-4 rounded-2xl border p-3 shadow-sm dark:border-line-dark dark:bg-stone-900/40'
-      : 'border-line bg-white/50 flex min-w-[17.5rem] max-w-md flex-1 flex-col gap-4 rounded-2xl border p-3 shadow-sm dark:border-line-dark dark:bg-stone-900/40'
+  const scrollShell =
+    'border-line bg-white/50 flex min-w-[17.5rem] max-w-md flex-1 flex-col gap-4 rounded-2xl border p-3 shadow-sm dark:border-line-dark dark:bg-stone-900/40'
 
-  return (
-    <div className={colShell}>
-      <h3 className="text-ink border-stitch-on-surface/10 border-b pb-2 text-sm font-extrabold dark:border-stone-600 dark:text-stone-100">
-        {companyName}
-      </h3>
+  const statusBlocks = (
+    <>
       {sectionShell('active', 'Active', 'Open roles — actively sourcing.', active)}
       {sectionShell('on_hold', 'On hold', 'Paused roles.', onHold)}
       {sectionShell('succeeded', 'Succeeded', 'Fulfilled placements.', succeeded)}
       {sectionShell('cancelled', 'Cancelled', 'Closed without hire.', cancelled)}
+    </>
+  )
+
+  if (layout === 'kanban') {
+    const zones = [
+      { zone: 'active' as const, title: 'Active', hint: 'Open roles — actively sourcing.', list: active },
+      { zone: 'on_hold' as const, title: 'On hold', hint: 'Paused roles.', list: onHold },
+      { zone: 'succeeded' as const, title: 'Succeeded', hint: 'Fulfilled placements.', list: succeeded },
+      { zone: 'cancelled' as const, title: 'Cancelled', hint: 'Closed without hire.', list: cancelled },
+    ]
+    return (
+      <div className="flex flex-col gap-4">
+        <h2 className="text-ink text-lg font-extrabold tracking-tight dark:text-stone-100">{companyName}</h2>
+        <div className="flex gap-4 overflow-x-auto pb-2 [scrollbar-width:thin] md:grid md:min-h-0 md:grid-cols-2 md:overflow-visible md:pb-0 xl:grid-cols-4">
+          {zones.map(({ zone, title, hint, list }) => (
+            <div
+              key={zone}
+              className="border-line bg-white/50 flex min-h-[min(60vh,28rem)] min-w-[min(100%,17.5rem)] shrink-0 flex-col rounded-2xl border p-3 shadow-sm md:min-h-[min(70vh,32rem)] md:min-w-0 dark:border-line-dark dark:bg-stone-900/40"
+            >
+              {sectionShell(zone, title, hint, list)}
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={scrollShell}>
+      <h3 className="text-ink border-stitch-on-surface/10 border-b pb-2 text-sm font-extrabold dark:border-stone-600 dark:text-stone-100">
+        {companyName}
+      </h3>
+      {statusBlocks}
     </div>
   )
 }
@@ -318,7 +346,6 @@ export function PositionsPage() {
   const { success, error: toastError } = useToast()
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dropHover, setDropHover] = useState<string | null>(null)
-  const [companyTab, setCompanyTab] = useState<'all' | string>('all')
   const [searchText, setSearchText] = useState('')
 
   const companiesQ = useQuery({
@@ -474,10 +501,17 @@ export function PositionsPage() {
     return list.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
   }, [companies, filteredPositions])
 
+  const companyFromUrl = search.get('company')
+  const scopedCompanyId = useMemo(() => {
+    if (!companyFromUrl) return null
+    return tabCompanies.some((c) => c.id === companyFromUrl) ? companyFromUrl : null
+  }, [companyFromUrl, tabCompanies])
+
+  /** Drop stale ?company= from URL once we know client list */
   useEffect(() => {
-    if (companyTab === 'all') return
-    if (tabCompanies.some((c) => c.id === companyTab)) return
-    setCompanyTab('all')
+    if (!companyFromUrl) return
+    if (positionsQ.isLoading) return
+    if (tabCompanies.some((c) => c.id === companyFromUrl)) return
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev)
@@ -486,20 +520,13 @@ export function PositionsPage() {
       },
       { replace: true },
     )
-  }, [companyTab, tabCompanies, setSearchParams])
-
-  const companyFromUrl = search.get('company')
-  useEffect(() => {
-    if (!companyFromUrl) return
-    if (!tabCompanies.some((c) => c.id === companyFromUrl)) return
-    setCompanyTab(companyFromUrl)
-  }, [companyFromUrl, tabCompanies])
+  }, [companyFromUrl, tabCompanies, positionsQ.isLoading, setSearchParams])
 
   return (
     <div className="flex flex-col gap-6">
       <ScreenHeader
         title="Positions"
-        subtitle="Filter by client, then drag roles between Active, On hold, Succeeded, and Cancelled."
+        subtitle="Drag roles by the grip to move between Active, On hold, Succeeded, and Cancelled."
         backTo="/"
         right={
           <Link
@@ -538,12 +565,6 @@ export function PositionsPage() {
         />
       </div>
 
-      <p className="text-ink-muted text-xs dark:text-stone-500">
-        Drag a role by the grip into <strong className="text-ink dark:text-stone-300">Active</strong>,{' '}
-        <strong className="text-ink dark:text-stone-300">On hold</strong>, <strong className="text-ink dark:text-stone-300">Succeeded</strong>, or{' '}
-        <strong className="text-ink dark:text-stone-300">Cancelled</strong> within a client column.
-      </p>
-
       {positionsQ.isLoading ? (
         <p className="text-ink-muted text-sm">Loading…</p>
       ) : positions.length === 0 ? (
@@ -552,64 +573,7 @@ export function PositionsPage() {
         <p className="text-ink-muted text-sm">No positions match your search.</p>
       ) : (
         <div className="flex flex-col gap-4">
-          <div
-            className="border-line flex flex-wrap gap-2 border-b border-stone-200/80 pb-3 dark:border-stone-600"
-            role="tablist"
-            aria-label="Filter by company"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={companyTab === 'all'}
-              onClick={() => {
-                setCompanyTab('all')
-                setSearchParams(
-                  (prev) => {
-                    const next = new URLSearchParams(prev)
-                    next.delete('company')
-                    return next
-                  },
-                  { replace: true },
-                )
-              }}
-              className={`rounded-full px-4 py-2 text-xs font-bold transition ${
-                companyTab === 'all'
-                  ? 'bg-[#9b3e20] text-white dark:bg-orange-600'
-                  : 'border border-stone-300 bg-white/80 dark:border-stone-600 dark:bg-stone-900/50'
-              }`}
-            >
-              All
-            </button>
-            {tabCompanies.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                role="tab"
-                aria-selected={companyTab === c.id}
-                onClick={() => {
-                  setCompanyTab(c.id)
-                  setSearchParams(
-                    (prev) => {
-                      const next = new URLSearchParams(prev)
-                      next.set('company', c.id)
-                      return next
-                    },
-                    { replace: true },
-                  )
-                }}
-                className={`max-w-[14rem] truncate rounded-full px-4 py-2 text-xs font-bold transition ${
-                  companyTab === c.id
-                    ? 'bg-[#9b3e20] text-white dark:bg-orange-600'
-                    : 'border border-stone-300 bg-white/80 dark:border-stone-600 dark:bg-stone-900/50'
-                }`}
-                title={c.name}
-              >
-                {c.name}
-              </button>
-            ))}
-          </div>
-
-          {companyTab === 'all' ? (
+          {!scopedCompanyId ? (
             <div className="flex gap-4 overflow-x-auto pb-2 [scrollbar-width:thin] md:flex-wrap md:overflow-x-visible">
               {tabCompanies.map((c) => (
                 <CompanyBoardColumn
@@ -630,10 +594,10 @@ export function PositionsPage() {
             </div>
           ) : (
             <CompanyBoardColumn
-              companyId={companyTab}
-              companyName={tabCompanies.find((c) => c.id === companyTab)?.name ?? 'Company'}
-              layout="single"
-              positions={filteredPositions.filter((p) => p.company_id === companyTab)}
+              companyId={scopedCompanyId}
+              companyName={tabCompanies.find((c) => c.id === scopedCompanyId)?.name ?? 'Company'}
+              layout="kanban"
+              positions={filteredPositions.filter((p) => p.company_id === scopedCompanyId)}
               showCompanyOnCards={false}
               draggingId={draggingId}
               setDraggingId={setDraggingId}
