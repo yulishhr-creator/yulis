@@ -1,0 +1,14 @@
+---
+description: Apply Supabase migrations after schema changes; do not defer to the user by default.
+alwaysApply: true
+---
+
+# Supabase migrations
+
+When you add or change `supabase/migrations/*.sql`, or change app code that depends on new columns, constraints, or tables, **apply the migration to the hosted project before finishing the task.**
+
+1. **Prefer automation:** Use the Supabase MCP `apply_migration` (or `supabase db push` when the CLI is linked and appropriate) so the remote database matches the repo.
+2. **Verify:** Confirm the change (e.g. `execute_sql` against `information_schema`, or a quick read query) so PostgREST schema cache errors are caught immediately.
+3. **Do not** close with “run this migration yourself” unless you **tried** to apply it and were blocked (e.g. missing auth, no project id, network failure). If blocked, say what failed and what the user must fix (e.g. link MCP, set `DATABASE_URL` for `npm run db:migrate`).
+
+Local script `npm run db:migrate` only runs `001_initial.sql`; for incremental SQL, use MCP/CLI or extend the script—do not assume `db:migrate` alone applies new numbered migrations.
