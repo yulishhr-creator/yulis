@@ -119,7 +119,7 @@ export function TasksPage() {
           position_id,
           position_candidate_id,
           candidate_id,
-          positions ( id, title, company_id, companies ( id, name, avatar_url ) ),
+          positions ( id, title, company_id, companies ( id, name ) ),
           position_candidates ( id, candidates ( id, full_name ) ),
           candidates ( id, full_name )
         `,
@@ -660,7 +660,12 @@ export function TasksPage() {
       </div>
 
       <div className="border-stitch-on-surface/10 overflow-x-auto rounded-2xl border border-stone-200/80 bg-white/80 dark:border-stone-600 dark:bg-stone-900/50">
-        {tasksQ.isPending && tasks.length === 0 ? (
+        {tasksQ.isError ? (
+          <p className="text-ink-muted p-6 text-sm">
+            Couldn&apos;t load tasks. If this persists, refresh the page or confirm your database includes the latest
+            migrations.
+          </p>
+        ) : tasksQ.isPending && tasks.length === 0 ? (
           <PageSpinner message="Loading tasks…" className="p-6" />
         ) : tasksQ.isFetching && tasks.length === 0 && kpis && kpis.open + kpis.closed + kpis.archived > 0 ? (
           <PageSpinner message="Loading tasks…" className="p-6" />

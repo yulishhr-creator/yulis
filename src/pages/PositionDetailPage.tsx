@@ -325,21 +325,6 @@ export function PositionDetailPage() {
     networkMode: 'always',
     enabled: Boolean(supabase && user && id),
     queryFn: async () => {
-      // #region agent log
-      fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'da550c' },
-        body: JSON.stringify({
-          sessionId: 'da550c',
-          runId: 'pre',
-          hypothesisId: 'H1',
-          location: 'PositionDetailPage.tsx:posQ.queryFn',
-          message: 'posQ fetch start',
-          data: { positionIdLen: id?.length ?? 0 },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {})
-      // #endregion
       const { data, error } = await supabase!
         .from('positions')
         // Omit companies.avatar_url unless migration 016 is applied (Postgres 42703 undefined_column).
@@ -347,39 +332,7 @@ export function PositionDetailPage() {
         .eq('id', id!)
         .eq('user_id', user!.id)
         .single()
-      if (error) {
-        // #region agent log
-        fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'da550c' },
-          body: JSON.stringify({
-            sessionId: 'da550c',
-            runId: 'pre',
-            hypothesisId: 'H3',
-            location: 'PositionDetailPage.tsx:posQ.queryFn',
-            message: 'posQ supabase error',
-            data: { code: error.code, hint: Boolean(error.hint), msgLen: (error.message ?? '').length },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {})
-        // #endregion
-        throw error
-      }
-      // #region agent log
-      fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'da550c' },
-        body: JSON.stringify({
-          sessionId: 'da550c',
-          runId: 'pre',
-          hypothesisId: 'H1',
-          location: 'PositionDetailPage.tsx:posQ.queryFn',
-          message: 'posQ fetch success',
-          data: { hasData: Boolean(data) },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {})
-      // #endregion
+      if (error) throw error
       return data
     },
   })
@@ -506,41 +459,6 @@ export function PositionDetailPage() {
     contact_email: string | null
     avatar_url?: string | null
   } | undefined
-
-  useEffect(() => {
-    const gateBlockReady = !supabase || !user?.id
-    let paintBranch: string
-    if (!id) paintBranch = 'navigate_no_id'
-    else if (gateBlockReady) paintBranch = 'spinner_getting_ready'
-    else if (posQ.isError) paintBranch = 'error_posQ'
-    else if (posQ.isPending) paintBranch = 'spinner_loading_role'
-    else if (!posQ.data) paintBranch = 'error_no_position_data'
-    else paintBranch = 'main'
-    // #region agent log
-    fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'da550c' },
-      body: JSON.stringify({
-        sessionId: 'da550c',
-        runId: 'pre',
-        hypothesisId: 'H1-H4',
-        location: 'PositionDetailPage.tsx:debug-gate',
-        message: 'render gate snapshot',
-        data: {
-          idPresent: Boolean(id),
-          gateBlockReady,
-          posStatus: posQ.status,
-          fetchStatus: posQ.fetchStatus,
-          isPending: posQ.isPending,
-          isError: posQ.isError,
-          hasPositionData: Boolean(posQ.data),
-          paintBranch,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {})
-    // #endregion
-  }, [id, supabase, user?.id, posQ.status, posQ.fetchStatus, posQ.isPending, posQ.isError, posQ.data])
 
   const backToPositionsList = useMemo(() => {
     if (company?.id) return `/positions?company=${encodeURIComponent(company.id)}`

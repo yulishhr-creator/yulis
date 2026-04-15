@@ -369,7 +369,7 @@ export function PositionsPage() {
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('companies')
-        .select('id, name, status, avatar_url')
+        .select('id, name, status')
         .eq('user_id', user!.id)
         .is('deleted_at', null)
         .order('name')

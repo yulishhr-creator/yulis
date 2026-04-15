@@ -13,64 +13,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const supabase = getSupabase()
     if (!supabase) return
 
-    void supabase.auth
-      .getSession()
-      .then(({ data }) => {
-        // #region agent log
-        fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'da550c' },
-          body: JSON.stringify({
-            sessionId: 'da550c',
-            runId: 'pre',
-            hypothesisId: 'H2',
-            location: 'AuthProvider.tsx:getSession',
-            message: 'getSession settled',
-            data: { hasSession: Boolean(data.session) },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {})
-        // #endregion
-        setSession(data.session ?? null)
-        setLoading(false)
-      })
-      .catch((e) => {
-        // #region agent log
-        fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'da550c' },
-          body: JSON.stringify({
-            sessionId: 'da550c',
-            runId: 'pre',
-            hypothesisId: 'H2',
-            location: 'AuthProvider.tsx:getSession',
-            message: 'getSession rejected',
-            data: { err: String((e as Error)?.message ?? e).slice(0, 120) },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {})
-        // #endregion
-        setLoading(false)
-      })
+    void supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session ?? null)
+      setLoading(false)
+    })
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, next) => {
-      // #region agent log
-      fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'da550c' },
-        body: JSON.stringify({
-          sessionId: 'da550c',
-          runId: 'pre',
-          hypothesisId: 'H2',
-          location: 'AuthProvider.tsx:onAuthStateChange',
-          message: 'auth event',
-          data: { event, hasSession: Boolean(next) },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {})
-      // #endregion
+    } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next)
       // Unblock UI even if getSession() hangs (storage lock, extension interference).
       setLoading(false)
