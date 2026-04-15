@@ -413,6 +413,11 @@ export function PositionDetailPage() {
   const position = posQ.data
   const company = position?.companies as unknown as { id: string; name: string; contact_email: string | null } | undefined
 
+  const backToPositionsList = useMemo(() => {
+    if (company?.id) return `/positions?company=${encodeURIComponent(company.id)}`
+    return '/positions'
+  }, [company?.id])
+
   const [title, setTitle] = useState('')
   const [requirements, setRequirements] = useState('')
   const [hiringManagerName, setHiringManagerName] = useState('')
@@ -1578,7 +1583,7 @@ export function PositionDetailPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex min-w-0 flex-1 items-start gap-3">
             <Link
-              to="/positions"
+              to={backToPositionsList}
               className="border-line text-ink-muted hover:bg-stone-100 dark:hover:bg-stone-800 mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-white/90 shadow-sm transition dark:border-line-dark dark:bg-stone-900"
               aria-label="Back to positions"
             >

@@ -17,17 +17,17 @@ function nestedOne<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : v
 }
 
-const VISIBLE_STATUS_ORDER = ['open', 'closed'] as const
-type TaskStatus = 'open' | 'closed' | 'archived'
+const STATUS_ORDER = ['todo', 'in_progress', 'done'] as const
+type TaskStatus = (typeof STATUS_ORDER)[number]
 
 function isTaskStatus(s: string): s is TaskStatus {
-  return s === 'open' || s === 'closed' || s === 'archived'
+  return STATUS_ORDER.includes(s as TaskStatus)
 }
 
 function statusLabel(s: TaskStatus): string {
-  if (s === 'open') return 'Open'
-  if (s === 'closed') return 'Closed'
-  return 'Archived'
+  if (s === 'todo') return 'To do'
+  if (s === 'in_progress') return 'In progress'
+  return 'Done'
 }
 
 type TaskRow = {
@@ -39,7 +39,7 @@ type TaskRow = {
   due_at: string | null
   created_at: string
   updated_at: string
-  position_id: string | null
+  position_id: string
   position_candidate_id: string | null
   positions: unknown
   position_candidates: unknown
@@ -571,7 +571,7 @@ export function TasksPage() {
                 <th className="px-3 py-3 font-bold">Candidate</th>
               </tr>
             </thead>
-            {STATUS_ORDER.map((st) => (
+            {statusGroupOrder.map((st) => (
               <tbody
                 key={st}
                 className={`border-b border-stone-200/70 dark:border-stone-600 ${
