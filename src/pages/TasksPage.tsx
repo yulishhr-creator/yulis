@@ -381,7 +381,7 @@ export function TasksPage() {
     updateTaskStatus.mutate({ id: payload.id, status: target })
   }
 
-  function setStatusUrl(next: TaskStatus | null) {
+  function setStatusUrl(next: string | null) {
     setSearchParams(
       (prev) => {
         const p = new URLSearchParams(prev)
@@ -408,7 +408,7 @@ export function TasksPage() {
 
       {kpis ? (
         <motion.section aria-label="Task counts" initial={reduceMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
             {(
               [
                 { key: 'todo' as const, label: 'To do', value: kpis.todo, sub: kpis.todo === 1 ? '1 waiting' : `${kpis.todo} waiting` },
@@ -418,46 +418,28 @@ export function TasksPage() {
                   value: kpis.inProgress,
                   sub: kpis.inProgress === 0 ? 'None active' : `${kpis.inProgress} active`,
                 },
-                {
-                  key: 'overdue' as const,
-                  label: 'Overdue',
-                  value: kpis.overdue,
-                  sub: kpis.overdue > 0 ? `${kpis.overdue} past due` : 'On schedule',
-                },
                 { key: 'done' as const, label: 'Done', value: kpis.done, sub: 'Completed' },
               ] as const
-            ).map((card) =>
-              card.key === 'overdue' ? (
-                <div
-                  key={card.key}
-                  role="note"
-                  className="rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-4 dark:border-stone-600 dark:bg-stone-900/70"
-                >
-                  <p className="text-ink-muted text-[10px] font-bold tracking-[0.15em] uppercase dark:text-stone-400">{card.label}</p>
-                  <p className="text-stitch-on-surface mt-1 text-2xl font-extrabold tabular-nums dark:text-stone-100">{card.value}</p>
-                  <p className="text-stitch-muted mt-0.5 text-[11px] dark:text-stone-500">{card.sub}</p>
-                </div>
-              ) : (
-                <button
-                  key={card.key}
-                  type="button"
-                  onClick={() => {
-                    if (card.key === 'done') setStatusUrl('done')
-                    else if (card.key === 'todo') setStatusUrl('todo')
-                    else setStatusUrl('in_progress')
-                  }}
-                  className={`rounded-2xl border px-4 py-4 text-left transition dark:border-stone-600 ${
-                    urlStatusFilter === card.key
-                      ? 'border-[#9b3e20] bg-[#fd8863]/12 ring-2 ring-[#9b3e20]/30 dark:bg-orange-950/40'
-                      : 'border-stone-200/80 bg-white/90 dark:border-stone-600 dark:bg-stone-900/70'
-                  }`}
-                >
-                  <p className="text-ink-muted text-[10px] font-bold tracking-[0.15em] uppercase dark:text-stone-400">{card.label}</p>
-                  <p className="text-stitch-on-surface mt-1 text-2xl font-extrabold tabular-nums dark:text-stone-100">{card.value}</p>
-                  <p className="text-stitch-muted mt-0.5 text-[11px] dark:text-stone-500">{card.sub}</p>
-                </button>
-              ),
-            )}
+            ).map((card) => (
+              <button
+                key={card.key}
+                type="button"
+                onClick={() => {
+                  if (card.key === 'done') setStatusUrl('done')
+                  else if (card.key === 'todo') setStatusUrl('todo')
+                  else setStatusUrl('in_progress')
+                }}
+                className={`rounded-2xl border px-4 py-4 text-left transition dark:border-stone-600 ${
+                  urlStatusFilter === card.key
+                    ? 'border-[#9b3e20] bg-[#fd8863]/12 ring-2 ring-[#9b3e20]/30 dark:bg-orange-950/40'
+                    : 'border-stone-200/80 bg-white/90 dark:border-stone-600 dark:bg-stone-900/70'
+                }`}
+              >
+                <p className="text-ink-muted text-[10px] font-bold tracking-[0.15em] uppercase dark:text-stone-400">{card.label}</p>
+                <p className="text-stitch-on-surface mt-1 text-2xl font-extrabold tabular-nums dark:text-stone-100">{card.value}</p>
+                <p className="text-stitch-muted mt-0.5 text-[11px] dark:text-stone-500">{card.sub}</p>
+              </button>
+            ))}
           </div>
           {urlStatusFilter ? (
             <button
@@ -683,7 +665,7 @@ export function TasksPage() {
             </div>
             <div className="flex-1 overflow-y-auto px-4 py-4 text-sm">
               <p className="text-ink-muted text-xs font-bold uppercase">Status</p>
-              <p className="mt-1 font-semibold capitalize">{selectedTask.status.replace('_', ' ')}</p>
+              <p className="mt-1 font-semibold capitalize">{selectedTask.status}</p>
 
               <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Due</p>
               <p className="mt-1">{selectedTask.due_at ? formatDue(selectedTask.due_at) : 'Not set'}</p>
@@ -799,12 +781,10 @@ export function TasksPage() {
         <p className="text-ink-muted mb-3 text-sm">
           {sessionStorage.getItem('yulis_task_prefill_position_id')
             ? 'Role is pre-filled from the position you were viewing. Change it if needed.'
-            : 'Pick which role this task belongs to.'}
+            : 'Optionally link this task to a role.'}
         </p>
         {allPositionsForTaskQ.isLoading ? (
           <p className="text-sm">Loading roles…</p>
-        ) : (allPositionsForTaskQ.data ?? []).length === 0 ? (
-          <p className="text-sm">No positions yet. Create a role first.</p>
         ) : (
           <form
             className="flex flex-col gap-3"
@@ -814,14 +794,13 @@ export function TasksPage() {
             }}
           >
             <label className="flex flex-col gap-1 text-sm font-medium">
-              Position
+              Position (optional)
               <select
                 value={newTaskPositionId}
                 onChange={(e) => setNewTaskPositionId(e.target.value)}
                 className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                required
               >
-                <option value="">Select a role…</option>
+                <option value="">None (standalone task)</option>
                 {(allPositionsForTaskQ.data ?? []).map((row) => {
                   const co = row.companies as unknown as { name: string } | null
                   return (

@@ -89,12 +89,7 @@ function DashboardHome() {
               <span className="text-stitch-on-surface text-2xl font-extrabold tabular-nums dark:text-stone-100">
                 {taskKpisPending ? '–' : taskKpis?.done ?? 0}
               </span>
-              <span className="text-stitch-muted text-sm dark:text-stone-500">
-                done
-                {!taskKpisPending && (taskKpis?.overdue ?? 0) > 0 ? (
-                  <span className="text-rose-600 dark:text-rose-400"> · {taskKpis?.overdue} overdue</span>
-                ) : null}
-              </span>
+              <span className="text-stitch-muted text-sm dark:text-stone-500">done</span>
             </div>
             <p className="text-accent mt-2 text-xs font-bold underline dark:text-orange-300">Open tasks →</p>
           </Link>
