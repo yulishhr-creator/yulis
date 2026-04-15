@@ -1,7 +1,7 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { ChevronDown, GripVertical, ListFilter, X } from 'lucide-react'
+import { Check, ChevronDown, ListFilter, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
@@ -24,17 +24,10 @@ function defaultReminderDatetimeLocal(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-const STATUS_ORDER = ['todo', 'in_progress', 'done'] as const
-type TaskStatus = (typeof STATUS_ORDER)[number]
+type TaskStatus = 'open' | 'closed' | 'archived'
 
 function isTaskStatus(s: string): s is TaskStatus {
-  return STATUS_ORDER.includes(s as TaskStatus)
-}
-
-function statusLabel(s: TaskStatus): string {
-  if (s === 'todo') return 'To do'
-  if (s === 'in_progress') return 'In progress'
-  return 'Done'
+  return s === 'open' || s === 'closed' || s === 'archived'
 }
 
 type TaskRow = {
@@ -87,7 +80,7 @@ export function TasksPage() {
 
   const [searchText, setSearchText] = useState('')
   const [selectedTask, setSelectedTask] = useState<TaskRow | null>(null)
-  const [dropHoverStatus, setDropHoverStatus] = useState<TaskStatus | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
 
   const tasksQ = useQuery({
     queryKey: ['tasks-page', uid],
@@ -217,6 +210,9 @@ export function TasksPage() {
 
   const filteredTasks = useMemo(() => {
     let list = tasks
+    if (!showArchived && urlStatusFilter !== 'archived') {
+      list = list.filter((row) => row.status !== 'archived')
+    }
     if (companyTaskFilter !== 'all') {
       if (companyTaskFilter.size === 0) list = []
       else {
@@ -248,23 +244,21 @@ export function TasksPage() {
       list = list.filter((row) => row.status === urlStatusFilter)
     }
     return list
-  }, [tasks, companyTaskFilter, searchText, urlStatusFilter])
+  }, [tasks, companyTaskFilter, searchText, urlStatusFilter, showArchived])
 
-  const tasksByStatus = useMemo(() => {
-    const m: Record<TaskStatus, TaskRow[]> = { todo: [], in_progress: [], done: [] }
-    for (const t of filteredTasks) {
-      const s = t.status
-      if (isTaskStatus(s)) m[s].push(t)
-    }
-    for (const s of STATUS_ORDER) {
-      m[s].sort((a, b) => {
-        if (s === 'done') return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+  const tasksListOrdered = useMemo(() => {
+    const rank: Record<string, number> = { open: 0, closed: 1, archived: 2 }
+    return [...filteredTasks].sort((a, b) => {
+      const ra = rank[a.status] ?? 99
+      const rb = rank[b.status] ?? 99
+      if (ra !== rb) return ra - rb
+      if (a.status === 'open' && b.status === 'open') {
         const ad = a.due_at ? new Date(a.due_at).getTime() : Infinity
         const bd = b.due_at ? new Date(b.due_at).getTime() : Infinity
         return ad - bd
-      })
-    }
-    return m
+      }
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    })
   }, [filteredTasks])
 
   useEffect(() => {
@@ -373,7 +367,7 @@ export function TasksPage() {
         user_id: uid!,
         title: newTaskTitle.trim() || 'Task',
         description: newTaskDescription.trim() || null,
-        status: 'todo',
+        status: 'open',
         due_at: taskReminderEnabled && taskReminderAt.trim() ? new Date(taskReminderAt).toISOString() : null,
       }
       const pid = newTaskPositionId.trim()
@@ -401,39 +395,7 @@ export function TasksPage() {
     onError: (e: Error) => toastError(e.message),
   })
 
-  function parseDragPayload(e: React.DragEvent): { id: string; status: TaskStatus } | null {
-    try {
-      const raw = e.dataTransfer.getData('application/json')
-      if (!raw) return null
-      const o = JSON.parse(raw) as { id?: string; status?: string }
-      if (!o.id || !o.status || !isTaskStatus(o.status)) return null
-      return { id: o.id, status: o.status }
-    } catch {
-      return null
-    }
-  }
-
-  function onDragStartTask(e: React.DragEvent, row: TaskRow) {
-    if (!isTaskStatus(row.status)) return
-    e.dataTransfer.setData('application/json', JSON.stringify({ id: row.id, status: row.status }))
-    e.dataTransfer.effectAllowed = 'move'
-  }
-
-  function onDragOverStatus(e: React.DragEvent, target: TaskStatus) {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    setDropHoverStatus(target)
-  }
-
-  function onDropOnStatus(e: React.DragEvent, target: TaskStatus) {
-    e.preventDefault()
-    setDropHoverStatus(null)
-    const payload = parseDragPayload(e)
-    if (!payload || payload.status === target) return
-    updateTaskStatus.mutate({ id: payload.id, status: target })
-  }
-
-  function setStatusUrl(next: TaskStatus | null) {
+  function setStatusUrl(next: string | null) {
     setSearchParams(
       (prev) => {
         const p = new URLSearchParams(prev)
@@ -449,23 +411,25 @@ export function TasksPage() {
     <div className="flex flex-col gap-8 md:gap-10">
       {kpis ? (
         <motion.section aria-label="Task counts" initial={reduceMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+          <div className="grid grid-cols-3 gap-3">
             {(
               [
-                { key: 'todo' as const, label: 'To do', value: kpis.todo, sub: kpis.todo === 1 ? '1 waiting' : `${kpis.todo} waiting` },
-                {
-                  key: 'in_progress' as const,
-                  label: 'In progress',
-                  value: kpis.inProgress,
-                  sub: kpis.inProgress === 0 ? 'None active' : `${kpis.inProgress} active`,
-                },
-                { key: 'done' as const, label: 'Done', value: kpis.done, sub: 'Completed' },
+                { key: 'open', label: 'Open', value: kpis.open, sub: kpis.open === 1 ? '1 open' : `${kpis.open} open` },
+                { key: 'closed', label: 'Closed', value: kpis.closed, sub: 'Completed' },
+                { key: 'archived', label: 'Archived', value: kpis.archived, sub: 'Hidden by default' },
               ] as const
             ).map((card) => (
               <button
                 key={card.key}
                 type="button"
-                onClick={() => setStatusUrl(card.key)}
+                onClick={() => {
+                  if (card.key === 'archived') {
+                    setShowArchived(true)
+                    setStatusUrl('archived')
+                  } else {
+                    setStatusUrl(card.key)
+                  }
+                }}
                 className={`rounded-2xl border px-4 py-4 text-left transition dark:border-stone-600 ${
                   urlStatusFilter === card.key
                     ? 'border-[#9b3e20] bg-[#fd8863]/12 ring-2 ring-[#9b3e20]/30 dark:bg-orange-950/40'
@@ -482,7 +446,10 @@ export function TasksPage() {
             <button
               type="button"
               className="text-ink-muted hover:text-ink mt-3 text-xs font-bold underline dark:text-stone-400 dark:hover:text-stone-200"
-              onClick={() => setStatusUrl(null)}
+              onClick={() => {
+                setStatusUrl(null)
+                if (urlStatusFilter === 'archived') setShowArchived(false)
+              }}
             >
               Clear status filter
             </button>
@@ -571,7 +538,7 @@ export function TasksPage() {
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-stone-200/80 bg-white/80 dark:border-stone-600 dark:bg-stone-900/50">
+      <div className="border-stitch-on-surface/10 overflow-x-auto rounded-2xl border border-stone-200/80 bg-white/80 dark:border-stone-600 dark:bg-stone-900/50">
         {tasksQ.isLoading ? (
           <p className="text-ink-muted p-6 text-sm">Loading…</p>
         ) : tasks.length === 0 ? (
@@ -579,116 +546,119 @@ export function TasksPage() {
         ) : filteredTasks.length === 0 ? (
           <p className="text-ink-muted p-6 text-sm">No tasks match your filters.</p>
         ) : (
-          <table className="w-full min-w-[720px] border-collapse text-left text-sm">
-            <thead>
-              <tr className="border-b border-stone-200/90 bg-stone-50/90 dark:border-stone-600 dark:bg-stone-800/80">
-                <th className="w-8 px-2 py-3" aria-hidden />
-                <th className="px-3 py-3 font-bold">Task</th>
-                <th className="px-3 py-3 font-bold">Due</th>
-                <th className="px-3 py-3 font-bold">Position</th>
-                <th className="px-3 py-3 font-bold">Client</th>
-                <th className="px-3 py-3 font-bold">Candidate</th>
-              </tr>
-            </thead>
-            {STATUS_ORDER.map((st) => (
-              <tbody
-                key={st}
-                className={`border-b border-stone-200/70 dark:border-stone-600 ${
-                  dropHoverStatus === st ? 'bg-[#97daff]/12 dark:bg-cyan-950/30' : ''
-                }`}
-                onDragOver={(e) => onDragOverStatus(e, st)}
-                onDragLeave={() => setDropHoverStatus((h) => (h === st ? null : h))}
-                onDrop={(e) => onDropOnStatus(e, st)}
-              >
-                <tr className="bg-stone-100/95 dark:bg-stone-800/90">
-                  <td colSpan={6} className="px-3 py-2 text-xs font-extrabold tracking-wide text-stone-600 uppercase dark:text-stone-300">
-                    {statusLabel(st)} ({tasksByStatus[st].length})
-                  </td>
-                </tr>
-                {tasksByStatus[st].length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="text-ink-muted px-3 py-4 text-xs italic dark:text-stone-500">
-                      Drop a task here or drag from another group.
-                    </td>
-                  </tr>
-                ) : (
-                  tasksByStatus[st].map((row) => {
-                    const pos = row.positions as
-                      | { id: string; title: string; companies: { name?: string } | null }
-                      | null
-                    const pcJoin = row.position_candidates as {
-                      candidates: { id: string; full_name: string } | { id: string; full_name: string }[] | null
-                    } | null
-                    const candFromRole = nestedOne(pcJoin?.candidates ?? null)
-                    const candPool = nestedOne(
-                      row.candidates as { id: string; full_name: string } | { id: string; full_name: string }[] | null,
-                    )
-                    const cand = candFromRole ?? candPool
-                    const dueLabel = row.due_at ? formatDue(row.due_at) : '—'
-                    return (
-                      <tr
-                        key={row.id}
-                        draggable
-                        onDragStart={(e) => onDragStartTask(e, row)}
-                        onDragEnd={() => setDropHoverStatus(null)}
-                        className="border-t border-stone-100 transition hover:bg-stone-50/90 dark:border-stone-700/80 dark:hover:bg-stone-800/60"
-                      >
-                        <td className="px-1 py-2 align-middle">
-                          <span className="text-ink-muted inline-flex cursor-grab p-1 active:cursor-grabbing" aria-hidden>
-                            <GripVertical className="h-4 w-4" />
+          <ul className="space-y-3 p-4 md:p-6" aria-label="Tasks">
+            {tasksListOrdered.map((row, i) => {
+              const pos = row.positions as
+                | { id: string; title: string; companies: { name?: string } | null }
+                | null
+              const pcJoin = row.position_candidates as {
+                candidates: { id: string; full_name: string } | { id: string; full_name: string }[] | null
+              } | null
+              const candFromRole = nestedOne(pcJoin?.candidates ?? null)
+              const candPool = nestedOne(
+                row.candidates as { id: string; full_name: string } | { id: string; full_name: string }[] | null,
+              )
+              const cand = candFromRole ?? candPool
+              const hasPosition = Boolean(row.position_id && pos)
+              const hasCandidate = Boolean(cand)
+              const taskCardClass =
+                'border-stitch-on-surface/10 rounded-2xl border-b-4 border-b-[#006384]/60 bg-white p-4 shadow-[0_16px_36px_rgba(48,46,43,0.08)] dark:border-stone-700 dark:bg-stone-900'
+              const canComplete = row.status === 'open'
+              const canArchive = row.status !== 'archived'
+              return (
+                <motion.li
+                  key={row.id}
+                  initial={reduceMotion ? false : { opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: reduceMotion ? 0 : Math.min(i, 12) * 0.03 }}
+                  className={taskCardClass}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-stitch-on-surface font-bold dark:text-stone-100">
+                        <button
+                          type="button"
+                          className="text-left underline-offset-2 hover:underline"
+                          onClick={() => setSelectedTask(row)}
+                        >
+                          {row.title}
+                        </button>
+                        {row.description?.trim() ? (
+                          <>
+                            <span className="text-stitch-muted font-normal dark:text-stone-400"> — </span>
+                            <span className="text-stitch-muted text-sm font-semibold dark:text-stone-400">{row.description.trim()}</span>
+                          </>
+                        ) : null}
+                        {hasPosition || hasCandidate ? (
+                          <span className="text-sm font-normal text-[#006384] dark:text-cyan-300">
+                            {hasPosition ? (
+                              <>
+                                {' '}
+                                for{' '}
+                                <Link
+                                  to={`/positions/${row.position_id}`}
+                                  className="font-semibold underline-offset-2 hover:underline"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {pos!.title}
+                                </Link>
+                              </>
+                            ) : null}
+                            {hasCandidate ? (
+                              <>
+                                {hasPosition ? ' ' : ' '}
+                                about{' '}
+                                <Link
+                                  to={
+                                    row.position_id
+                                      ? `/positions/${row.position_id}?candidate=${cand!.id}`
+                                      : `/candidates/${cand!.id}`
+                                  }
+                                  className="font-semibold underline-offset-2 hover:underline"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {cand!.full_name}
+                                </Link>
+                              </>
+                            ) : null}
                           </span>
-                        </td>
-                        <td className="px-3 py-2 align-middle">
-                          <button
-                            type="button"
-                            className="text-left font-semibold text-[#302e2b] underline-offset-2 hover:underline dark:text-stone-100"
-                            onClick={() => setSelectedTask(row)}
-                          >
-                            {row.title}
-                          </button>
-                        </td>
-                        <td className="text-ink-muted px-3 py-2 align-middle tabular-nums dark:text-stone-400">{dueLabel}</td>
-                        <td className="px-3 py-2 align-middle">
-                          {row.position_id && pos ? (
-                            <Link
-                              to={`/positions/${row.position_id}`}
-                              className="text-[#006384] font-medium hover:underline dark:text-cyan-300"
-                            >
-                              {pos.title}
-                            </Link>
-                          ) : (
-                            <span className="text-ink-muted dark:text-stone-500">—</span>
-                          )}
-                        </td>
-                        <td className="text-ink-muted px-3 py-2 align-middle dark:text-stone-400">{pos?.companies?.name ?? '—'}</td>
-                        <td className="px-3 py-2 align-middle">
-                          {cand ? (
-                            row.position_id ? (
-                              <Link
-                                to={`/positions/${row.position_id}?candidate=${cand.id}`}
-                                className="text-[#006384] font-medium hover:underline dark:text-cyan-300"
-                              >
-                                {cand.full_name}
-                              </Link>
-                            ) : (
-                              <Link
-                                to={`/candidates/${cand.id}`}
-                                className="text-[#006384] font-medium hover:underline dark:text-cyan-300"
-                              >
-                                {cand.full_name}
-                              </Link>
-                            )
-                          ) : (
-                            <span className="text-ink-muted dark:text-stone-500">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            ))}
-          </table>
+                        ) : null}
+                      </p>
+                      {row.due_at ? (
+                        <p className="mt-2 text-xs font-semibold tabular-nums text-[#006384] dark:text-cyan-300">
+                          Due {formatDue(row.due_at)}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {canComplete ? (
+                        <button
+                          type="button"
+                          className="text-ink-muted hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg p-2 transition disabled:opacity-40"
+                          aria-label="Mark complete"
+                          disabled={updateTaskStatus.isPending}
+                          onClick={() => updateTaskStatus.mutate({ id: row.id, status: 'closed' })}
+                        >
+                          <Check className="h-4 w-4" aria-hidden />
+                        </button>
+                      ) : null}
+                      {canArchive ? (
+                        <button
+                          type="button"
+                          className="text-ink-muted hover:text-rose-600 dark:hover:text-rose-400 rounded-lg p-2 transition disabled:opacity-40"
+                          aria-label="Archive task"
+                          disabled={updateTaskStatus.isPending}
+                          onClick={() => updateTaskStatus.mutate({ id: row.id, status: 'archived' })}
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </motion.li>
+              )
+            })}
+          </ul>
         )}
       </div>
 
