@@ -39,6 +39,7 @@ import { criticalStageThreshold, logActivityEvent } from '@/lib/activityLog'
 import { formatAssignmentStatus } from '@/lib/candidateStatus'
 import { logPositionCandidateTransition } from '@/lib/positionTransitions'
 import { isMissingRequirementsColumnError, normalizeRequirementsText, parseRequirementTokens } from '@/lib/requirementValues'
+import { CompanyClientAvatar } from '@/components/companies/CompanyClientAvatar'
 
 type StageRow = {
   id: string
@@ -105,12 +106,7 @@ type ActivityRow = {
   position_candidate_id: string | null
 }
 
-const POSITION_TASK_STATUS_ORDER = ['open', 'closed'] as const
 type PositionTaskStatus = 'open' | 'closed' | 'archived'
-
-function isPositionTaskStatus(s: string): s is PositionTaskStatus {
-  return s === 'open' || s === 'closed' || s === 'archived'
-}
 
 type PositionTaskRow = {
   id: string
@@ -121,18 +117,16 @@ type PositionTaskRow = {
   due_at: string | null
   created_at: string
   updated_at: string
+  sort_order?: number | null
   position_candidate_id: string | null
   position_candidates: unknown
 }
 
-function taskLinkedCandidateName(t: PositionTaskRow): string | null {
-  const raw = t.position_candidates
-  if (raw == null) return null
-  const pc = Array.isArray(raw) ? raw[0] : raw
-  if (!pc) return null
-  const cand = pc.candidates
-  const profile = cand == null ? null : Array.isArray(cand) ? cand[0] : cand
-  return profile?.full_name ?? null
+function nestedTaskCandidate(
+  v: { id: string; full_name: string } | { id: string; full_name: string }[] | null | undefined,
+): { id: string; full_name: string } | null {
+  if (v == null) return null
+  return Array.isArray(v) ? (v[0] ?? null) : v
 }
 
 function taskLinkedCandidate(t: PositionTaskRow): { id: string; full_name: string } | null {
@@ -140,8 +134,9 @@ function taskLinkedCandidate(t: PositionTaskRow): { id: string; full_name: strin
   if (raw == null) return null
   const pc = Array.isArray(raw) ? raw[0] : raw
   if (!pc) return null
-  const cand = pc.candidates as { id: string; full_name?: string } | { id: string; full_name?: string }[] | null | undefined
-  const profile = cand == null ? null : Array.isArray(cand) ? cand[0] : cand
+  const profile = nestedTaskCandidate(
+    pc.candidates as { id: string; full_name: string } | { id: string; full_name: string }[] | null | undefined,
+  )
   if (!profile?.id) return null
   return { id: profile.id, full_name: profile.full_name ?? 'Unnamed' }
 }
@@ -329,7 +324,7 @@ export function PositionDetailPage() {
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('positions')
-        .select('*, companies ( id, name, contact_email )')
+        .select('*, companies ( id, name, contact_email, avatar_url )')
         .eq('id', id!)
         .eq('user_id', user!.id)
         .single()
@@ -396,6 +391,7 @@ export function PositionDetailPage() {
           due_at,
           created_at,
           updated_at,
+          sort_order,
           position_candidate_id,
           position_candidates ( id, candidates ( id, full_name ) )
         `,
@@ -445,7 +441,12 @@ export function PositionDetailPage() {
   })
 
   const position = posQ.data
-  const company = position?.companies as unknown as { id: string; name: string; contact_email: string | null } | undefined
+  const company = position?.companies as unknown as {
+    id: string
+    name: string
+    contact_email: string | null
+    avatar_url?: string | null
+  } | undefined
 
   const backToPositionsList = useMemo(() => {
     if (company?.id) return `/positions?company=${encodeURIComponent(company.id)}`
@@ -471,16 +472,12 @@ export function PositionDetailPage() {
   const [shareOpen, setShareOpen] = useState(false)
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const [shareChannelOpen, setShareChannelOpen] = useState(false)
-  const [taskDropHover, setTaskDropHover] = useState<PositionTaskStatus | null>(null)
   const [selectedPositionTask, setSelectedPositionTask] = useState<PositionTaskRow | null>(null)
   const [headerStatusOpen, setHeaderStatusOpen] = useState(false)
   const headerStatusRef = useRef<HTMLDivElement>(null)
   const shareChannelRef = useRef<HTMLDivElement>(null)
   const [candidateDragId, setCandidateDragId] = useState<string | null>(null)
   const [candidateDropStage, setCandidateDropStage] = useState<string | null>(null)
-  const [newPositionTaskTitle, setNewPositionTaskTitle] = useState('')
-  const [newPositionTaskDescription, setNewPositionTaskDescription] = useState('')
-
   useEffect(() => {
     if (tab !== 'tasks') setSelectedPositionTask(null)
   }, [tab])
@@ -870,30 +867,6 @@ export function PositionDetailPage() {
     onError: (e: Error) => toastError(e.message),
   })
 
-  const addPositionTask = useMutation({
-    mutationFn: async ({ title, description }: { title: string; description: string }) => {
-      const { error } = await supabase!.from('tasks').insert({
-        user_id: user!.id,
-        position_id: id!,
-        title: title.trim() || 'Task',
-        description: description.trim() || null,
-        status: 'open',
-        due_at: null,
-      })
-      if (error) throw error
-    },
-    onSuccess: async () => {
-      success('Task added')
-      setNewPositionTaskTitle('')
-      setNewPositionTaskDescription('')
-      await qc.invalidateQueries({ queryKey: ['position-tasks', id] })
-      await qc.invalidateQueries({ queryKey: ['tasks-page'] })
-      await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
-      await qc.invalidateQueries({ queryKey: ['notification-count'] })
-    },
-    onError: (e: Error) => toastError(e.message),
-  })
-
   const updateCandidateStage = useMutation({
     mutationFn: async ({ positionCandidateId, stageId }: { positionCandidateId: string; stageId: string | null }) => {
       const row = (candidatesQ.data ?? []).find((c) => c.id === positionCandidateId)
@@ -1212,21 +1185,22 @@ export function PositionDetailPage() {
 
   const candidateTabCount = (candidatesQ.data ?? []).length
 
-  const positionTasksByStatus = useMemo(() => {
-    const m: Record<PositionTaskStatus, PositionTaskRow[]> = { open: [], closed: [], archived: [] }
-    for (const t of tasksQ.data ?? []) {
-      const s = t.status
-      if (isPositionTaskStatus(s)) m[s].push(t)
-    }
-    for (const st of POSITION_TASK_STATUS_ORDER) {
-      m[st].sort((a, b) => {
-        if (st === 'closed') return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+  const positionTasksListOrdered = useMemo(() => {
+    const list = tasksQ.data ?? []
+    const rank: Record<string, number> = { open: 0, closed: 1, archived: 2 }
+    return [...list].sort((a, b) => {
+      const ra = rank[a.status] ?? 99
+      const rb = rank[b.status] ?? 99
+      if (ra !== rb) return ra - rb
+      const so = (a.sort_order ?? 0) - (b.sort_order ?? 0)
+      if (so !== 0) return so
+      if (a.status === 'open' && b.status === 'open') {
         const ad = a.due_at ? new Date(a.due_at).getTime() : Infinity
         const bd = b.due_at ? new Date(b.due_at).getTime() : Infinity
         return ad - bd
-      })
-    }
-    return m
+      }
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    })
   }, [tasksQ.data])
 
   const candidateNameById = useMemo(() => {
@@ -1358,44 +1332,6 @@ export function PositionDetailPage() {
     if (!row || row.status !== 'in_progress') return
     if (row.position_stage_id === stageId) return
     void updateCandidateStage.mutateAsync({ positionCandidateId: p.pcId, stageId })
-  }
-
-  function parseTaskDragPayload(e: DragEvent): { id: string; status: PositionTaskStatus } | null {
-    try {
-      const raw = e.dataTransfer.getData('application/json')
-      if (!raw) return null
-      const o = JSON.parse(raw) as { id?: string; status?: string }
-      if (!o.id || !o.status || !isPositionTaskStatus(o.status)) return null
-      return { id: o.id, status: o.status }
-    } catch {
-      return null
-    }
-  }
-
-  function onTaskDragOverStatus(e: DragEvent, target: PositionTaskStatus) {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    setTaskDropHover(target)
-  }
-
-  function onTaskDropOnStatus(e: DragEvent, target: PositionTaskStatus) {
-    e.preventDefault()
-    setTaskDropHover(null)
-    const payload = parseTaskDragPayload(e)
-    if (!payload || payload.status === target) return
-    updatePositionTaskStatus.mutate({ taskId: payload.id, status: target })
-  }
-
-  function onTaskDragStart(e: DragEvent, row: PositionTaskRow) {
-    if (!isPositionTaskStatus(row.status)) return
-    e.dataTransfer.setData('application/json', JSON.stringify({ id: row.id, status: row.status }))
-    e.dataTransfer.effectAllowed = 'move'
-  }
-
-  function positionTaskStatusLabel(s: PositionTaskStatus): string {
-    if (s === 'open') return 'Open'
-    if (s === 'closed') return 'Closed'
-    return 'Archived'
   }
 
   if (posQ.isLoading || !position) {
@@ -2226,186 +2162,133 @@ export function PositionDetailPage() {
       ) : null}
 
       {tab === 'tasks' ? (
-        <section className="space-y-5">
-          <p className="text-ink-muted text-sm dark:text-stone-400">
-            Drag cards or table rows between To do, In progress, and Done. Click a task for details.{' '}
+        <section className="space-y-4">
+          <p className="text-ink-muted text-xs dark:text-stone-400">
+            Same layout as the main tasks list. Add or reorder tasks from{' '}
             <Link to="/tasks" className="text-accent font-semibold underline dark:text-orange-300">
               All tasks
             </Link>
+            .
           </p>
-          <form
-            className="border-line flex flex-col gap-3 rounded-2xl border border-stone-200/80 bg-white/70 p-4 dark:border-line-dark dark:bg-stone-900/45 sm:flex-row sm:flex-wrap sm:items-end"
-            onSubmit={(e) => {
-              e.preventDefault()
-              void addPositionTask.mutateAsync({
-                title: newPositionTaskTitle,
-                description: newPositionTaskDescription,
-              })
-            }}
-          >
-            <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-sm font-medium">
-              New task
-              <input
-                value={newPositionTaskTitle}
-                onChange={(e) => setNewPositionTaskTitle(e.target.value)}
-                placeholder="Title"
-                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-              />
-            </label>
-            <label className="flex min-w-[12rem] flex-[2] flex-col gap-1 text-sm font-medium">
-              Description <span className="text-ink-muted font-normal">(optional)</span>
-              <input
-                value={newPositionTaskDescription}
-                onChange={(e) => setNewPositionTaskDescription(e.target.value)}
-                placeholder="Short context"
-                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-              />
-            </label>
-            <button
-              type="submit"
-              className="bg-accent text-stone-50 h-10 rounded-full px-5 text-sm font-semibold disabled:opacity-50"
-              disabled={addPositionTask.isPending}
-            >
-              Add task
-            </button>
-          </form>
 
-          <div className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]">
-            {POSITION_TASK_STATUS_ORDER.map((st) => (
-              <div
-                key={st}
-                className={`flex min-h-[min(40vh,18rem)] min-w-[200px] max-w-[260px] shrink-0 flex-col rounded-2xl border bg-white/85 p-2 dark:bg-stone-900/55 ${
-                  taskDropHover === st
-                    ? 'ring-2 ring-[#9b3e20]/45 dark:ring-orange-400/50'
-                    : 'border-stone-200/80 dark:border-stone-600'
-                }`}
-                onDragOver={(e) => onTaskDragOverStatus(e, st)}
-                onDragLeave={() => setTaskDropHover((h) => (h === st ? null : h))}
-                onDrop={(e) => onTaskDropOnStatus(e, st)}
-              >
-                <h3 className="text-ink px-1 text-[11px] font-extrabold tracking-wide uppercase dark:text-stone-200">
-                  {positionTaskStatusLabel(st)}
-                </h3>
-                <div className="mt-2 flex flex-1 flex-col gap-2 overflow-y-auto">
-                  {positionTasksByStatus[st].length === 0 ? (
-                    <p className="text-ink-muted px-1 text-xs italic dark:text-stone-500">Drop tasks here.</p>
-                  ) : (
-                    positionTasksByStatus[st].map((row) => {
-                      const cand = taskLinkedCandidateName(row)
-                      const dueLabel = row.due_at ? formatDue(row.due_at) : null
-                      return (
-                        <div
-                          key={row.id}
-                          role="button"
-                          tabIndex={0}
-                          draggable
-                          onDragStart={(e) => onTaskDragStart(e, row)}
-                          onDragEnd={() => setTaskDropHover(null)}
-                          onClick={() => setSelectedPositionTask(row)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault()
-                              setSelectedPositionTask(row)
-                            }
-                          }}
-                          className="border-line cursor-grab rounded-xl border bg-white p-3 shadow-sm active:cursor-grabbing dark:border-line-dark dark:bg-stone-800"
-                        >
-                          <div className="flex items-start gap-2">
-                            <GripVertical className="text-ink-muted mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate font-semibold text-stone-900 dark:text-stone-100">{row.title}</p>
-                              {cand ? <p className="text-ink-muted truncate text-xs dark:text-stone-400">{cand}</p> : null}
-                              {dueLabel ? (
-                                <p className="text-ink-muted mt-0.5 text-xs tabular-nums dark:text-stone-500">Due {dueLabel}</p>
-                              ) : null}
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="overflow-x-auto rounded-2xl border border-stone-200/80 bg-white/80 dark:border-stone-600 dark:bg-stone-900/50">
-            {tasksQ.isLoading ? (
+          <div className="border-stitch-on-surface/10 overflow-x-auto rounded-2xl border border-stone-200/80 bg-white/80 dark:border-stone-600 dark:bg-stone-900/50">
+            {tasksQ.isLoading && !tasksQ.data ? (
               <p className="text-ink-muted p-6 text-sm">Loading…</p>
             ) : (tasksQ.data ?? []).length === 0 ? (
               <p className="text-ink-muted p-6 text-sm">No tasks for this role yet.</p>
             ) : (
-              <table className="w-full min-w-[640px] border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b border-stone-200/90 bg-stone-50/90 dark:border-stone-600 dark:bg-stone-800/80">
-                    <th className="w-8 px-2 py-3" aria-hidden />
-                    <th className="px-3 py-3 font-bold">Task</th>
-                    <th className="px-3 py-3 font-bold">Due</th>
-                    <th className="px-3 py-3 font-bold">Candidate</th>
-                  </tr>
-                </thead>
-                {POSITION_TASK_STATUS_ORDER.map((st) => (
-                  <tbody
-                    key={st}
-                    className={`border-b border-stone-200/70 dark:border-stone-600 ${
-                      taskDropHover === st ? 'bg-[#97daff]/12 dark:bg-cyan-950/30' : ''
-                    }`}
-                    onDragOver={(e) => onTaskDragOverStatus(e, st)}
-                    onDragLeave={() => setTaskDropHover((h) => (h === st ? null : h))}
-                    onDrop={(e) => onTaskDropOnStatus(e, st)}
-                  >
-                    <tr className="bg-stone-100/95 dark:bg-stone-800/90">
-                      <td colSpan={4} className="px-3 py-2 text-xs font-extrabold tracking-wide text-stone-600 uppercase dark:text-stone-300">
-                        {positionTaskStatusLabel(st)} ({positionTasksByStatus[st].length})
-                      </td>
-                    </tr>
-                    {positionTasksByStatus[st].length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="text-ink-muted px-3 py-4 text-xs italic dark:text-stone-500">
-                          Drop a task here or drag from the board above.
-                        </td>
-                      </tr>
-                    ) : (
-                      positionTasksByStatus[st].map((row) => {
-                        const cand = taskLinkedCandidateName(row)
-                        const dueLabel = row.due_at ? formatDue(row.due_at) : '—'
-                        return (
-                          <tr
-                            key={row.id}
-                            draggable
-                            onDragStart={(e) => onTaskDragStart(e, row)}
-                            onDragEnd={() => setTaskDropHover(null)}
-                            className="border-t border-stone-100 transition hover:bg-stone-50/90 dark:border-stone-700/80 dark:hover:bg-stone-800/60"
-                          >
-                            <td className="px-1 py-2 align-middle">
-                              <span className="text-ink-muted inline-flex cursor-grab p-1 active:cursor-grabbing" aria-hidden>
-                                <GripVertical className="h-4 w-4" />
+              <ul className="space-y-3 p-4 md:p-6" aria-label="Tasks for this position">
+                {positionTasksListOrdered.map((row) => {
+                  const pcJoin = row.position_candidates as {
+                    candidates: { id: string; full_name: string } | { id: string; full_name: string }[] | null
+                  } | null
+                  const cand = nestedTaskCandidate(pcJoin?.candidates ?? null)
+                  const hasCandidate = Boolean(cand)
+                  const posTitle = position.title ?? 'This role'
+                  const companyName = company?.name ?? 'Client'
+                  const companyId = company?.id
+                  const taskCardClass =
+                    'border-stitch-on-surface/10 cursor-pointer rounded-2xl border-b-4 border-b-[#006384]/60 bg-white p-4 shadow-[0_16px_36px_rgba(48,46,43,0.08)] transition hover:border-stone-300/80 dark:border-stone-700 dark:bg-stone-900 dark:hover:border-stone-600'
+                  const canComplete = row.status === 'open'
+                  const canArchive = row.status !== 'archived'
+                  return (
+                    <li
+                      key={row.id}
+                      className={taskCardClass}
+                      onClick={(e) => {
+                        const t = e.target as HTMLElement
+                        if (t.closest('a, button')) return
+                        setSelectedPositionTask(row)
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-stitch-on-surface font-bold dark:text-stone-100">
+                            <span className="text-left underline-offset-2 hover:underline">{row.title}</span>
+                            {row.description?.trim() ? (
+                              <>
+                                <span className="text-stitch-muted font-normal dark:text-stone-400"> — </span>
+                                <span className="text-stitch-muted text-sm font-semibold dark:text-stone-400">{row.description.trim()}</span>
+                              </>
+                            ) : null}
+                            <span className="mt-1 block text-sm font-normal text-stone-600 dark:text-stone-400">
+                              <span className="inline-flex flex-wrap items-center gap-x-1 gap-y-1">
+                                <span>for</span>
+                                <span className="inline-flex items-center gap-1.5">
+                                  {companyId ? (
+                                    <CompanyClientAvatar
+                                      companyId={companyId}
+                                      companyName={companyName}
+                                      avatarUrl={company?.avatar_url}
+                                      readOnly
+                                      size="sm"
+                                    />
+                                  ) : null}
+                                  <Link
+                                    to={`/positions/${id}`}
+                                    className="font-semibold text-[#9b3e20] underline-offset-2 hover:underline dark:text-orange-400"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {posTitle}
+                                  </Link>
+                                </span>
                               </span>
-                            </td>
-                            <td className="px-3 py-2 align-middle">
-                              <button
-                                type="button"
-                                className="text-left font-semibold text-[#302e2b] underline-offset-2 hover:underline dark:text-stone-100"
-                                onClick={() => setSelectedPositionTask(row)}
-                              >
-                                {row.title}
-                              </button>
-                            </td>
-                            <td className="text-ink-muted px-3 py-2 align-middle tabular-nums dark:text-stone-400">{dueLabel}</td>
-                            <td className="px-3 py-2 align-middle">
-                              {cand ? (
-                                <span className="text-ink-muted dark:text-stone-400">{cand}</span>
-                              ) : (
-                                <span className="text-ink-muted dark:text-stone-500">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })
-                    )}
-                  </tbody>
-                ))}
-              </table>
+                              {hasCandidate ? (
+                                <span className="inline-flex flex-wrap items-center gap-x-1">
+                                  <span className="mx-0.5">·</span>
+                                  <span>about</span>{' '}
+                                  <Link
+                                    to={`/positions/${id}?tab=candidates&candidate=${cand!.id}`}
+                                    className="font-semibold text-[#006384] underline-offset-2 hover:underline dark:text-cyan-300"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {cand!.full_name}
+                                  </Link>
+                                </span>
+                              ) : null}
+                            </span>
+                          </p>
+                          {row.due_at ? (
+                            <p className="mt-2 text-xs font-semibold tabular-nums text-[#006384] dark:text-cyan-300">
+                              Due {formatDue(row.due_at)}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          {canComplete ? (
+                            <button
+                              type="button"
+                              className="text-ink-muted hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg p-2 transition disabled:opacity-40"
+                              aria-label="Mark complete"
+                              disabled={updatePositionTaskStatus.isPending}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                updatePositionTaskStatus.mutate({ taskId: row.id, status: 'closed' })
+                              }}
+                            >
+                              <Check className="h-4 w-4" aria-hidden />
+                            </button>
+                          ) : null}
+                          {canArchive ? (
+                            <button
+                              type="button"
+                              className="text-ink-muted hover:text-rose-600 dark:hover:text-rose-400 rounded-lg p-2 transition disabled:opacity-40"
+                              aria-label="Archive task"
+                              disabled={updatePositionTaskStatus.isPending}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                updatePositionTaskStatus.mutate({ taskId: row.id, status: 'archived' })
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" aria-hidden />
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
             )}
           </div>
         </section>
