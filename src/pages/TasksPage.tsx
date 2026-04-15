@@ -1,13 +1,14 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Check, ChevronDown, ListFilter, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, GripVertical, ListFilter, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
 import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
 import { getSupabase } from '@/lib/supabase'
 import { formatDue } from '@/lib/dates'
+import { CompanyClientAvatar } from '@/components/companies/CompanyClientAvatar'
 import { Modal } from '@/components/ui/Modal'
 import { useWorkTimer } from '@/work/WorkTimerContext'
 import { useToast } from '@/hooks/useToast'
@@ -20,6 +21,14 @@ function nestedOne<T>(v: T | T[] | null | undefined): T | null {
 function defaultReminderDatetimeLocal(): string {
   const d = new Date()
   d.setHours(d.getHours() + 1, 0, 0, 0)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function toDatetimeLocalValue(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
@@ -39,6 +48,7 @@ type TaskRow = {
   due_at: string | null
   created_at: string
   updated_at: string
+  sort_order: number
   position_id: string | null
   position_candidate_id: string | null
   candidate_id: string | null
@@ -80,7 +90,12 @@ export function TasksPage() {
 
   const [searchText, setSearchText] = useState('')
   const [selectedTask, setSelectedTask] = useState<TaskRow | null>(null)
+  const [drawerTitle, setDrawerTitle] = useState('')
+  const [drawerDescription, setDrawerDescription] = useState('')
+  const [drawerDueLocal, setDrawerDueLocal] = useState('')
   const [showArchived, setShowArchived] = useState(false)
+  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null)
+  const tasksListOrderedRef = useRef<TaskRow[]>([])
 
   const tasksQ = useQuery({
     queryKey: ['tasks-page', uid],
@@ -98,10 +113,11 @@ export function TasksPage() {
           due_at,
           created_at,
           updated_at,
+          sort_order,
           position_id,
           position_candidate_id,
           candidate_id,
-          positions ( id, title, company_id, companies ( id, name ) ),
+          positions ( id, title, company_id, companies ( id, name, avatar_url ) ),
           position_candidates ( id, candidates ( id, full_name ) ),
           candidates ( id, full_name )
         `,
@@ -252,6 +268,8 @@ export function TasksPage() {
       const ra = rank[a.status] ?? 99
       const rb = rank[b.status] ?? 99
       if (ra !== rb) return ra - rb
+      const so = (a.sort_order ?? 0) - (b.sort_order ?? 0)
+      if (so !== 0) return so
       if (a.status === 'open' && b.status === 'open') {
         const ad = a.due_at ? new Date(a.due_at).getTime() : Infinity
         const bd = b.due_at ? new Date(b.due_at).getTime() : Infinity
@@ -260,6 +278,15 @@ export function TasksPage() {
       return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
     })
   }, [filteredTasks])
+
+  tasksListOrderedRef.current = tasksListOrdered
+
+  useEffect(() => {
+    if (!selectedTask) return
+    setDrawerTitle(selectedTask.title)
+    setDrawerDescription(selectedTask.description ?? '')
+    setDrawerDueLocal(toDatetimeLocalValue(selectedTask.due_at))
+  }, [selectedTask?.id])
 
   useEffect(() => {
     if (!companyParam) return
@@ -336,7 +363,11 @@ export function TasksPage() {
       if (error) throw error
     },
     onSuccess: async (_data, { id, status }) => {
-      setSelectedTask((prev) => (prev && prev.id === id ? { ...prev, status } : prev))
+      setSelectedTask((prev) => {
+        if (!prev || prev.id !== id) return prev
+        if (status === 'closed' || status === 'archived') return null
+        return { ...prev, status }
+      })
       await qc.invalidateQueries({ queryKey: ['tasks-page'] })
       await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
       await qc.invalidateQueries({ queryKey: ['position-tasks'] })
@@ -344,6 +375,97 @@ export function TasksPage() {
     },
     onError: (e: Error) => toastError(e.message),
   })
+
+  const reorderTasksMutation = useMutation({
+    mutationFn: async (orderedSameStatus: TaskRow[]) => {
+      if (!supabase || !uid) throw new Error('Not signed in')
+      await Promise.all(
+        orderedSameStatus.map((t, i) =>
+          supabase.from('tasks').update({ sort_order: i * 1000 }).eq('id', t.id).eq('user_id', uid),
+        ),
+      ).then((results) => {
+        for (const r of results) {
+          if (r.error) throw r.error
+        }
+      })
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['tasks-page'] })
+      await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
+      await qc.invalidateQueries({ queryKey: ['position-tasks'] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const saveDrawerTaskMutation = useMutation({
+    mutationFn: async () => {
+      if (!supabase || !uid || !selectedTask) throw new Error('No task')
+      let dueIso: string | null = null
+      if (drawerDueLocal.trim()) {
+        const t = new Date(drawerDueLocal).getTime()
+        if (Number.isNaN(t)) throw new Error('Invalid due date')
+        dueIso = new Date(drawerDueLocal).toISOString()
+      }
+      const { error } = await supabase
+        .from('tasks')
+        .update({
+          title: drawerTitle.trim() || 'Task',
+          description: drawerDescription.trim() ? drawerDescription.trim() : null,
+          due_at: dueIso,
+        })
+        .eq('id', selectedTask.id)
+        .eq('user_id', uid)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      success('Task saved')
+      const nextDue = drawerDueLocal.trim() ? new Date(drawerDueLocal).toISOString() : null
+      const nextTitle = drawerTitle.trim() || 'Task'
+      const nextDesc = drawerDescription.trim() ? drawerDescription.trim() : null
+      setSelectedTask((prev) => (prev ? { ...prev, title: nextTitle, description: nextDesc, due_at: nextDue } : prev))
+      await qc.invalidateQueries({ queryKey: ['tasks-page'] })
+      await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
+      await qc.invalidateQueries({ queryKey: ['position-tasks'] })
+      await qc.invalidateQueries({ queryKey: ['notification-count'] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  function onTaskDragStart(e: React.DragEvent, taskId: string) {
+    e.stopPropagation()
+    setDraggingTaskId(taskId)
+    e.dataTransfer.setData('text/plain', taskId)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  function onTaskDragOver(e: React.DragEvent) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }
+
+  function onTaskDrop(e: React.DragEvent, overId: string) {
+    e.preventDefault()
+    e.stopPropagation()
+    const dragId = e.dataTransfer.getData('text/plain') || draggingTaskId
+    setDraggingTaskId(null)
+    if (!dragId || dragId === overId || !uid) return
+
+    const list = tasksListOrderedRef.current
+    const dragged = list.find((t) => t.id === dragId)
+    const target = list.find((t) => t.id === overId)
+    if (!dragged || !target || dragged.status !== target.status) return
+
+    const status = dragged.status
+    const bucket = list.filter((t) => t.status === status)
+    const fromIdx = bucket.findIndex((t) => t.id === dragId)
+    const toIdx = bucket.findIndex((t) => t.id === overId)
+    if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return
+
+    const next = [...bucket]
+    const [removed] = next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, removed!)
+    reorderTasksMutation.mutate(next)
+  }
 
   function resetNewTaskForm() {
     setNewTaskTitle('')
@@ -549,7 +671,11 @@ export function TasksPage() {
           <ul className="space-y-3 p-4 md:p-6" aria-label="Tasks">
             {tasksListOrdered.map((row, i) => {
               const pos = row.positions as
-                | { id: string; title: string; companies: { name?: string } | null }
+                | {
+                    id: string
+                    title: string
+                    companies: { id?: string; name?: string; avatar_url?: string | null } | null
+                  }
                 | null
               const pcJoin = row.position_candidates as {
                 candidates: { id: string; full_name: string } | { id: string; full_name: string }[] | null
@@ -561,28 +687,46 @@ export function TasksPage() {
               const cand = candFromRole ?? candPool
               const hasPosition = Boolean(row.position_id && pos)
               const hasCandidate = Boolean(cand)
+              const companyForPos = pos?.companies
+              const companyId = companyForPos?.id
+              const companyName = companyForPos?.name ?? 'Client'
               const taskCardClass =
-                'border-stitch-on-surface/10 rounded-2xl border-b-4 border-b-[#006384]/60 bg-white p-4 shadow-[0_16px_36px_rgba(48,46,43,0.08)] dark:border-stone-700 dark:bg-stone-900'
+                'border-stitch-on-surface/10 cursor-pointer rounded-2xl border-b-4 border-b-[#006384]/60 bg-white p-4 shadow-[0_16px_36px_rgba(48,46,43,0.08)] transition hover:border-stone-300/80 dark:border-stone-700 dark:bg-stone-900 dark:hover:border-stone-600'
               const canComplete = row.status === 'open'
               const canArchive = row.status !== 'archived'
+              const isDragging = draggingTaskId === row.id
               return (
                 <motion.li
                   key={row.id}
                   initial={reduceMotion ? false : { opacity: 0, x: -8 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: reduceMotion ? 0 : Math.min(i, 12) * 0.03 }}
-                  className={taskCardClass}
+                  className={`${taskCardClass} ${isDragging ? 'opacity-50' : ''}`}
+                  onDragOver={onTaskDragOver}
+                  onDrop={(e) => onTaskDrop(e, row.id)}
+                  onClick={(e) => {
+                    const t = e.target as HTMLElement
+                    if (t.closest('a, button, [data-drag-handle]')) return
+                    setSelectedTask(row)
+                  }}
                 >
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-start gap-2">
+                    <button
+                      type="button"
+                      data-drag-handle
+                      draggable
+                      onDragStart={(e) => onTaskDragStart(e, row.id)}
+                      onDragEnd={() => setDraggingTaskId(null)}
+                      className="text-ink-muted hover:text-ink mt-0.5 shrink-0 cursor-grab rounded-lg p-1.5 active:cursor-grabbing dark:hover:text-stone-200"
+                      aria-label="Drag to reorder"
+                      title="Drag to reorder"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <GripVertical className="h-4 w-4" aria-hidden />
+                    </button>
                     <div className="min-w-0 flex-1">
                       <p className="text-stitch-on-surface font-bold dark:text-stone-100">
-                        <button
-                          type="button"
-                          className="text-left underline-offset-2 hover:underline"
-                          onClick={() => setSelectedTask(row)}
-                        >
-                          {row.title}
-                        </button>
+                        <span className="text-left underline-offset-2 hover:underline">{row.title}</span>
                         {row.description?.trim() ? (
                           <>
                             <span className="text-stitch-muted font-normal dark:text-stone-400"> — </span>
@@ -590,36 +734,46 @@ export function TasksPage() {
                           </>
                         ) : null}
                         {hasPosition || hasCandidate ? (
-                          <span className="text-sm font-normal text-[#006384] dark:text-cyan-300">
+                          <span className="mt-1 block text-sm font-normal text-stone-600 dark:text-stone-400">
                             {hasPosition ? (
-                              <>
-                                {' '}
-                                for{' '}
-                                <Link
-                                  to={`/positions/${row.position_id}`}
-                                  className="font-semibold underline-offset-2 hover:underline"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {pos!.title}
-                                </Link>
-                              </>
+                              <span className="inline-flex flex-wrap items-center gap-x-1 gap-y-1">
+                                <span>for</span>
+                                <span className="inline-flex items-center gap-1.5">
+                                  {companyId ? (
+                                    <CompanyClientAvatar
+                                      companyId={companyId}
+                                      companyName={companyName}
+                                      avatarUrl={companyForPos?.avatar_url}
+                                      readOnly
+                                      size="sm"
+                                    />
+                                  ) : null}
+                                  <Link
+                                    to={`/positions/${row.position_id}`}
+                                    className="font-semibold text-[#9b3e20] underline-offset-2 hover:underline dark:text-orange-400"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {pos!.title}
+                                  </Link>
+                                </span>
+                              </span>
                             ) : null}
                             {hasCandidate ? (
-                              <>
-                                {hasPosition ? ' ' : ' '}
-                                about{' '}
+                              <span className="inline-flex flex-wrap items-center gap-x-1">
+                                {hasPosition ? <span className="mx-0.5">·</span> : <span> </span>}
+                                <span>about</span>{' '}
                                 <Link
                                   to={
                                     row.position_id
                                       ? `/positions/${row.position_id}?candidate=${cand!.id}`
                                       : `/candidates/${cand!.id}`
                                   }
-                                  className="font-semibold underline-offset-2 hover:underline"
+                                  className="font-semibold text-[#006384] underline-offset-2 hover:underline dark:text-cyan-300"
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   {cand!.full_name}
                                 </Link>
-                              </>
+                              </span>
                             ) : null}
                           </span>
                         ) : null}
@@ -637,7 +791,10 @@ export function TasksPage() {
                           className="text-ink-muted hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg p-2 transition disabled:opacity-40"
                           aria-label="Mark complete"
                           disabled={updateTaskStatus.isPending}
-                          onClick={() => updateTaskStatus.mutate({ id: row.id, status: 'closed' })}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            updateTaskStatus.mutate({ id: row.id, status: 'closed' })
+                          }}
                         >
                           <Check className="h-4 w-4" aria-hidden />
                         </button>
@@ -648,7 +805,10 @@ export function TasksPage() {
                           className="text-ink-muted hover:text-rose-600 dark:hover:text-rose-400 rounded-lg p-2 transition disabled:opacity-40"
                           aria-label="Archive task"
                           disabled={updateTaskStatus.isPending}
-                          onClick={() => updateTaskStatus.mutate({ id: row.id, status: 'archived' })}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            updateTaskStatus.mutate({ id: row.id, status: 'archived' })
+                          }}
                         >
                           <Trash2 className="h-4 w-4" aria-hidden />
                         </button>
@@ -679,7 +839,7 @@ export function TasksPage() {
           >
             <div className="border-line flex items-start justify-between gap-2 border-b px-4 py-4 dark:border-line-dark">
               <h2 id="task-drawer-title" className="text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
-                {selectedTask.title}
+                Edit task
               </h2>
               <button
                 type="button"
@@ -690,82 +850,165 @@ export function TasksPage() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto px-4 py-4 text-sm">
-              <p className="text-ink-muted text-xs font-bold uppercase">Status</p>
-              <p className="mt-1 font-semibold capitalize">{selectedTask.status}</p>
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="flex-1 overflow-y-auto px-4 py-4 text-sm">
+                <label className="flex flex-col gap-1 font-medium">
+                  <span className="text-ink-muted text-xs font-bold uppercase">Title</span>
+                  <input
+                    value={drawerTitle}
+                    onChange={(e) => setDrawerTitle(e.target.value)}
+                    className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                  />
+                </label>
 
-              <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Due</p>
-              <p className="mt-1">{selectedTask.due_at ? formatDue(selectedTask.due_at) : 'Not set'}</p>
+                <label className="mt-4 flex flex-col gap-1 font-medium">
+                  <span className="text-ink-muted text-xs font-bold uppercase">Description</span>
+                  <textarea
+                    value={drawerDescription}
+                    onChange={(e) => setDrawerDescription(e.target.value)}
+                    rows={4}
+                    className="border-line resize-y rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                    placeholder="Optional"
+                  />
+                </label>
 
-              {(() => {
-                const pos = selectedTask.positions as
-                  | { id: string; title: string; companies: { name?: string } | null }
-                  | null
-                const pcJoin = selectedTask.position_candidates as {
-                  candidates: { id: string; full_name: string } | { id: string; full_name: string }[] | null
-                } | null
-                const candFromRole = nestedOne(pcJoin?.candidates ?? null)
-                const candPool = nestedOne(
-                  selectedTask.candidates as { id: string; full_name: string } | { id: string; full_name: string }[] | null,
-                )
-                const cand = candFromRole ?? candPool
-                const pid = selectedTask.position_id
-                return (
+                <label className="mt-4 flex flex-col gap-1 font-medium">
+                  <span className="text-ink-muted text-xs font-bold uppercase">Due</span>
+                  <input
+                    type="datetime-local"
+                    value={drawerDueLocal}
+                    onChange={(e) => setDrawerDueLocal(e.target.value)}
+                    className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                  />
+                  <span className="text-ink-muted text-xs font-normal">Leave empty for no due date.</span>
+                </label>
+
+                <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Status</p>
+                <p className="mt-1 font-semibold capitalize">{selectedTask.status}</p>
+
+                {(() => {
+                  const pos = selectedTask.positions as
+                    | {
+                        id: string
+                        title: string
+                        companies: { id?: string; name?: string; avatar_url?: string | null } | null
+                      }
+                    | null
+                  const pcJoin = selectedTask.position_candidates as {
+                    candidates: { id: string; full_name: string } | { id: string; full_name: string }[] | null
+                  } | null
+                  const candFromRole = nestedOne(pcJoin?.candidates ?? null)
+                  const candPool = nestedOne(
+                    selectedTask.candidates as { id: string; full_name: string } | { id: string; full_name: string }[] | null,
+                  )
+                  const cand = candFromRole ?? candPool
+                  const pid = selectedTask.position_id
+                  const co = pos?.companies
+                  const cid = co?.id
+                  return (
+                    <>
+                      <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Position</p>
+                      <div className="mt-1 flex items-center gap-2">
+                        {pid && pos && cid ? (
+                          <>
+                            <CompanyClientAvatar
+                              companyId={cid}
+                              companyName={co?.name ?? 'Client'}
+                              avatarUrl={co?.avatar_url}
+                              readOnly
+                              size="sm"
+                            />
+                            <Link
+                              to={`/positions/${pid}`}
+                              className="font-semibold text-[#9b3e20] underline-offset-2 hover:underline dark:text-orange-400"
+                            >
+                              {pos.title}
+                            </Link>
+                          </>
+                        ) : pid && pos ? (
+                          <Link
+                            to={`/positions/${pid}`}
+                            className="font-semibold text-[#9b3e20] underline-offset-2 hover:underline dark:text-orange-400"
+                          >
+                            {pos.title}
+                          </Link>
+                        ) : (
+                          <span className="text-ink-muted">Standalone task</span>
+                        )}
+                      </div>
+                      <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Client</p>
+                      <p className="mt-1">{pos?.companies?.name ?? '—'}</p>
+                      {cand ? (
+                        <>
+                          <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Candidate</p>
+                          <p className="mt-1">
+                            {pid ? (
+                              <Link
+                                to={`/positions/${pid}?candidate=${cand.id}`}
+                                className="font-semibold text-[#006384] hover:underline dark:text-cyan-300"
+                              >
+                                {cand.full_name}
+                              </Link>
+                            ) : (
+                              <Link
+                                to={`/candidates/${cand.id}`}
+                                className="font-semibold text-[#006384] hover:underline dark:text-cyan-300"
+                              >
+                                {cand.full_name}
+                              </Link>
+                            )}
+                          </p>
+                        </>
+                      ) : null}
+                    </>
+                  )
+                })()}
+
+                {selectedTask.note_in_progress ? (
                   <>
-                    <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Position</p>
-                    <p className="mt-1">
-                      {pid && pos ? (
-                        <Link to={`/positions/${pid}`} className="font-semibold text-[#006384] hover:underline dark:text-cyan-300">
-                          {pos.title}
-                        </Link>
-                      ) : (
-                        <span className="text-ink-muted">Standalone task</span>
-                      )}
-                    </p>
-                    <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Client</p>
-                    <p className="mt-1">{pos?.companies?.name ?? '—'}</p>
-                    {cand ? (
-                      <>
-                        <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Candidate</p>
-                        <p className="mt-1">
-                          {pid ? (
-                            <Link
-                              to={`/positions/${pid}?candidate=${cand.id}`}
-                              className="font-semibold text-[#006384] hover:underline dark:text-cyan-300"
-                            >
-                              {cand.full_name}
-                            </Link>
-                          ) : (
-                            <Link
-                              to={`/candidates/${cand.id}`}
-                              className="font-semibold text-[#006384] hover:underline dark:text-cyan-300"
-                            >
-                              {cand.full_name}
-                            </Link>
-                          )}
-                        </p>
-                      </>
-                    ) : null}
+                    <p className="text-ink-muted mt-4 text-xs font-bold uppercase">In progress notes</p>
+                    <p className="mt-1 whitespace-pre-wrap text-[#302e2b] dark:text-stone-200">{selectedTask.note_in_progress}</p>
                   </>
-                )
-              })()}
+                ) : null}
 
-              {selectedTask.description ? (
-                <>
-                  <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Description</p>
-                  <p className="mt-1 whitespace-pre-wrap text-[#302e2b] dark:text-stone-200">{selectedTask.description}</p>
-                </>
-              ) : null}
+                <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Updated</p>
+                <p className="mt-1 tabular-nums">{new Date(selectedTask.updated_at).toLocaleString()}</p>
+              </div>
 
-              {selectedTask.note_in_progress ? (
-                <>
-                  <p className="text-ink-muted mt-4 text-xs font-bold uppercase">In progress notes</p>
-                  <p className="mt-1 whitespace-pre-wrap text-[#302e2b] dark:text-stone-200">{selectedTask.note_in_progress}</p>
-                </>
-              ) : null}
-
-              <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Updated</p>
-              <p className="mt-1 tabular-nums">{new Date(selectedTask.updated_at).toLocaleString()}</p>
+              <div className="border-line space-y-3 border-t px-4 py-4 dark:border-line-dark">
+                <div className="flex flex-wrap gap-2">
+                  {selectedTask.status === 'open' ? (
+                    <button
+                      type="button"
+                      className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50 min-[380px]:flex-none"
+                      disabled={updateTaskStatus.isPending}
+                      onClick={() => updateTaskStatus.mutate({ id: selectedTask.id, status: 'closed' })}
+                    >
+                      <Check className="h-4 w-4" aria-hidden />
+                      Mark done
+                    </button>
+                  ) : null}
+                  {selectedTask.status !== 'archived' ? (
+                    <button
+                      type="button"
+                      className="inline-flex flex-1 items-center justify-center gap-2 rounded-full border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-800 hover:bg-rose-100 disabled:opacity-50 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-200 dark:hover:bg-rose-950 min-[380px]:flex-none"
+                      disabled={updateTaskStatus.isPending}
+                      onClick={() => updateTaskStatus.mutate({ id: selectedTask.id, status: 'archived' })}
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden />
+                      Archive
+                    </button>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  className="w-full rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] py-2.5 text-sm font-bold text-white disabled:opacity-50"
+                  disabled={saveDrawerTaskMutation.isPending}
+                  onClick={() => saveDrawerTaskMutation.mutate()}
+                >
+                  {saveDrawerTaskMutation.isPending ? 'Saving…' : 'Save changes'}
+                </button>
+              </div>
             </div>
           </motion.aside>
         </div>

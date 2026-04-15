@@ -23,9 +23,13 @@ type Props = {
   companyId: string
   companyName: string
   avatarUrl: string | null | undefined
+  /** Read-only badge (no upload); use on task cards and compact rows. */
+  readOnly?: boolean
+  /** Ignored when readOnly is false (editable control stays md). */
+  size?: 'sm' | 'md'
 }
 
-export function CompanyClientAvatar({ companyId, companyName, avatarUrl }: Props) {
+export function CompanyClientAvatar({ companyId, companyName, avatarUrl, readOnly, size = 'md' }: Props) {
   const { user } = useAuth()
   const supabase = getSupabase()
   const qc = useQueryClient()
@@ -39,6 +43,8 @@ export function CompanyClientAvatar({ companyId, companyName, avatarUrl }: Props
   }, [avatarUrl])
 
   const showImage = Boolean(avatarUrl?.trim()) && !imgFailed
+
+  const ringSize = readOnly && size === 'sm' ? 'h-9 w-9 text-xs' : 'h-14 w-14 text-lg'
 
   const upload = useMutation({
     mutationFn: async (file: File) => {
@@ -71,6 +77,31 @@ export function CompanyClientAvatar({ companyId, companyName, avatarUrl }: Props
     onSettled: () => setUploading(false),
   })
 
+  const inner = (
+    <span
+      className={`ring-stitch-on-surface/15 flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-stone-300 bg-stone-100 font-semibold tracking-tight text-stone-600 shadow-sm ring-2 ring-white dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300 dark:ring-stone-900 ${ringSize} ${readOnly ? '' : 'transition group-hover:border-stone-400 group-hover:bg-stone-200/90 dark:group-hover:border-stone-500 dark:group-hover:bg-stone-700/90'}`}
+    >
+      {showImage ? (
+        <img
+          src={avatarUrl!.trim()}
+          alt=""
+          className="h-full w-full object-cover"
+          onError={() => setImgFailed(true)}
+        />
+      ) : (
+        <span aria-hidden>{companyInitials(companyName)}</span>
+      )}
+    </span>
+  )
+
+  if (readOnly) {
+    return (
+      <div className="relative shrink-0" title={companyName} data-company-id={companyId} aria-hidden>
+        {inner}
+      </div>
+    )
+  }
+
   return (
     <div className="relative shrink-0">
       <button
@@ -80,20 +111,7 @@ export function CompanyClientAvatar({ companyId, companyName, avatarUrl }: Props
         title="Upload client logo"
         className="group relative rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[#9b3e20] focus-visible:ring-offset-2 focus-visible:ring-offset-[#faf8f5] disabled:opacity-60 dark:focus-visible:ring-orange-400 dark:focus-visible:ring-offset-stone-900"
       >
-        <span
-          className="ring-stitch-on-surface/15 flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full border border-stone-300 bg-stone-100 text-lg font-semibold tracking-tight text-stone-600 shadow-sm ring-2 ring-white transition group-hover:border-stone-400 group-hover:bg-stone-200/90 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300 dark:ring-stone-900 dark:group-hover:border-stone-500 dark:group-hover:bg-stone-700/90"
-        >
-          {showImage ? (
-            <img
-              src={avatarUrl!.trim()}
-              alt=""
-              className="h-full w-full object-cover"
-              onError={() => setImgFailed(true)}
-            />
-          ) : (
-            <span aria-hidden>{companyInitials(companyName)}</span>
-          )}
-        </span>
+        {inner}
         <span
           className="border-line absolute -right-0.5 -bottom-0.5 flex h-7 w-7 items-center justify-center rounded-full border bg-white shadow-md dark:border-stone-600 dark:bg-stone-900"
           aria-hidden
