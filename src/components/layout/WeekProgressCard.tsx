@@ -1,45 +1,41 @@
+import { sidebarDailyPhrase } from '@/lib/sidebarDailyPhrases'
+
 const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const
 
-function weekTowardFriday() {
-  const d = new Date().getDay()
+function weekTowardFriday(now: Date) {
+  const d = now.getDay()
+  const phrase = sidebarDailyPhrase(now)
   // Sun–Fri → 1/6 … 6/6 toward Friday; Saturday → weekend copy
   if (d === 6) {
     return {
       step: 0,
       total: 6,
       dayIndex: d,
-      headline: 'WE MADE IT',
-      sub: 'Weekend — touch grass (or don’t)',
+      phrase,
+      sub: 'Weekend — see you Monday.',
       fillRatio: 1,
     }
   }
   const step = d === 0 ? 1 : d + 1
-  const headlines = [
-    'WHY GOD WHY?!',
-    'WHY GOD WHY?!',
-    'WHY GOD WHY?!',
-    'WHY GOD WHY?!',
-    'WHY GOD WHY?!',
-    'FRIDAY IS CALLING',
-  ]
   return {
     step,
     total: 6,
     dayIndex: d,
-    headline: headlines[step - 1] ?? 'WHY GOD WHY?!',
+    phrase,
     sub: `${step}/6 toward Friday`,
     fillRatio: step / 6,
   }
 }
 
-/** Humorous week progress toward Friday — sits under Quick actions in the sidebar. */
+/** Week progress toward Friday — sits under Quick actions in the sidebar. */
 export function WeekProgressCard() {
-  const { step, total, dayIndex, headline, sub, fillRatio } = weekTowardFriday()
+  const now = new Date()
+  const { step, total, dayIndex, phrase, sub, fillRatio } = weekTowardFriday(now)
   const markerCenterPct = ((dayIndex + 0.5) / 7) * 100
 
   return (
-    <div className="border-line border-t p-3 dark:border-line-dark">
-      <div className="rounded-2xl border border-stone-200/90 bg-gradient-to-b from-white to-orange-50/30 px-3 pt-3 pb-3.5 shadow-md shadow-orange-200/25 dark:border-stone-600/80 dark:from-stone-900 dark:to-violet-950/40 dark:shadow-violet-950/20">
+    <div className="border-line border-t p-3 pb-4 dark:border-line-dark">
+      <div className="rounded-2xl border border-stone-200/90 bg-gradient-to-b from-white to-orange-50/30 px-3 pt-4 pb-4 shadow-md shadow-orange-200/25 dark:border-stone-600/80 dark:from-stone-900 dark:to-violet-950/40 dark:shadow-violet-950/20">
         <div className="mb-1 grid grid-cols-7">
           {DAYS.map((_, i) => (
             <div key={i} className="flex justify-center" aria-hidden>
@@ -48,14 +44,14 @@ export function WeekProgressCard() {
           ))}
         </div>
 
-        <div className="relative w-full overflow-visible" role="presentation">
+        <div className="relative w-full pt-1 pb-0.5" role="presentation">
           <div
-            className="pointer-events-none absolute z-10 h-3.5 w-0.5 -translate-x-1/2 rounded-full bg-gradient-to-b from-[#fd8863] to-[#9b3e20] shadow-sm dark:from-orange-400 dark:to-orange-700"
-            style={{ left: `${markerCenterPct}%`, top: '-6px' }}
+            className="pointer-events-none absolute z-10 h-4 w-0.5 -translate-x-1/2 rounded-full bg-gradient-to-b from-[#fd8863] to-[#9b3e20] shadow-sm dark:from-orange-400 dark:to-orange-700"
+            style={{ left: `${markerCenterPct}%`, top: '0' }}
             aria-hidden
           />
           <div
-            className="relative h-2 w-full overflow-hidden rounded-full bg-stone-100 dark:bg-stone-800"
+            className="relative mt-2 h-2 w-full overflow-hidden rounded-full bg-stone-100 dark:bg-stone-800"
             role="progressbar"
             aria-valuenow={step}
             aria-valuemin={0}
@@ -82,10 +78,8 @@ export function WeekProgressCard() {
           ))}
         </div>
 
-        <p className="text-ink mt-3 text-center text-sm font-semibold tracking-tight uppercase dark:text-stone-100">
-          {headline}
-        </p>
-        <p className="text-ink-muted mt-1 text-center text-[11px] font-medium dark:text-stone-400">{sub}</p>
+        <p className="text-ink mt-3 text-center text-xs font-semibold leading-snug dark:text-stone-100">{phrase}</p>
+        <p className="text-ink-muted mt-1.5 text-center text-[11px] font-medium dark:text-stone-400">{sub}</p>
       </div>
     </div>
   )

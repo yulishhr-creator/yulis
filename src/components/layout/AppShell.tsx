@@ -30,6 +30,7 @@ import { useWorkTimer } from '@/work/WorkTimerContext'
 import { useToast } from '@/hooks/useToast'
 import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
 import { useSidebarOpenPositionCounts } from '@/hooks/useSidebarOpenPositionCounts'
+import { sidebarDailyPhrase } from '@/lib/sidebarDailyPhrases'
 
 /** Section: Candidates & Positions (dashboard + client-scoped positions) */
 const candidatesPositionsGroup = {
@@ -51,18 +52,6 @@ const clientsNav = {
     'from-sky-500/16 to-blue-500/10 text-sky-900/85 dark:from-sky-500/18 dark:to-blue-500/12 dark:text-sky-200/90',
   activeIcon:
     'from-white to-sky-50/95 text-sky-900 shadow-inner dark:from-stone-800 dark:to-sky-950/50 dark:text-sky-100',
-} as const
-
-const settingsNav = {
-  to: '/settings',
-  label: 'Settings',
-  icon: Settings,
-  activeRow:
-    'from-lume-gold/25 to-amber-600/15 ring-amber-500/20 dark:from-amber-500/18 dark:to-stone-600/20 dark:ring-amber-400/28',
-  idleIcon:
-    'from-amber-500/14 to-stone-400/10 text-amber-900/80 dark:from-amber-500/16 dark:to-stone-500/12 dark:text-amber-200/85',
-  activeIcon:
-    'from-white to-amber-50/95 text-amber-950 shadow-inner dark:from-stone-800 dark:to-amber-950/40 dark:text-amber-100',
 } as const
 
 const myTasksGroup = {
@@ -248,13 +237,13 @@ export function AppShell() {
       {/* Primary navigation — desktop workspace */}
       <aside
         id="app-sidebar"
-        className={`border-line fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r bg-gradient-to-b from-white/92 via-paper/96 to-lume-sky/5 backdrop-blur-xl transition-transform duration-300 ease-out dark:border-line-dark dark:from-stone-950/92 dark:via-paper-dark/96 dark:to-violet-950/20 ${
+        className={`border-line fixed inset-y-0 left-0 z-40 flex min-h-0 w-64 flex-col border-r bg-gradient-to-b from-white/92 via-paper/96 to-lume-sky/5 backdrop-blur-xl transition-transform duration-300 ease-out dark:border-line-dark dark:from-stone-950/92 dark:via-paper-dark/96 dark:to-violet-950/20 ${
           sidebarOpen ? 'translate-x-0' : 'pointer-events-none -translate-x-full'
         }`}
         aria-hidden={!sidebarOpen}
       >
         {sidebarOpen ? (
-          <div className="border-line border-b px-3 py-3 dark:border-line-dark">
+          <div className="border-line shrink-0 border-b px-3 py-3 dark:border-line-dark">
             <div className="flex items-start gap-2.5">
               {accountMenuEl}
               <motion.div
@@ -266,8 +255,8 @@ export function AppShell() {
                 <p className="text-ink truncate text-sm font-semibold dark:text-stone-100">
                   {greeting()}, {displayName}
                 </p>
-                <p className="text-ink-muted truncate text-[10px] font-semibold tracking-wide dark:text-stone-400">
-                  Keep pushing forward
+                <p className="text-ink-muted line-clamp-2 text-[10px] font-semibold tracking-wide dark:text-stone-400" title={sidebarDailyPhrase()}>
+                  {sidebarDailyPhrase()}
                 </p>
               </motion.div>
               <button
@@ -282,7 +271,7 @@ export function AppShell() {
           </div>
         ) : null}
 
-        <nav className="flex flex-1 flex-col gap-1 p-3" aria-label="Main">
+        <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3 [scrollbar-width:thin]" aria-label="Main">
           <div className="rounded-xl pb-1">
             <Link
               to="/"
@@ -455,43 +444,15 @@ export function AppShell() {
               )
             }}
           </NavLink>
-
-          <NavLink
-            to="/settings"
-            className={({ isActive }) =>
-              `group relative flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
-                isActive
-                  ? `bg-gradient-to-r text-stitch-on-surface shadow-sm ring-1 dark:text-stone-100 ${settingsNav.activeRow}`
-                  : 'text-ink-muted hover:bg-white/75 hover:text-ink dark:text-stone-400 dark:hover:bg-stone-800/85 dark:hover:text-stone-100'
-              }`
-            }
-          >
-            {({ isActive }) => {
-              const Icon = settingsNav.icon
-              return (
-                <>
-                  <motion.span
-                    className={`relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br transition-all ${
-                      isActive ? settingsNav.activeIcon : `${settingsNav.idleIcon} group-hover:brightness-105 dark:group-hover:brightness-110`
-                    }`}
-                    whileHover={reduceMotion ? undefined : { scale: 1.06, rotate: -3 }}
-                    whileTap={reduceMotion ? undefined : { scale: 0.96 }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 22 }}
-                  >
-                    <Icon className="h-[18px] w-[18px]" aria-hidden />
-                  </motion.span>
-                  <span className="relative z-10 flex-1">{settingsNav.label}</span>
-                </>
-              )
-            }}
-          </NavLink>
         </nav>
 
-        <div className="border-line border-t px-3 pt-2 pb-1 dark:border-line-dark">
+        <div className="border-line shrink-0 border-t px-3 pt-2 pb-1 dark:border-line-dark">
           <QuickActionsSidebarTrigger onOpen={() => setQuickActionsOpen(true)} />
         </div>
 
-        <WeekProgressCard />
+        <div className="shrink-0">
+          <WeekProgressCard />
+        </div>
       </aside>
 
       <div className={`transition-[padding] duration-300 ease-out ${sidebarOpen ? 'pl-64' : 'pl-0'}`}>
