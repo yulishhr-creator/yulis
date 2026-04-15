@@ -530,7 +530,7 @@ export function PositionsPage() {
       <ScreenHeader
         title="Positions"
         subtitle="Drag roles by the grip between Active & on hold, Succeeded, and Cancelled."
-        backTo="/"
+        showBack={false}
         right={
           <Link
             to="/positions?create=1"

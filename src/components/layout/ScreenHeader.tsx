@@ -8,10 +8,12 @@ type ScreenHeaderProps = {
   subtitle?: string
   /** When set, navigates here; otherwise `navigate(-1)` */
   backTo?: string
+  /** Set false for root-level screens (e.g. Positions) where no back affordance is needed. Defaults to true. */
+  showBack?: boolean
   right?: React.ReactNode
 }
 
-export function ScreenHeader({ title, subtitle, backTo, right }: ScreenHeaderProps) {
+export function ScreenHeader({ title, subtitle, backTo, showBack = true, right }: ScreenHeaderProps) {
   const navigate = useNavigate()
   const reduceMotion = useReducedMotion()
 
@@ -27,14 +29,16 @@ export function ScreenHeader({ title, subtitle, backTo, right }: ScreenHeaderPro
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
     >
-      <button
-        type="button"
-        onClick={goBack}
-        className="border-line bg-white/90 text-ink hover:border-accent hover:bg-accent-soft/50 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border shadow-sm transition dark:border-line-dark dark:bg-stone-900/90 dark:text-stone-100 dark:hover:border-orange-400/40"
-        aria-label="Back"
-      >
-        <ArrowLeft className="h-5 w-5" aria-hidden />
-      </button>
+      {showBack ? (
+        <button
+          type="button"
+          onClick={goBack}
+          className="border-line bg-white/90 text-ink hover:border-accent hover:bg-accent-soft/50 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border shadow-sm transition dark:border-line-dark dark:bg-stone-900/90 dark:text-stone-100 dark:hover:border-orange-400/40"
+          aria-label="Back"
+        >
+          <ArrowLeft className="h-5 w-5" aria-hidden />
+        </button>
+      ) : null}
       <div className="min-w-0 flex-1">
         {title ? (
           <h1 className="text-page-title text-2xl font-extrabold tracking-tight md:text-3xl">
