@@ -101,8 +101,11 @@ export function AppShell() {
   const [searchParams] = useSearchParams()
   const taskStatusParam = searchParams.get('taskStatus')
   const companyParam = searchParams.get('company')
-  const dashboardNavActive = location.pathname === '/'
   const tasksPathActive = location.pathname === '/tasks'
+  /** Aggregate "all" scope for this section: home or full positions list, no company filter */
+  const candidatesSectionAllActive =
+    (location.pathname === '/' && !companyParam) ||
+    (location.pathname === '/positions' && !companyParam)
 
   function tasksLinkSearch(taskStatus: string | null): string {
     const p = new URLSearchParams()
@@ -112,7 +115,6 @@ export function AppShell() {
     return s ? `?${s}` : ''
   }
   const positionsPathActive = location.pathname === '/positions'
-  const positionsAllClientsActive = positionsPathActive && !companyParam
   const { data: taskKpis, isPending: taskKpisPending } = useDashboardTaskKpis()
   const { data: sidebarCompanies = [] } = useQuery({
     queryKey: ['companies', user?.id],
@@ -280,43 +282,34 @@ export function AppShell() {
 
         <nav className="flex flex-1 flex-col gap-1 p-3" aria-label="Main">
           <div className="rounded-xl pb-1">
-            <div className="text-ink-muted flex items-center gap-3 px-3 py-2 text-xs font-bold tracking-wide uppercase dark:text-stone-500">
+            <Link
+              to="/"
+              aria-current={candidatesSectionAllActive ? 'page' : undefined}
+              title="All candidates and positions"
+              className={`group flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-bold tracking-wide uppercase transition-all duration-200 ${
+                candidatesSectionAllActive
+                  ? `bg-gradient-to-r text-stitch-on-surface shadow-sm ring-1 dark:text-stone-100 ${candidatesPositionsGroup.activeRow}`
+                  : 'text-ink-muted hover:bg-white/75 dark:text-stone-500 dark:hover:bg-stone-800/85'
+              }`}
+            >
               <span
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${candidatesPositionsGroup.idleIcon}`}
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br transition-all ${
+                  candidatesSectionAllActive
+                    ? candidatesPositionsGroup.activeIcon
+                    : `${candidatesPositionsGroup.idleIcon} group-hover:brightness-105 dark:group-hover:brightness-110`
+                }`}
               >
                 <LayoutDashboard className="h-[18px] w-[18px]" aria-hidden />
               </span>
-              <span className="text-ink text-[11px] font-bold tracking-[0.14em] dark:text-stone-300">
+              <span
+                className={`min-w-0 flex-1 text-[11px] font-bold tracking-[0.14em] ${
+                  candidatesSectionAllActive ? '' : 'text-ink dark:text-stone-300'
+                }`}
+              >
                 Candidates &amp; Positions
               </span>
-            </div>
+            </Link>
             <ul className="border-line ml-2 space-y-0.5 border-l border-dashed pl-2 dark:border-line-dark" role="list">
-              <li>
-                <Link
-                  to="/"
-                  aria-current={dashboardNavActive ? 'page' : undefined}
-                  className={`group relative flex items-center gap-2 overflow-hidden rounded-lg py-2 pr-2 pl-3 text-sm font-medium transition-all duration-200 ${
-                    dashboardNavActive
-                      ? `bg-gradient-to-r text-stitch-on-surface shadow-sm ring-1 dark:text-stone-100 ${candidatesPositionsGroup.activeRow}`
-                      : 'text-ink-muted hover:bg-white/75 hover:text-ink dark:text-stone-400 dark:hover:bg-stone-800/85 dark:hover:text-stone-100'
-                  }`}
-                >
-                  <span className="relative z-10 min-w-0 flex-1 truncate">Dashboard</span>
-                </Link>
-              </li>
-              <li>
-                <Link
-                  to="/positions"
-                  aria-current={positionsAllClientsActive ? 'page' : undefined}
-                  className={`group relative flex items-center gap-2 overflow-hidden rounded-lg py-2 pr-2 pl-3 text-sm font-medium transition-all duration-200 ${
-                    positionsAllClientsActive
-                      ? `bg-gradient-to-r text-stitch-on-surface shadow-sm ring-1 dark:text-stone-100 ${candidatesPositionsGroup.activeRow}`
-                      : 'text-ink-muted hover:bg-white/75 hover:text-ink dark:text-stone-400 dark:hover:bg-stone-800/85 dark:hover:text-stone-100'
-                  }`}
-                >
-                  <span className="relative z-10 min-w-0 flex-1 truncate">All clients</span>
-                </Link>
-              </li>
               {sidebarCompanies.map((co) => {
                 const isActive = positionsPathActive && companyParam === co.id
                 return (
