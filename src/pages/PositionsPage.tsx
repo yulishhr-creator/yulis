@@ -1,7 +1,7 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { differenceInCalendarDays } from 'date-fns'
-import { ChevronDown, ChevronRight, GripVertical, Search } from 'lucide-react'
+import { ChevronDown, ChevronRight, GripVertical, Plus, Search } from 'lucide-react'
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
@@ -589,9 +589,10 @@ export function PositionsPage() {
         right={
           <Link
             to="/positions?create=1"
-            className="inline-flex shrink-0 items-center rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-4 py-2 text-sm font-bold text-white shadow-sm dark:from-orange-700 dark:to-orange-500"
+            className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] text-white shadow-sm transition hover:brightness-105 dark:from-orange-700 dark:to-orange-500"
+            aria-label="New position"
           >
-            New
+            <Plus className="h-8 w-8 stroke-[2.75]" strokeLinecap="round" strokeLinejoin="round" aria-hidden />
           </Link>
         }
       />
