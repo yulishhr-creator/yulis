@@ -89,7 +89,7 @@ export function buildQuickFabActions(opts: {
     subtitle: 'Schedule on the calendar, optional reminder time',
     icon: CalendarPlus,
     iconBgClass: iconCal,
-    onSelect: done(() => navigate('/calendar?new=1')),
+    onSelect: done(() => navigate('/?calEvent=1')),
   })
 
   const trackTime = (): QuickFabAction => ({

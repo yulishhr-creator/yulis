@@ -22,7 +22,6 @@ import { ListSettingsPage } from '@/pages/ListSettingsPage'
 import { ProfilePage } from '@/pages/ProfilePage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
 import { WorkingTimePage } from '@/pages/WorkingTimePage'
-import { CalendarPage } from '@/pages/CalendarPage'
 import { CandidatesPage } from '@/pages/CandidatesPage'
 import { CandidateDetailPage } from '@/pages/CandidateDetailPage'
 import { PublicSharePage } from '@/pages/PublicSharePage'
@@ -60,7 +59,7 @@ export default function App() {
                     <Route path="/" element={<DashboardPage />} />
                     <Route path="/tasks" element={<TasksPage />} />
                     <Route path="/time" element={<WorkingTimePage />} />
-                    <Route path="/calendar" element={<CalendarPage />} />
+                    <Route path="/calendar" element={<Navigate to="/" replace />} />
                     <Route path="/companies" element={<CompaniesPage />} />
                     <Route path="/companies/:id" element={<CompanyDetailPage />} />
                     <Route path="/candidates" element={<CandidatesPage />} />

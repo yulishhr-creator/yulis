@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   addMonths,
@@ -14,58 +14,20 @@ import {
 } from 'date-fns'
 import { CalendarClock, CalendarDays, Pencil, Star, Trash2 } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
 import { useToast } from '@/hooks/useToast'
 import { Modal } from '@/components/ui/Modal'
 import { getSupabase } from '@/lib/supabase'
-
-type One<T> = T | T[] | null
-
-type CalendarEventRow = {
-  id: string
-  title: string
-  subtitle: string | null
-  starts_at: string
-  ends_at: string | null
-  reminder_at: string | null
-  is_important: boolean
-  position_id: string | null
-  candidate_id: string | null
-  company_id: string | null
-  positions: One<{ title: string }>
-  candidates: One<{ full_name: string }>
-  companies: One<{ name: string }>
-}
-
-function one<T>(v: T | T[] | null | undefined): T | null {
-  if (v == null) return null
-  return Array.isArray(v) ? (v[0] ?? null) : v
-}
-
-const EVENT_SELECT = `id, title, subtitle, starts_at, ends_at, reminder_at, is_important, position_id, candidate_id, company_id,
-  positions ( title ),
-  candidates ( full_name ),
-  companies ( name )`
-
-const CAL_STALE_MS = 60_000
+import { type CalendarEventRow, CALENDAR_EVENT_SELECT, one } from '@/lib/calendarEventModel'
+import { CalendarEventFormModal } from '@/components/dashboard/CalendarEventFormModal'
 
 function titleDayPreview(title: string, maxChars = 20): string {
   const t = title.trim()
   if (!t) return ''
   if (t.length <= maxChars) return t
   return `${t.slice(0, maxChars - 3).trimEnd()}…`
-}
-
-function relationForEvent(ev: CalendarEventRow): { label: string; to: string } | null {
-  const company = one(ev.companies)
-  const position = one(ev.positions)
-  const candidate = one(ev.candidates)
-  if (ev.company_id && company) return { label: company.name, to: `/companies/${ev.company_id}` }
-  if (ev.position_id && position) return { label: position.title, to: `/positions/${ev.position_id}` }
-  if (ev.candidate_id && candidate) return { label: candidate.full_name, to: `/candidates/${ev.candidate_id}` }
-  return null
 }
 
 function relationLabelOverview(ev: CalendarEventRow): { label: string; to?: string } | null {
@@ -84,6 +46,18 @@ function relationLabelOverview(ev: CalendarEventRow): { label: string; to?: stri
   return null
 }
 
+function relationForEvent(ev: CalendarEventRow): { label: string; to: string } | null {
+  const company = one(ev.companies)
+  const position = one(ev.positions)
+  const candidate = one(ev.candidates)
+  if (ev.company_id && company) return { label: company.name, to: `/companies/${ev.company_id}` }
+  if (ev.position_id && position) return { label: position.title, to: `/positions/${ev.position_id}` }
+  if (ev.candidate_id && candidate) return { label: candidate.full_name, to: `/candidates/${ev.candidate_id}` }
+  return null
+}
+
+const CAL_STALE_MS = 60_000
+
 const notifCardClass =
   'border-stitch-on-surface/10 rounded-2xl border-b-4 border-b-[#006384]/60 bg-white p-4 shadow-[0_16px_36px_rgba(48,46,43,0.08)] dark:border-stone-700 dark:bg-stone-900'
 
@@ -91,12 +65,16 @@ export function OverviewCalendarAndEvents() {
   const { user } = useAuth()
   const supabase = getSupabase()
   const uid = user?.id
-  const navigate = useNavigate()
   const qc = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { success, error: toastError } = useToast()
   const reduceMotion = useReducedMotion()
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()))
   const [picked, setPicked] = useState<Date | null>(null)
+
+  const [eventFormOpen, setEventFormOpen] = useState(false)
+  const [eventFormEdit, setEventFormEdit] = useState<CalendarEventRow | null>(null)
+  const [eventFormDefaultStart, setEventFormDefaultStart] = useState(() => format(new Date(), "yyyy-MM-dd'T'HH:mm"))
 
   const monthStart = startOfMonth(cursor)
   const monthEnd = endOfMonth(cursor)
@@ -111,7 +89,7 @@ export function OverviewCalendarAndEvents() {
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('calendar_events')
-        .select(EVENT_SELECT)
+        .select(CALENDAR_EVENT_SELECT)
         .eq('user_id', uid!)
         .gte('starts_at', gridStart.toISOString())
         .lte('starts_at', gridEnd.toISOString())
@@ -129,7 +107,7 @@ export function OverviewCalendarAndEvents() {
       const from = startOfDay(new Date()).toISOString()
       const { data, error } = await supabase!
         .from('calendar_events')
-        .select(EVENT_SELECT)
+        .select(CALENDAR_EVENT_SELECT)
         .eq('user_id', uid!)
         .gte('starts_at', from)
         .order('starts_at', { ascending: true })
@@ -169,17 +147,46 @@ export function OverviewCalendarAndEvents() {
     onError: (e: Error) => toastError(e.message),
   })
 
+  const openEventFormCreate = useCallback((startsAtLocal: string) => {
+    setEventFormEdit(null)
+    setEventFormDefaultStart(startsAtLocal)
+    setEventFormOpen(true)
+  }, [])
+
   function openCreateForPickedDay() {
     if (!picked) return
     const d = format(picked, 'yyyy-MM-dd')
     setPicked(null)
-    navigate(`/calendar?new=1&date=${d}`)
+    openEventFormCreate(`${d}T09:00`)
   }
 
-  function goEditOnCalendar(ev: CalendarEventRow) {
+  function goEditInPlace(ev: CalendarEventRow) {
     setPicked(null)
-    navigate('/calendar', { state: { editEventId: ev.id } })
+    setEventFormEdit(ev)
+    setEventFormOpen(true)
   }
+
+  function closeEventForm() {
+    setEventFormOpen(false)
+    setEventFormEdit(null)
+  }
+
+  useEffect(() => {
+    if (searchParams.get('calEvent') !== '1') return
+    const date = searchParams.get('calDate')
+    const start =
+      date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T09:00` : format(new Date(), "yyyy-MM-dd'T'HH:mm")
+    openEventFormCreate(start)
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('calEvent')
+        next.delete('calDate')
+        return next
+      },
+      { replace: true },
+    )
+  }, [searchParams, setSearchParams, openEventFormCreate])
 
   const upcomingAll = upcomingQ.data ?? []
   const upcomingImportant = upcomingAll.filter((e) => e.is_important)
@@ -191,6 +198,13 @@ export function OverviewCalendarAndEvents() {
 
   return (
     <div className="flex flex-col gap-6">
+      <CalendarEventFormModal
+        open={eventFormOpen}
+        onClose={closeEventForm}
+        defaultStartsAt={eventFormDefaultStart}
+        editingEvent={eventFormEdit}
+      />
+
       <section
         aria-labelledby="overview-calendar-heading"
         className="border-stitch-on-surface/10 rounded-3xl border bg-white/60 p-4 shadow-sm dark:border-stone-700 dark:bg-stone-900/50 md:p-6"
@@ -205,12 +219,6 @@ export function OverviewCalendarAndEvents() {
             </span>
             Calendar
           </h2>
-          <Link
-            to="/calendar"
-            className="text-accent text-sm font-bold underline-offset-2 hover:underline dark:text-orange-300"
-          >
-            Full calendar
-          </Link>
         </div>
 
         <div className="mb-4 flex w-full justify-center px-1">
@@ -298,19 +306,13 @@ export function OverviewCalendarAndEvents() {
             <CalendarClock className="h-4 w-4" aria-hidden />
             Upcoming events
           </h2>
-          <Link
-            to="/calendar"
-            className="text-accent text-xs font-bold underline-offset-2 hover:underline dark:text-orange-300"
-          >
-            Manage on calendar
-          </Link>
         </div>
         <p className="text-stitch-muted text-xs dark:text-stone-500">Starting today, soonest first — like your notification list.</p>
 
         {upcomingQ.isLoading ? (
           <p className="text-stitch-muted mt-4 text-sm">Loading…</p>
         ) : upcomingAll.length === 0 ? (
-          <p className="text-stitch-muted mt-4 text-sm">No upcoming events. Add one from Quick actions or the full calendar.</p>
+          <p className="text-stitch-muted mt-4 text-sm">No upcoming events. Add one from Quick actions or a day on the calendar.</p>
         ) : (
           <ul className="mt-4 space-y-3">
             {upcomingImportantShow.map((ev, i) => (
@@ -328,9 +330,7 @@ export function OverviewCalendarAndEvents() {
         )}
         {upcomingAll.length > upcomingPreviewLimit ? (
           <p className="text-stitch-muted mt-3 text-center text-xs">
-            <Link to="/calendar" className="text-accent font-semibold underline dark:text-orange-300">
-              +{upcomingAll.length - upcomingPreviewLimit} more on calendar
-            </Link>
+            Showing {upcomingPreviewLimit} of {upcomingAll.length} — scroll the month grid above for other dates.
           </p>
         ) : null}
       </section>
@@ -392,7 +392,7 @@ export function OverviewCalendarAndEvents() {
                           type="button"
                           className="rounded-lg p-2 text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
                           aria-label="Edit event"
-                          onClick={() => goEditOnCalendar(ev)}
+                          onClick={() => goEditInPlace(ev)}
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
