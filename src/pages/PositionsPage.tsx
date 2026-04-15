@@ -48,7 +48,7 @@ function positionMatchesSearch(p: PositionListItem, raw: string): boolean {
   if ((p.title ?? '').toLowerCase().includes(q)) return true
   const co = (p.companies as { name?: string } | null)?.name ?? ''
   if (co.toLowerCase().includes(q)) return true
-  for (const pc of p.candidates ?? []) {
+  for (const pc of p.position_candidates ?? []) {
     const c = boardCandidateOne(pc.candidates)
     if (!c || c.deleted_at) continue
     if ((c.full_name ?? '').toLowerCase().includes(q)) return true
@@ -78,7 +78,7 @@ type PositionListItem = {
   created_at: string
   updated_at?: string
   companies: unknown
-  candidates?: BoardAssignmentRow[] | null
+  position_candidates?: BoardAssignmentRow[] | null
 }
 
 function PositionCard({
@@ -97,7 +97,7 @@ function PositionCard({
   const co = p.companies as { name: string } | null
   const daysSince = differenceInCalendarDays(new Date(), new Date(p.created_at))
   const pill = positionLifecyclePill(p.status)
-  const cands = (p.candidates ?? []).filter((pc) => {
+  const cands = (p.position_candidates ?? []).filter((pc) => {
     const c = boardCandidateOne(pc.candidates)
     return c && !c.deleted_at
   })

@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx'
 import {
   Check,
   CheckCircle,
+  CheckCircle2,
   X,
   PartyPopper,
   FileText,
@@ -16,9 +17,12 @@ import {
   Upload,
   Copy,
   ExternalLink,
-  Settings,
-  Banknote,
-  Globe,
+  GitBranch,
+  Mail,
+  Ban,
+  Play,
+  Pause,
+  Share2,
   Pencil,
   ArrowLeft,
   GripVertical,
@@ -73,6 +77,14 @@ function nestedCandidate(v: PositionCandidateJunction['candidates']): CandidateP
 function nestedStageName(v: PositionCandidateJunction['position_stages']): string {
   if (v == null) return '—'
   return Array.isArray(v) ? (v[0]?.name ?? '—') : (v.name ?? '—')
+}
+
+/** Days on role for compact kanban badge; under a week show Nd, else rounded weeks. */
+function formatTenureOnRoleShort(createdAt: string): string {
+  const days = differenceInCalendarDays(new Date(), new Date(createdAt))
+  if (days < 7) return `${days}d`
+  const w = Math.max(1, Math.round(days / 7))
+  return `${w}w`
 }
 
 type ActivityRow = {
@@ -414,12 +426,12 @@ export function PositionDetailPage() {
   const [noteText, setNoteText] = useState('')
   const [shareOpen, setShareOpen] = useState(false)
   const [shareUrl, setShareUrl] = useState<string | null>(null)
-  const [publicListOpen, setPublicListOpen] = useState(false)
-  const [publicListUrl, setPublicListUrl] = useState<string | null>(null)
+  const [shareChannelOpen, setShareChannelOpen] = useState(false)
   const [taskDropHover, setTaskDropHover] = useState<PositionTaskStatus | null>(null)
   const [selectedPositionTask, setSelectedPositionTask] = useState<PositionTaskRow | null>(null)
   const [headerStatusOpen, setHeaderStatusOpen] = useState(false)
   const headerStatusRef = useRef<HTMLDivElement>(null)
+  const shareChannelRef = useRef<HTMLDivElement>(null)
   const [candidateDragId, setCandidateDragId] = useState<string | null>(null)
   const [candidateDropStage, setCandidateDropStage] = useState<string | null>(null)
   const [newPositionTaskTitle, setNewPositionTaskTitle] = useState('')
@@ -438,6 +450,10 @@ export function PositionDetailPage() {
     setWelcome3(position.welcome_3 ?? '')
     setLinkedinSearchUrl((position as { linkedin_saved_search_url?: string | null }).linkedin_saved_search_url ?? '')
     setStatus(position.status ?? 'active')
+    const pf = position as { planned_fee_ils?: number | null; actual_fee_ils?: number | null; critical_stage_sort_order?: number | null }
+    setFeePlanned(pf.planned_fee_ils != null ? String(pf.planned_fee_ils) : '')
+    setFeeActual(pf.actual_fee_ils != null ? String(pf.actual_fee_ils) : '')
+    setFeeCriticalN(pf.critical_stage_sort_order != null ? String(pf.critical_stage_sort_order) : '3')
   }, [position])
 
   useEffect(() => {
@@ -466,9 +482,6 @@ export function PositionDetailPage() {
     )
     requestAnimationFrame(() => {
       document.getElementById('position-candidates-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      const el = document.getElementById('position-add-candidate')
-      const firstInput = el?.querySelector('input') as HTMLInputElement | null
-      firstInput?.focus()
     })
   }, [search, setSearch])
 
@@ -642,86 +655,31 @@ export function PositionDetailPage() {
     await qc.invalidateQueries({ queryKey: ['position-stages', id] })
   }
 
-  const [cName, setCName] = useState('')
-  const [cEmail, setCEmail] = useState('')
-  const [cPhone, setCPhone] = useState('')
-  const [cSource, setCSource] = useState<'app' | 'external'>('app')
+  const [feePlanned, setFeePlanned] = useState('')
+  const [feeActual, setFeeActual] = useState('')
+  const [feeCriticalN, setFeeCriticalN] = useState('3')
 
-  const addCandidate = useMutation({
+  const saveFees = useMutation({
     mutationFn: async () => {
-      const en = normalizeEmail(cEmail)
-      const pn = normalizePhone(cPhone)
-      if (cSource === 'app' && id) {
-        const externals = (candidatesQ.data ?? []).filter((pc) => pc.source === 'external')
-        const hit = externals.find((pc) => {
-          const h = nestedCandidate(pc.candidates)
-          if (!h) return false
-          if (en && h.email && normalizeEmail(h.email) === en) return true
-          if (pn && h.phone && normalizePhone(h.phone) === pn) return true
-          return false
+      const crit = feeCriticalN.trim() ? Number(feeCriticalN) : null
+      const { error } = await supabase!
+        .from('positions')
+        .update({
+          planned_fee_ils: feePlanned.trim() ? Number(feePlanned) : null,
+          actual_fee_ils: feeActual.trim() ? Number(feeActual) : null,
+          critical_stage_sort_order: crit != null && !Number.isNaN(crit) ? crit : null,
         })
-        if (hit) {
-          const nm = nestedCandidate(hit.candidates)?.full_name ?? 'Candidate'
-          const ok = window.confirm(`This matches imported candidate “${nm}”. Create another record anyway?`)
-          if (!ok) throw new Error('cancelled')
-        }
-      }
-      const firstStage = stagesQ.data?.[0]?.id ?? null
-      const { data: candIns, error: insErr } = await supabase!
-        .from('candidates')
-        .insert({
-          user_id: user!.id,
-          full_name: cName.trim() || 'Unnamed',
-          email: cEmail.trim() || null,
-          phone: cPhone.trim() || null,
-          status: 'active',
-          email_normalized: en,
-          phone_normalized: pn,
-        })
-        .select('id, full_name')
-        .single()
-      if (insErr) throw insErr
-      const { data: pcRow, error: pcErr } = await supabase!
-        .from('position_candidates')
-        .insert({
-          user_id: user!.id,
-          position_id: id!,
-          candidate_id: candIns.id,
-          position_stage_id: firstStage,
-          status: 'in_progress',
-          source: cSource,
-        })
-        .select('id')
-        .single()
-      if (pcErr) throw pcErr
-      if (firstStage && pcRow?.id) {
-        await logPositionCandidateTransition(supabase!, user!.id, {
-          position_candidate_id: pcRow.id,
-          transition_type: 'stage',
-          from_stage_id: null,
-          to_stage_id: firstStage,
-        })
-      }
-      return { ...candIns, position_candidate_id: pcRow?.id as string }
+        .eq('id', id!)
+        .eq('user_id', user!.id)
+      if (error) throw error
     },
-    onSuccess: async (data) => {
-      setCName('')
-      setCEmail('')
-      setCPhone('')
-      success('Candidate added')
-      await logActivityEvent(supabase!, user!.id, {
-        event_type: 'candidate_created',
-        position_id: id!,
-        candidate_id: data.id,
-        position_candidate_id: data.position_candidate_id,
-        title: `New candidate: ${data.full_name}`,
-      })
-      await invalidateAll()
+    onSuccess: async () => {
+      success('Fees saved')
+      await qc.invalidateQueries({ queryKey: ['position', id] })
+      await qc.invalidateQueries({ queryKey: ['positions'] })
+      await qc.invalidateQueries({ queryKey: ['companies-positions-income'] })
     },
-    onError: (e: Error) => {
-      if (e.message === 'cancelled') return
-      toastError(e.message)
-    },
+    onError: (e: Error) => toastError(e.message),
   })
 
   const [importError, setImportError] = useState<string | null>(null)
@@ -1207,6 +1165,14 @@ export function PositionDetailPage() {
     return () => document.removeEventListener('mousedown', onDoc)
   }, [headerStatusOpen])
 
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (!shareChannelRef.current?.contains(e.target as Node)) setShareChannelOpen(false)
+    }
+    if (shareChannelOpen) document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [shareChannelOpen])
+
   const drawerCandidate = useMemo(() => {
     if (!highlightCandidate) return null
     return (candidatesQ.data ?? []).find((r) => nestedCandidate(r.candidates)?.id === highlightCandidate) ?? null
@@ -1522,6 +1488,47 @@ export function PositionDetailPage() {
     )
   }
 
+  function renderPipelineKanbanCard(c: PositionCandidateJunction) {
+    const prof = nestedCandidate(c.candidates)
+    const candId = prof?.id
+    const tenure = formatTenureOnRoleShort(c.created_at as string)
+    return (
+      <div
+        key={c.id}
+        role="button"
+        tabIndex={0}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData('application/json', JSON.stringify({ kind: 'position_candidate', pcId: c.id }))
+          e.dataTransfer.effectAllowed = 'move'
+          setCandidateDragId(c.id)
+        }}
+        onDragEnd={() => setCandidateDragId(null)}
+        onClick={() => candId && openCandidateDrawer(candId)}
+        onKeyDown={(e) => {
+          if ((e.key === 'Enter' || e.key === ' ') && candId) {
+            e.preventDefault()
+            openCandidateDrawer(candId)
+          }
+        }}
+        className={`border-line relative cursor-grab rounded-xl border bg-white p-3 pt-3 pr-3 shadow-sm active:cursor-grabbing dark:border-line-dark dark:bg-stone-800 ${
+          candidateDragId === c.id ? 'opacity-55' : ''
+        }`}
+      >
+        <span
+          className="absolute top-2 right-2 rounded-lg bg-gradient-to-br from-[#fd8863]/35 to-[#97daff]/40 px-2 py-0.5 text-[10px] font-extrabold tabular-nums text-[#9b3e20] ring-1 ring-[#9b3e20]/25 dark:from-orange-500/30 dark:to-cyan-500/25 dark:text-orange-200 dark:ring-orange-400/35"
+          title="Time on role"
+        >
+          {tenure}
+        </span>
+        <div className="flex items-start gap-2 pr-12">
+          <GripVertical className="text-ink-muted mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <p className="min-w-0 flex-1 truncate font-semibold text-stone-900 dark:text-stone-100">{prof?.full_name ?? 'Unnamed'}</p>
+        </div>
+      </div>
+    )
+  }
+
   const statusLabelShort =
     status === 'active' ? 'Active' : status === 'on_hold' ? 'On hold' : status === 'succeeded' ? 'Succeeded' : 'Cancelled'
 
@@ -1558,24 +1565,29 @@ export function PositionDetailPage() {
               <button
                 type="button"
                 onClick={() => setHeaderStatusOpen((o) => !o)}
-                className="border-line flex items-center gap-2 rounded-xl border bg-white/95 px-3 py-2 text-sm font-bold shadow-sm dark:border-line-dark dark:bg-stone-900"
+                className={`border-line flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold shadow-sm transition dark:border-line-dark ${
+                  status === 'active'
+                    ? 'border-emerald-200/90 bg-gradient-to-br from-emerald-50 to-white text-emerald-900 dark:border-emerald-800/80 dark:from-emerald-950/60 dark:to-stone-900 dark:text-emerald-200'
+                    : status === 'on_hold'
+                      ? 'border-amber-200/90 bg-gradient-to-br from-amber-50 to-white text-amber-900 dark:border-amber-800/80 dark:from-amber-950/50 dark:to-stone-900 dark:text-amber-200'
+                      : status === 'succeeded'
+                        ? 'border-emerald-300/80 bg-gradient-to-br from-emerald-100/80 to-white text-emerald-950 dark:border-emerald-800/60 dark:from-emerald-950/40 dark:to-stone-900 dark:text-emerald-100'
+                        : 'border-stone-200/90 bg-gradient-to-br from-stone-100 to-white text-stone-800 dark:border-stone-600 dark:from-stone-800/80 dark:to-stone-900 dark:text-stone-200'
+                }`}
                 aria-expanded={headerStatusOpen}
                 aria-haspopup="listbox"
               >
-                <span
-                  className={
-                    status === 'active'
-                      ? 'text-emerald-800 dark:text-emerald-300'
-                      : status === 'on_hold'
-                        ? 'text-amber-800 dark:text-amber-200'
-                        : status === 'succeeded'
-                          ? 'text-emerald-900 dark:text-emerald-200'
-                          : 'text-stone-600 dark:text-stone-300'
-                  }
-                >
-                  {statusLabelShort}
-                </span>
-                <ChevronDown className="h-4 w-4 opacity-60" aria-hidden />
+                {status === 'active' ? (
+                  <Play className="h-4 w-4 shrink-0 fill-current text-emerald-600 dark:text-emerald-400" aria-hidden />
+                ) : status === 'on_hold' ? (
+                  <Pause className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden />
+                ) : status === 'succeeded' ? (
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                ) : (
+                  <Ban className="h-4 w-4 shrink-0 text-stone-500 dark:text-stone-400" aria-hidden />
+                )}
+                <span>{statusLabelShort}</span>
+                <ChevronDown className="h-4 w-4 shrink-0 opacity-60" aria-hidden />
               </button>
               {headerStatusOpen ? (
                 <div
@@ -1587,106 +1599,134 @@ export function PositionDetailPage() {
                       <button
                         type="button"
                         role="option"
-                        className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full px-3 py-2 text-left text-sm font-semibold text-emerald-800 dark:text-emerald-300"
+                        className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-emerald-800 dark:text-emerald-300"
                         onClick={() => {
                           setHeaderStatusOpen(false)
                           void setOpenPositionStatus.mutateAsync('active')
                         }}
                       >
+                        <Play className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
                         Active
                       </button>
                       <button
                         type="button"
                         role="option"
-                        className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full px-3 py-2 text-left text-sm font-semibold text-amber-800 dark:text-amber-200"
+                        className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-amber-800 dark:text-amber-200"
                         onClick={() => {
                           setHeaderStatusOpen(false)
                           void setOpenPositionStatus.mutateAsync('on_hold')
                         }}
                       >
+                        <Pause className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
                         On hold
                       </button>
                       <button
                         type="button"
                         role="option"
-                        className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full px-3 py-2 text-left text-sm text-stone-700 dark:text-stone-200"
+                        className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-stone-700 dark:text-stone-200"
                         onClick={() => {
                           setHeaderStatusOpen(false)
                           if (window.confirm('Mark this role as succeeded?')) void setPositionTerminal.mutateAsync('succeeded')
                         }}
                       >
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
                         Succeeded
                       </button>
                       <button
                         type="button"
                         role="option"
-                        className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full px-3 py-2 text-left text-sm text-stone-600 dark:text-stone-300"
+                        className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-stone-600 dark:text-stone-300"
                         onClick={() => {
                           setHeaderStatusOpen(false)
                           if (window.confirm('Mark this role as cancelled?')) void setPositionTerminal.mutateAsync('cancelled')
                         }}
                       >
+                        <Ban className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
                         Cancelled
                       </button>
                     </>
                   ) : (
                     <button
                       type="button"
-                      className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full px-3 py-2 text-left text-sm font-semibold"
+                      className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold"
                       onClick={() => {
                         setHeaderStatusOpen(false)
                         void reopenPosition.mutateAsync()
                       }}
                     >
+                      <Play className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
                       Reopen as Active
                     </button>
                   )}
                 </div>
               ) : null}
             </div>
-            <Link
-              to={`/settings/positions/${id}/fees`}
-              title="Fees & milestones"
-              aria-label="Fees and milestones"
-              className="border-line flex h-10 w-10 items-center justify-center rounded-xl border bg-white/90 text-stone-700 shadow-sm transition hover:bg-stone-100 dark:border-line-dark dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
-            >
-              <Banknote className="h-4 w-4" aria-hidden />
-            </Link>
             <button
               type="button"
-              title="Role setup"
-              aria-label="Role setup"
+              title="Workflow — stages and role setup"
+              aria-label="Workflow and role setup"
               onClick={() => setPositionSetupOpen(true)}
-              className="border-line flex h-10 w-10 items-center justify-center rounded-xl border bg-white/90 text-stone-700 shadow-sm transition hover:bg-stone-100 dark:border-line-dark dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
+              className="border-line flex h-10 w-10 items-center justify-center rounded-xl border bg-white/90 text-[#006384] shadow-sm transition hover:bg-cyan-50 dark:border-line-dark dark:bg-stone-800 dark:text-cyan-300 dark:hover:bg-stone-700"
             >
-              <Settings className="h-4 w-4" aria-hidden />
+              <GitBranch className="h-4 w-4" aria-hidden />
             </button>
             {!terminalPosition ? (
-              <button
-                type="button"
-                title="Published: public candidate list"
-                aria-label="Public candidate list"
-                disabled={publicListTokenQ.isLoading || ensurePositionPublicListToken.isPending}
-                onClick={async () => {
-                  if (!id) return
-                  let tok = publicListTokenQ.data ?? null
-                  if (tok == null) {
-                    try {
-                      tok = await ensurePositionPublicListToken.mutateAsync()
-                    } catch {
-                      return
-                    }
-                  }
-                  const url = `${window.location.origin}/pub/pos/${tok}`
-                  setPublicListUrl(url)
-                  setPublicListOpen(true)
-                  void navigator.clipboard.writeText(url).catch(() => {})
-                  success('Public link copied')
-                }}
-                className="border-line flex h-10 w-10 items-center justify-center rounded-xl border bg-white/90 text-stone-700 shadow-sm transition hover:bg-stone-100 disabled:opacity-50 dark:border-line-dark dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
-              >
-                <Globe className="h-4 w-4" aria-hidden />
-              </button>
+              <div className="relative" ref={shareChannelRef}>
+                <button
+                  type="button"
+                  title="Share"
+                  aria-label="Share options"
+                  aria-expanded={shareChannelOpen}
+                  aria-haspopup="menu"
+                  onClick={() => setShareChannelOpen((o) => !o)}
+                  className="border-line flex h-10 items-center gap-1 rounded-xl border bg-white/90 px-2.5 text-stone-700 shadow-sm transition hover:bg-stone-100 dark:border-line-dark dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
+                >
+                  <Share2 className="h-4 w-4 shrink-0" aria-hidden />
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden />
+                </button>
+                {shareChannelOpen ? (
+                  <div
+                    role="menu"
+                    className="border-line absolute top-full right-0 z-50 mt-1 min-w-[11rem] rounded-xl border bg-white py-1 shadow-xl dark:border-line-dark dark:bg-stone-900"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-stone-700 dark:text-stone-200"
+                      onClick={() => setShareChannelOpen(false)}
+                    >
+                      <Mail className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
+                      Email
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={publicListTokenQ.isLoading || ensurePositionPublicListToken.isPending}
+                      className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-stone-700 disabled:opacity-50 dark:text-stone-200"
+                      onClick={async () => {
+                        setShareChannelOpen(false)
+                        if (!id) return
+                        let tok = publicListTokenQ.data ?? null
+                        if (tok == null) {
+                          try {
+                            tok = await ensurePositionPublicListToken.mutateAsync()
+                          } catch {
+                            return
+                          }
+                        }
+                        const url = `${window.location.origin}/pub/pos/${tok}`
+                        void navigator.clipboard.writeText(url).then(
+                          () => success('Public URL copied'),
+                          () => toastError('Could not copy'),
+                        )
+                      }}
+                    >
+                      <Link2 className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
+                      Public URL
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             ) : null}
           </div>
         </div>
@@ -1745,62 +1785,6 @@ export function PositionDetailPage() {
                 }
               }}
             />
-            <div className="rounded-xl px-1 py-2">
-              <p className="text-stitch-muted text-[11px] font-bold tracking-wide uppercase dark:text-stone-500">Role status</p>
-              {!terminalPosition ? (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {(['active', 'on_hold'] as const).map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      disabled={setOpenPositionStatus.isPending}
-                      onClick={() => void setOpenPositionStatus.mutateAsync(s)}
-                      className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                        status === s
-                          ? 'bg-accent text-white'
-                          : 'border border-stone-200 bg-white/90 hover:bg-stone-50 dark:border-stone-600 dark:bg-stone-900/60'
-                      }`}
-                    >
-                      {s === 'active' ? 'Active' : 'On hold'}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    disabled={setPositionTerminal.isPending}
-                    onClick={() => {
-                      if (!window.confirm('Mark this role as succeeded?')) return
-                      void setPositionTerminal.mutateAsync('succeeded')
-                    }}
-                    className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                      status === 'succeeded'
-                        ? 'bg-emerald-700 text-white'
-                        : 'border border-stone-200 bg-white/90 dark:border-stone-600 dark:bg-stone-900/60'
-                    }`}
-                  >
-                    Succeeded
-                  </button>
-                  <button
-                    type="button"
-                    disabled={setPositionTerminal.isPending}
-                    onClick={() => {
-                      if (!window.confirm('Mark this role as cancelled?')) return
-                      void setPositionTerminal.mutateAsync('cancelled')
-                    }}
-                    className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                      status === 'cancelled'
-                        ? 'bg-stone-600 text-white'
-                        : 'border border-stone-200 bg-white/90 dark:border-stone-600 dark:bg-stone-900/60'
-                    }`}
-                  >
-                    Cancelled
-                  </button>
-                </div>
-              ) : (
-                <p className="text-ink-muted mt-1 text-xs dark:text-stone-400">
-                  Closed role — use <span className="font-semibold">Reopen</span> in the header.
-                </p>
-              )}
-            </div>
             <DetailHoverField
               label="Requirements from client"
               value={requirements}
@@ -1820,12 +1804,56 @@ export function PositionDetailPage() {
                 }
               }}
             />
-            <p className="text-ink-muted px-1 pt-2 text-xs dark:text-stone-500">
-              Fees &amp; milestones:{' '}
-              <Link to={`/settings/positions/${id}/fees`} className="text-accent font-semibold underline dark:text-orange-300">
-                Settings
-              </Link>
-            </p>
+            <div className="mt-4 rounded-xl border border-stone-200/80 bg-white/50 px-1 py-3 dark:border-stone-600 dark:bg-stone-900/30">
+              <p className="text-stitch-muted px-1 text-[11px] font-bold tracking-wide uppercase dark:text-stone-500">Fees &amp; milestones</p>
+              <p className="text-ink-muted mt-1 px-1 text-xs dark:text-stone-500">
+                Planned and actual fees (ILS) and when a candidate counts as reaching a milestone stage (by stage sort order).
+              </p>
+              <form
+                className="mt-3 max-w-lg space-y-3 px-1"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void saveFees.mutateAsync()
+                }}
+              >
+                <label className="block text-sm font-medium">
+                  Critical stage threshold (sort order ≥ this = milestone)
+                  <input
+                    value={feeCriticalN}
+                    onChange={(e) => setFeeCriticalN(e.target.value)}
+                    inputMode="numeric"
+                    className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                  />
+                </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm font-medium">
+                    Planned fee (ILS)
+                    <input
+                      value={feePlanned}
+                      onChange={(e) => setFeePlanned(e.target.value)}
+                      inputMode="decimal"
+                      className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                    />
+                  </label>
+                  <label className="text-sm font-medium">
+                    Actual fee (ILS)
+                    <input
+                      value={feeActual}
+                      onChange={(e) => setFeeActual(e.target.value)}
+                      inputMode="decimal"
+                      className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                    />
+                  </label>
+                </div>
+                <button
+                  type="submit"
+                  disabled={saveFees.isPending}
+                  className="bg-accent text-stone-50 rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                >
+                  {saveFees.isPending ? 'Saving…' : 'Save fees'}
+                </button>
+              </form>
+            </div>
           </div>
         </section>
       ) : null}
@@ -1834,57 +1862,8 @@ export function PositionDetailPage() {
         <div className="relative">
           <section id="position-candidates-section" className="scroll-mt-24 space-y-4">
             <p className="text-ink-muted text-sm dark:text-stone-400">
-              Pipeline board: drag cards between stages. Click a card for actions, résumé, and history. Add candidates below.
+              Pipeline board: drag cards between stages. Click a card for actions, résumé, and history.
             </p>
-
-            <form
-              id="position-add-candidate"
-              className="border-line grid scroll-mt-24 gap-2 rounded-2xl border border-stone-200/80 bg-white/70 p-4 dark:border-line-dark dark:bg-stone-900/45 sm:grid-cols-2"
-              onSubmit={(e) => {
-                e.preventDefault()
-                void addCandidate.mutateAsync()
-              }}
-            >
-              <label className="text-sm">
-                Full name
-                <input
-                  value={cName}
-                  onChange={(e) => setCName(e.target.value)}
-                  className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                  required
-                />
-              </label>
-              <label className="text-sm">
-                Source
-                <select
-                  value={cSource}
-                  onChange={(e) => setCSource(e.target.value as 'app' | 'external')}
-                  className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                >
-                  <option value="app">App</option>
-                  <option value="external">External (import-style)</option>
-                </select>
-              </label>
-              <label className="text-sm">
-                Email
-                <input
-                  value={cEmail}
-                  onChange={(e) => setCEmail(e.target.value)}
-                  className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                />
-              </label>
-              <label className="text-sm">
-                Phone
-                <input
-                  value={cPhone}
-                  onChange={(e) => setCPhone(e.target.value)}
-                  className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                />
-              </label>
-              <button type="submit" className="bg-accent text-stone-50 w-fit rounded-full px-4 py-2 text-sm font-semibold sm:col-span-2">
-                Add candidate
-              </button>
-            </form>
 
             <input
               ref={resumeFileRef}
@@ -1903,73 +1882,26 @@ export function PositionDetailPage() {
 
             <div className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]">
               {((): ReactNode => {
-                const cols: ReactNode[] = []
-                cols.push(
-                  <div
-                    key="__unassigned__"
-                    className={`flex min-h-[min(50vh,22rem)] min-w-[220px] max-w-[280px] shrink-0 flex-col rounded-2xl border bg-white/85 p-2 dark:bg-stone-900/55 ${
-                      candidateDropStage === stageDropSlot(null)
-                        ? 'ring-2 ring-[#9b3e20]/45 dark:ring-orange-400/50'
-                        : 'border-stone-200/80 dark:border-stone-600'
-                    }`}
-                    onDragOver={(e) => onCandidateDragOverStage(e, null)}
-                    onDragLeave={(e) => onCandidateDragLeaveStage(e, null)}
-                    onDrop={(e) => onCandidateDropStage(e, null)}
-                  >
-                    <h3 className="text-ink px-1 text-[11px] font-extrabold tracking-wide uppercase dark:text-stone-200">No stage</h3>
-                    <p className="text-stitch-muted px-1 text-xs tabular-nums">
-                      {pipelineKanbanCandidates.filter((c) => !c.position_stage_id).length}
-                    </p>
-                    <div className="mt-2 flex flex-1 flex-col gap-2 overflow-y-auto">
-                      {pipelineKanbanCandidates
-                        .filter((c) => !c.position_stage_id)
-                        .map((c) => {
-                          const prof = nestedCandidate(c.candidates)
-                          const candId = prof?.id
-                          const days = differenceInCalendarDays(new Date(), new Date(c.created_at as string))
-                          return (
-                            <div
-                              key={c.id}
-                              role="button"
-                              tabIndex={0}
-                              draggable
-                              onDragStart={(e) => {
-                                e.dataTransfer.setData(
-                                  'application/json',
-                                  JSON.stringify({ kind: 'position_candidate', pcId: c.id }),
-                                )
-                                e.dataTransfer.effectAllowed = 'move'
-                                setCandidateDragId(c.id)
-                              }}
-                              onDragEnd={() => setCandidateDragId(null)}
-                              onClick={() => candId && openCandidateDrawer(candId)}
-                              onKeyDown={(e) => {
-                                if ((e.key === 'Enter' || e.key === ' ') && candId) {
-                                  e.preventDefault()
-                                  openCandidateDrawer(candId)
-                                }
-                              }}
-                              className={`border-line cursor-grab rounded-xl border bg-white p-3 shadow-sm active:cursor-grabbing dark:border-line-dark dark:bg-stone-800 ${
-                                candidateDragId === c.id ? 'opacity-55' : ''
-                              }`}
-                            >
-                              <div className="flex items-start gap-2">
-                                <GripVertical className="text-ink-muted mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate font-semibold text-stone-900 dark:text-stone-100">{prof?.full_name ?? 'Unnamed'}</p>
-                                  <p className="text-ink-muted text-xs">On role {days}d</p>
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })}
+                const stages = stagesQ.data ?? []
+                if (!stages.length) {
+                  return (
+                    <div className="border-line flex min-h-[min(50vh,22rem)] min-w-[220px] max-w-[280px] shrink-0 flex-col rounded-2xl border border-stone-200/80 bg-white/85 p-2 dark:border-stone-600 dark:bg-stone-900/55">
+                      <h3 className="text-ink px-1 text-[11px] font-extrabold tracking-wide uppercase dark:text-stone-200">Pipeline</h3>
+                      <p className="text-stitch-muted px-1 text-xs tabular-nums">{pipelineKanbanCandidates.length}</p>
+                      <p className="text-ink-muted px-1 text-xs dark:text-stone-500">Add stages in workflow to organize candidates by step.</p>
+                      <div className="mt-2 flex flex-1 flex-col gap-2 overflow-y-auto">
+                        {pipelineKanbanCandidates.map((c) => renderPipelineKanbanCard(c))}
+                      </div>
                     </div>
-                  </div>,
-                )
-                for (const st of stagesQ.data ?? []) {
+                  )
+                }
+                return stages.map((st, stageIdx) => {
+                  const isFirst = stageIdx === 0
+                  const cards = pipelineKanbanCandidates.filter(
+                    (c) => c.position_stage_id === st.id || (isFirst && !c.position_stage_id),
+                  )
                   const slotHot = candidateDropStage === stageDropSlot(st.id)
-                  const cards = pipelineKanbanCandidates.filter((c) => c.position_stage_id === st.id)
-                  cols.push(
+                  return (
                     <div
                       key={st.id}
                       className={`flex min-h-[min(50vh,22rem)] min-w-[220px] max-w-[280px] shrink-0 flex-col rounded-2xl border bg-white/85 p-2 dark:bg-stone-900/55 ${
@@ -1981,52 +1913,10 @@ export function PositionDetailPage() {
                     >
                       <h3 className="text-ink px-1 text-[11px] font-extrabold tracking-wide uppercase dark:text-stone-200">{st.name}</h3>
                       <p className="text-stitch-muted px-1 text-xs tabular-nums">{cards.length}</p>
-                      <div className="mt-2 flex flex-1 flex-col gap-2 overflow-y-auto">
-                        {cards.map((c) => {
-                          const prof = nestedCandidate(c.candidates)
-                          const candId = prof?.id
-                          const days = differenceInCalendarDays(new Date(), new Date(c.created_at as string))
-                          return (
-                            <div
-                              key={c.id}
-                              role="button"
-                              tabIndex={0}
-                              draggable
-                              onDragStart={(e) => {
-                                e.dataTransfer.setData(
-                                  'application/json',
-                                  JSON.stringify({ kind: 'position_candidate', pcId: c.id }),
-                                )
-                                e.dataTransfer.effectAllowed = 'move'
-                                setCandidateDragId(c.id)
-                              }}
-                              onDragEnd={() => setCandidateDragId(null)}
-                              onClick={() => candId && openCandidateDrawer(candId)}
-                              onKeyDown={(e) => {
-                                if ((e.key === 'Enter' || e.key === ' ') && candId) {
-                                  e.preventDefault()
-                                  openCandidateDrawer(candId)
-                                }
-                              }}
-                              className={`border-line cursor-grab rounded-xl border bg-white p-3 shadow-sm active:cursor-grabbing dark:border-line-dark dark:bg-stone-800 ${
-                                candidateDragId === c.id ? 'opacity-55' : ''
-                              }`}
-                            >
-                              <div className="flex items-start gap-2">
-                                <GripVertical className="text-ink-muted mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate font-semibold text-stone-900 dark:text-stone-100">{prof?.full_name ?? 'Unnamed'}</p>
-                                  <p className="text-ink-muted text-xs">On role {days}d</p>
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>,
+                      <div className="mt-2 flex flex-1 flex-col gap-2 overflow-y-auto">{cards.map((c) => renderPipelineKanbanCard(c))}</div>
+                    </div>
                   )
-                }
-                return cols
+                })
               })()}
             </div>
 
@@ -2706,27 +2596,6 @@ export function PositionDetailPage() {
       <Modal open={shareOpen} onClose={() => setShareOpen(false)} title="Share link" size="sm">
         <p className="text-ink-muted text-sm">Anyone with this link can view a summary (expires in 7 days).</p>
         <p className="mt-2 break-all rounded-lg bg-stone-100 p-2 text-xs dark:bg-stone-800">{shareUrl}</p>
-      </Modal>
-
-      <Modal open={publicListOpen} onClose={() => setPublicListOpen(false)} title="Public candidate list" size="sm">
-        <p className="text-ink-muted text-sm">
-          Anyone with this link can see names, pipeline stage, and status for this open role. Contact details are not
-          included. The page stops working if the role is marked succeeded or cancelled.
-        </p>
-        {publicListUrl ? (
-          <>
-            <p className="mt-2 break-all rounded-lg bg-stone-100 p-2 text-xs dark:bg-stone-800">{publicListUrl}</p>
-            <a
-              href={publicListUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-accent mt-3 inline-flex items-center gap-1 text-sm font-semibold underline dark:text-orange-300"
-            >
-              <ExternalLink className="h-4 w-4 shrink-0" aria-hidden />
-              Open in new tab
-            </a>
-          </>
-        ) : null}
       </Modal>
     </div>
   )
