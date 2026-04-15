@@ -134,7 +134,7 @@ export async function seedDemoIfEmpty(supabase: SupabaseClient, userId: string):
     position_id: position.id,
     position_candidate_id: pcExt?.id ?? null,
     title: 'Get hiring contract signed',
-    status: 'todo',
+    status: 'open',
     due_at: new Date(Date.now() + 86400000).toISOString(),
     description: 'Send the contract to the client for this placement.',
   })

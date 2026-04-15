@@ -1,7 +1,7 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { GripVertical, ListFilter, X } from 'lucide-react'
+import { ChevronDown, GripVertical, ListFilter, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
@@ -15,6 +15,13 @@ import { useToast } from '@/hooks/useToast'
 function nestedOne<T>(v: T | T[] | null | undefined): T | null {
   if (v == null) return null
   return Array.isArray(v) ? (v[0] ?? null) : v
+}
+
+function defaultReminderDatetimeLocal(): string {
+  const d = new Date()
+  d.setHours(d.getHours() + 1, 0, 0, 0)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 const STATUS_ORDER = ['todo', 'in_progress', 'done'] as const
@@ -39,10 +46,12 @@ type TaskRow = {
   due_at: string | null
   created_at: string
   updated_at: string
-  position_id: string
+  position_id: string | null
   position_candidate_id: string | null
+  candidate_id: string | null
   positions: unknown
   position_candidates: unknown
+  candidates: unknown
 }
 
 export function TasksPage() {
@@ -66,8 +75,11 @@ export function TasksPage() {
   const [newTaskPositionId, setNewTaskPositionId] = useState('')
   const [newTaskPositionCandidateId, setNewTaskPositionCandidateId] = useState('')
   const [newTaskDescription, setNewTaskDescription] = useState('')
-  const [taskTemplateId, setTaskTemplateId] = useState('')
-  const [saveTaskAsTemplate, setSaveTaskAsTemplate] = useState(false)
+  const [newTaskStandaloneCandidateId, setNewTaskStandaloneCandidateId] = useState('')
+  const [taskReminderEnabled, setTaskReminderEnabled] = useState(false)
+  const [taskReminderAt, setTaskReminderAt] = useState('')
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
+  const templatePickerRef = useRef<HTMLDivElement>(null)
 
   const [companyTaskFilter, setCompanyTaskFilter] = useState<'all' | Set<string>>('all')
   const [companyFilterOpen, setCompanyFilterOpen] = useState(false)
@@ -95,8 +107,10 @@ export function TasksPage() {
           updated_at,
           position_id,
           position_candidate_id,
+          candidate_id,
           positions ( id, title, company_id, companies ( id, name ) ),
-          position_candidates ( id, candidates ( id, full_name ) )
+          position_candidates ( id, candidates ( id, full_name ) ),
+          candidates ( id, full_name )
         `,
         )
         .eq('user_id', uid!)
@@ -150,6 +164,22 @@ export function TasksPage() {
         .order('title')
       if (error) throw error
       return data ?? []
+    },
+  })
+
+  const candidatesForTaskModalQ = useQuery({
+    queryKey: ['tasks-modal-candidates', uid],
+    enabled: Boolean(supabase && uid && taskModalOpen),
+    queryFn: async () => {
+      const { data, error } = await supabase!
+        .from('candidates')
+        .select('id, full_name')
+        .eq('user_id', uid!)
+        .eq('status', 'active')
+        .is('deleted_at', null)
+        .order('full_name')
+      if (error) throw error
+      return (data ?? []) as { id: string; full_name: string }[]
     },
   })
 
@@ -209,6 +239,8 @@ export function TasksPage() {
         const pc = row.position_candidates as { candidates?: { full_name?: string } | null } | null
         const cand = nestedOne(pc?.candidates ?? null)
         if ((cand?.full_name ?? '').toLowerCase().includes(q)) return true
+        const pool = nestedOne(row.candidates as { full_name?: string } | { full_name?: string }[] | null)
+        if ((pool?.full_name ?? '').toLowerCase().includes(q)) return true
         return false
       })
     }
@@ -249,12 +281,24 @@ export function TasksPage() {
   }, [companyFilterOpen])
 
   useEffect(() => {
+    if (!templatePickerOpen) return
+    function onDoc(e: MouseEvent) {
+      if (templatePickerRef.current?.contains(e.target as Node)) return
+      setTemplatePickerOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [templatePickerOpen])
+
+  useEffect(() => {
     if (searchParams.get('addTask') !== '1') return
     setNewTaskTitle('')
     setNewTaskDescription('')
     setNewTaskPositionCandidateId('')
-    setTaskTemplateId('')
-    setSaveTaskAsTemplate(false)
+    setNewTaskStandaloneCandidateId('')
+    setTaskReminderEnabled(false)
+    setTaskReminderAt('')
+    setTemplatePickerOpen(false)
     const pid = sessionStorage.getItem('yulis_task_prefill_position_id')
     setNewTaskPositionId(pid ?? '')
     setTaskModalOpen(true)
@@ -283,6 +327,7 @@ export function TasksPage() {
 
   useEffect(() => {
     setNewTaskPositionCandidateId('')
+    if (newTaskPositionId.trim()) setNewTaskStandaloneCandidateId('')
   }, [newTaskPositionId])
 
   useEffect(() => {
@@ -306,44 +351,51 @@ export function TasksPage() {
     onError: (e: Error) => toastError(e.message),
   })
 
+  function resetNewTaskForm() {
+    setNewTaskTitle('')
+    setNewTaskDescription('')
+    setNewTaskPositionId('')
+    setNewTaskPositionCandidateId('')
+    setNewTaskStandaloneCandidateId('')
+    setTaskReminderEnabled(false)
+    setTaskReminderAt('')
+    setTemplatePickerOpen(false)
+  }
+
   const addTaskMutation = useMutation({
     mutationFn: async () => {
-      if (!newTaskPositionId.trim()) throw new Error('Choose a position')
+      if (taskReminderEnabled) {
+        if (!taskReminderAt.trim()) throw new Error('Choose a date and time for the reminder')
+        const t = new Date(taskReminderAt).getTime()
+        if (Number.isNaN(t)) throw new Error('Invalid reminder date')
+      }
       const row: Record<string, unknown> = {
         user_id: uid!,
-        position_id: newTaskPositionId.trim(),
         title: newTaskTitle.trim() || 'Task',
         description: newTaskDescription.trim() || null,
         status: 'todo',
-        due_at: null,
+        due_at: taskReminderEnabled && taskReminderAt.trim() ? new Date(taskReminderAt).toISOString() : null,
       }
-      if (newTaskPositionCandidateId.trim()) {
-        row.position_candidate_id = newTaskPositionCandidateId.trim()
+      const pid = newTaskPositionId.trim()
+      if (pid) {
+        row.position_id = pid
+        row.candidate_id = null
+        row.position_candidate_id = newTaskPositionCandidateId.trim() || null
+      } else {
+        row.position_id = null
+        row.position_candidate_id = null
+        row.candidate_id = newTaskStandaloneCandidateId.trim() || null
       }
       const { error } = await supabase!.from('tasks').insert(row)
       if (error) throw error
-      if (saveTaskAsTemplate && newTaskTitle.trim()) {
-        const { error: te } = await supabase!.from('task_templates').insert({
-          user_id: uid!,
-          title: newTaskTitle.trim(),
-          description: newTaskDescription.trim() || null,
-        })
-        if (te) throw te
-      }
     },
     onSuccess: async () => {
       success('Task added')
       setTaskModalOpen(false)
-      setNewTaskTitle('')
-      setNewTaskDescription('')
-      setNewTaskPositionId('')
-      setNewTaskPositionCandidateId('')
-      setTaskTemplateId('')
-      setSaveTaskAsTemplate(false)
+      resetNewTaskForm()
       await qc.invalidateQueries({ queryKey: ['tasks-page'] })
       await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
       await qc.invalidateQueries({ queryKey: ['position-tasks'] })
-      await qc.invalidateQueries({ queryKey: ['task-templates'] })
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
     },
     onError: (e: Error) => toastError(e.message),
@@ -381,7 +433,7 @@ export function TasksPage() {
     updateTaskStatus.mutate({ id: payload.id, status: target })
   }
 
-  function setStatusUrl(next: string | null) {
+  function setStatusUrl(next: TaskStatus | null) {
     setSearchParams(
       (prev) => {
         const p = new URLSearchParams(prev)
@@ -582,7 +634,11 @@ export function TasksPage() {
                     const pcJoin = row.position_candidates as {
                       candidates: { id: string; full_name: string } | { id: string; full_name: string }[] | null
                     } | null
-                    const cand = nestedOne(pcJoin?.candidates ?? null)
+                    const candFromRole = nestedOne(pcJoin?.candidates ?? null)
+                    const candPool = nestedOne(
+                      row.candidates as { id: string; full_name: string } | { id: string; full_name: string }[] | null,
+                    )
+                    const cand = candFromRole ?? candPool
                     const dueLabel = row.due_at ? formatDue(row.due_at) : '—'
                     return (
                       <tr
@@ -608,19 +664,35 @@ export function TasksPage() {
                         </td>
                         <td className="text-ink-muted px-3 py-2 align-middle tabular-nums dark:text-stone-400">{dueLabel}</td>
                         <td className="px-3 py-2 align-middle">
-                          <Link to={`/positions/${row.position_id}`} className="text-[#006384] font-medium hover:underline dark:text-cyan-300">
-                            {pos?.title ?? '—'}
-                          </Link>
+                          {row.position_id && pos ? (
+                            <Link
+                              to={`/positions/${row.position_id}`}
+                              className="text-[#006384] font-medium hover:underline dark:text-cyan-300"
+                            >
+                              {pos.title}
+                            </Link>
+                          ) : (
+                            <span className="text-ink-muted dark:text-stone-500">—</span>
+                          )}
                         </td>
                         <td className="text-ink-muted px-3 py-2 align-middle dark:text-stone-400">{pos?.companies?.name ?? '—'}</td>
                         <td className="px-3 py-2 align-middle">
                           {cand ? (
-                            <Link
-                              to={`/positions/${row.position_id}?candidate=${cand.id}`}
-                              className="text-[#006384] font-medium hover:underline dark:text-cyan-300"
-                            >
-                              {cand.full_name}
-                            </Link>
+                            row.position_id ? (
+                              <Link
+                                to={`/positions/${row.position_id}?candidate=${cand.id}`}
+                                className="text-[#006384] font-medium hover:underline dark:text-cyan-300"
+                              >
+                                {cand.full_name}
+                              </Link>
+                            ) : (
+                              <Link
+                                to={`/candidates/${cand.id}`}
+                                className="text-[#006384] font-medium hover:underline dark:text-cyan-300"
+                              >
+                                {cand.full_name}
+                              </Link>
+                            )
                           ) : (
                             <span className="text-ink-muted dark:text-stone-500">—</span>
                           )}
@@ -677,14 +749,23 @@ export function TasksPage() {
                 const pcJoin = selectedTask.position_candidates as {
                   candidates: { id: string; full_name: string } | { id: string; full_name: string }[] | null
                 } | null
-                const cand = nestedOne(pcJoin?.candidates ?? null)
+                const candFromRole = nestedOne(pcJoin?.candidates ?? null)
+                const candPool = nestedOne(
+                  selectedTask.candidates as { id: string; full_name: string } | { id: string; full_name: string }[] | null,
+                )
+                const cand = candFromRole ?? candPool
+                const pid = selectedTask.position_id
                 return (
                   <>
                     <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Position</p>
                     <p className="mt-1">
-                      <Link to={`/positions/${selectedTask.position_id}`} className="font-semibold text-[#006384] hover:underline dark:text-cyan-300">
-                        {pos?.title ?? '—'}
-                      </Link>
+                      {pid && pos ? (
+                        <Link to={`/positions/${pid}`} className="font-semibold text-[#006384] hover:underline dark:text-cyan-300">
+                          {pos.title}
+                        </Link>
+                      ) : (
+                        <span className="text-ink-muted">Standalone task</span>
+                      )}
                     </p>
                     <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Client</p>
                     <p className="mt-1">{pos?.companies?.name ?? '—'}</p>
@@ -692,12 +773,21 @@ export function TasksPage() {
                       <>
                         <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Candidate</p>
                         <p className="mt-1">
-                          <Link
-                            to={`/positions/${selectedTask.position_id}?candidate=${cand.id}`}
-                            className="font-semibold text-[#006384] hover:underline dark:text-cyan-300"
-                          >
-                            {cand.full_name}
-                          </Link>
+                          {pid ? (
+                            <Link
+                              to={`/positions/${pid}?candidate=${cand.id}`}
+                              className="font-semibold text-[#006384] hover:underline dark:text-cyan-300"
+                            >
+                              {cand.full_name}
+                            </Link>
+                          ) : (
+                            <Link
+                              to={`/candidates/${cand.id}`}
+                              className="font-semibold text-[#006384] hover:underline dark:text-cyan-300"
+                            >
+                              {cand.full_name}
+                            </Link>
+                          )}
                         </p>
                       </>
                     ) : null}
@@ -777,11 +867,58 @@ export function TasksPage() {
         )}
       </Modal>
 
-      <Modal open={taskModalOpen} onClose={() => setTaskModalOpen(false)} title="New task">
+      <Modal
+        open={taskModalOpen}
+        onClose={() => {
+          setTaskModalOpen(false)
+          resetNewTaskForm()
+        }}
+        title="New task"
+        headerAside={
+          <div className="relative" ref={templatePickerRef}>
+            <button
+              type="button"
+              onClick={() => setTemplatePickerOpen((o) => !o)}
+              className="border-line text-ink-muted hover:bg-accent-soft/50 flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-xs font-bold dark:border-line-dark dark:hover:bg-stone-800"
+              aria-expanded={templatePickerOpen}
+              aria-haspopup="listbox"
+            >
+              Templates
+              <ChevronDown className="h-3.5 w-3.5 opacity-70" aria-hidden />
+            </button>
+            {templatePickerOpen ? (
+              <ul
+                className="border-line bg-paper absolute right-0 z-20 mt-1 max-h-48 min-w-[14rem] overflow-y-auto rounded-xl border py-1 shadow-lg dark:border-line-dark dark:bg-stone-900"
+                role="listbox"
+              >
+                {(taskTemplatesQ.data ?? []).length === 0 ? (
+                  <li className="text-ink-muted px-3 py-2 text-xs">No templates yet</li>
+                ) : (
+                  (taskTemplatesQ.data ?? []).map((t) => (
+                    <li key={t.id} role="option">
+                      <button
+                        type="button"
+                        className="hover:bg-accent-soft/40 w-full px-3 py-2 text-left text-sm dark:hover:bg-stone-800"
+                        onClick={() => {
+                          setNewTaskTitle(t.title)
+                          setNewTaskDescription((t.description as string | null) ?? '')
+                          setTemplatePickerOpen(false)
+                        }}
+                      >
+                        {t.title}
+                      </button>
+                    </li>
+                  ))
+                )}
+              </ul>
+            ) : null}
+          </div>
+        }
+      >
         <p className="text-ink-muted mb-3 text-sm">
           {sessionStorage.getItem('yulis_task_prefill_position_id')
             ? 'Role is pre-filled from the position you were viewing. Change it if needed.'
-            : 'Optionally link this task to a role.'}
+            : 'Optionally link this task to a role or a candidate.'}
         </p>
         {allPositionsForTaskQ.isLoading ? (
           <p className="text-sm">Loading roles…</p>
@@ -812,29 +949,6 @@ export function TasksPage() {
                 })}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-sm font-medium">
-              From template
-              <select
-                value={taskTemplateId}
-                onChange={(e) => {
-                  const v = e.target.value
-                  setTaskTemplateId(v)
-                  const t = (taskTemplatesQ.data ?? []).find((x) => x.id === v)
-                  if (t) {
-                    setNewTaskTitle(t.title)
-                    setNewTaskDescription((t.description as string | null) ?? '')
-                  }
-                }}
-                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-              >
-                <option value="">None</option>
-                {(taskTemplatesQ.data ?? []).map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.title}
-                  </option>
-                ))}
-              </select>
-            </label>
             {newTaskPositionId.trim() ? (
               <label className="flex flex-col gap-1 text-sm font-medium">
                 Candidate on role (optional)
@@ -854,7 +968,24 @@ export function TasksPage() {
                   })}
                 </select>
               </label>
-            ) : null}
+            ) : (
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Candidate (optional)
+                <select
+                  value={newTaskStandaloneCandidateId}
+                  onChange={(e) => setNewTaskStandaloneCandidateId(e.target.value)}
+                  className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                  disabled={candidatesForTaskModalQ.isLoading}
+                >
+                  <option value="">None</option>
+                  {(candidatesForTaskModalQ.data ?? []).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.full_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="flex flex-col gap-1 text-sm font-medium">
               Title
               <input
@@ -876,9 +1007,28 @@ export function TasksPage() {
               />
             </label>
             <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
-              <input type="checkbox" checked={saveTaskAsTemplate} onChange={(e) => setSaveTaskAsTemplate(e.target.checked)} />
-              Save as template
+              <input
+                type="checkbox"
+                checked={taskReminderEnabled}
+                onChange={(e) => {
+                  const on = e.target.checked
+                  setTaskReminderEnabled(on)
+                  if (on && !taskReminderAt) setTaskReminderAt(defaultReminderDatetimeLocal())
+                }}
+              />
+              Set reminder
             </label>
+            {taskReminderEnabled ? (
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Remind at
+                <input
+                  type="datetime-local"
+                  value={taskReminderAt}
+                  onChange={(e) => setTaskReminderAt(e.target.value)}
+                  className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                />
+              </label>
+            ) : null}
             <button
               type="submit"
               disabled={addTaskMutation.isPending}

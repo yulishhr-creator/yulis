@@ -9,9 +9,11 @@ type ModalProps = {
   children: React.ReactNode
   /** Narrow width for quick edits */
   size?: 'sm' | 'md' | 'lg'
+  /** Rendered between the title and the close control (e.g. actions) */
+  headerAside?: React.ReactNode
 }
 
-export function Modal({ open, onClose, title, children, size = 'md' }: ModalProps) {
+export function Modal({ open, onClose, title, children, size = 'md', headerAside }: ModalProps) {
   const reduceMotion = useReducedMotion()
   if (!open) return null
 
@@ -36,9 +38,10 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
-          <h2 id="modal-title" className="text-lg font-semibold">
+          <h2 id="modal-title" className="min-w-0 flex-1 text-lg font-semibold">
             {title}
           </h2>
+          {headerAside ? <div className="flex shrink-0 items-center gap-2">{headerAside}</div> : null}
           <button
             type="button"
             onClick={onClose}

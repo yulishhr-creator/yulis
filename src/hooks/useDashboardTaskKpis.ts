@@ -46,11 +46,11 @@ export function useDashboardTaskKpis(companyId?: string | null, options?: { enab
       const inProgressQ = positionIds ? baseInProgress.in('position_id', positionIds) : baseInProgress
       const doneQ = positionIds ? baseDone.in('position_id', positionIds) : baseDone
 
-      const [open, inProgress, done] = await Promise.all([todoQ, inProgressQ, doneQ])
+      const [todoR, inProgressR, doneR] = await Promise.all([todoQ, inProgressQ, doneQ])
       return {
-        todo: open.count ?? 0,
-        inProgress: inProgress.count ?? 0,
-        done: done.count ?? 0,
+        todo: todoR.count ?? 0,
+        inProgress: inProgressR.count ?? 0,
+        done: doneR.count ?? 0,
       }
     },
   })

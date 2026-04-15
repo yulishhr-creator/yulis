@@ -22,7 +22,7 @@ export function useNotificationCount() {
           .from('tasks')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', uid)
-          .neq('status', 'done')
+          .eq('status', 'open')
           .not('due_at', 'is', null)
           .lt('due_at', nowIso),
         supabase!

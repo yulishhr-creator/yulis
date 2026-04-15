@@ -97,11 +97,11 @@ type ActivityRow = {
   position_candidate_id: string | null
 }
 
-const POSITION_TASK_STATUS_ORDER = ['todo', 'in_progress', 'done'] as const
-type PositionTaskStatus = (typeof POSITION_TASK_STATUS_ORDER)[number]
+const POSITION_TASK_STATUS_ORDER = ['open', 'closed'] as const
+type PositionTaskStatus = 'open' | 'closed' | 'archived'
 
 function isPositionTaskStatus(s: string): s is PositionTaskStatus {
-  return POSITION_TASK_STATUS_ORDER.includes(s as PositionTaskStatus)
+  return s === 'open' || s === 'closed' || s === 'archived'
 }
 
 type PositionTaskRow = {
@@ -837,7 +837,7 @@ export function PositionDetailPage() {
         position_id: id!,
         title: title.trim() || 'Task',
         description: description.trim() || null,
-        status: 'todo',
+        status: 'open',
         due_at: null,
       })
       if (error) throw error
@@ -938,10 +938,10 @@ export function PositionDetailPage() {
       if (closeTasks && nextStatus !== 'in_progress') {
         await supabase!
           .from('tasks')
-          .update({ status: 'done' })
+          .update({ status: 'closed' })
           .eq('position_candidate_id', positionCandidateId)
           .eq('user_id', user!.id)
-          .neq('status', 'done')
+          .neq('status', 'closed')
       }
       const prof = nestedCandidate(row?.candidates ?? null)
       return {
@@ -1173,14 +1173,14 @@ export function PositionDetailPage() {
   const candidateTabCount = (candidatesQ.data ?? []).length
 
   const positionTasksByStatus = useMemo(() => {
-    const m: Record<PositionTaskStatus, PositionTaskRow[]> = { todo: [], in_progress: [], done: [] }
+    const m: Record<PositionTaskStatus, PositionTaskRow[]> = { open: [], closed: [], archived: [] }
     for (const t of tasksQ.data ?? []) {
       const s = t.status
       if (isPositionTaskStatus(s)) m[s].push(t)
     }
     for (const st of POSITION_TASK_STATUS_ORDER) {
       m[st].sort((a, b) => {
-        if (st === 'done') return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+        if (st === 'closed') return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
         const ad = a.due_at ? new Date(a.due_at).getTime() : Infinity
         const bd = b.due_at ? new Date(b.due_at).getTime() : Infinity
         return ad - bd
@@ -1353,9 +1353,9 @@ export function PositionDetailPage() {
   }
 
   function positionTaskStatusLabel(s: PositionTaskStatus): string {
-    if (s === 'todo') return 'To do'
-    if (s === 'in_progress') return 'In progress'
-    return 'Done'
+    if (s === 'open') return 'Open'
+    if (s === 'closed') return 'Closed'
+    return 'Archived'
   }
 
   if (posQ.isLoading || !position) {

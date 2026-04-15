@@ -50,7 +50,7 @@ export function buildQuickFabActions(opts: {
   const createTask = (): QuickFabAction => ({
     id: 'task',
     title: 'New Task',
-    subtitle: 'Choose role on the next screen',
+    subtitle: 'Optionally link to a role',
     icon: ClipboardList,
     iconBgClass: iconTask,
     onSelect: done(() => navigate('/tasks?addTask=1')),
