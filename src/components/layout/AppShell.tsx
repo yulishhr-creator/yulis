@@ -101,7 +101,16 @@ export function AppShell() {
   const [searchParams] = useSearchParams()
   const taskStatusParam = searchParams.get('taskStatus')
   const companyParam = searchParams.get('company')
-  const dashboardNavActive = location.pathname === '/' && !taskStatusParam
+  const dashboardNavActive = location.pathname === '/'
+  const tasksPathActive = location.pathname === '/tasks'
+
+  function tasksLinkSearch(taskStatus: string | null): string {
+    const p = new URLSearchParams()
+    if (taskStatus) p.set('taskStatus', taskStatus)
+    if (companyParam) p.set('company', companyParam)
+    const s = p.toString()
+    return s ? `?${s}` : ''
+  }
   const positionsPathActive = location.pathname === '/positions'
   const positionsAllClientsActive = positionsPathActive && !companyParam
   const { data: taskKpis, isPending: taskKpisPending } = useDashboardTaskKpis()
@@ -338,20 +347,38 @@ export function AppShell() {
               >
                 <ListTodo className="h-[18px] w-[18px]" aria-hidden />
               </span>
-              <span className="text-ink text-[11px] font-bold tracking-[0.14em] dark:text-stone-300">My tasks</span>
+              <span className="text-ink text-[11px] font-bold tracking-[0.14em] dark:text-stone-300">Tasks</span>
             </div>
             <ul className="border-line ml-2 space-y-0.5 border-l border-dashed pl-2 dark:border-line-dark" role="list">
+              <li>
+                <NavLink
+                  to={`/tasks${tasksLinkSearch(null)}`}
+                  className={`group relative flex items-center justify-between gap-2 overflow-hidden rounded-lg py-2 pr-2 pl-3 text-sm font-medium transition-all duration-200 ${
+                    tasksPathActive && !taskStatusParam
+                      ? `bg-gradient-to-r text-stitch-on-surface shadow-sm ring-1 dark:text-stone-100 ${myTasksGroup.activeRow}`
+                      : 'text-ink-muted hover:bg-white/75 hover:text-ink dark:text-stone-400 dark:hover:bg-stone-800/85 dark:hover:text-stone-100'
+                  }`}
+                >
+                  <span className="relative z-10 min-w-0 flex-1 truncate">All tasks</span>
+                  <span
+                    className={`relative z-10 tabular-nums rounded-lg px-2 py-0.5 text-xs font-bold ${
+                      tasksPathActive && !taskStatusParam
+                        ? 'bg-white/55 text-stitch-on-surface dark:bg-stone-900/40 dark:text-stone-100'
+                        : 'bg-stone-200/80 text-ink dark:bg-stone-800 dark:text-stone-300'
+                    }`}
+                  >
+                    {taskKpisPending ? '–' : String((taskKpis?.todo ?? 0) + (taskKpis?.inProgress ?? 0) + (taskKpis?.done ?? 0))}
+                  </span>
+                </NavLink>
+              </li>
               {TASK_STATUS_SIDEBAR.map(({ param, label, countKey }) => {
                 const count = taskKpis?.[countKey]
                 const displayCount = taskKpisPending && count === undefined ? '–' : String(count ?? 0)
-                const isActive = location.pathname === '/' && taskStatusParam === param
-                const taskSearch = new URLSearchParams()
-                taskSearch.set('taskStatus', param)
-                if (companyParam) taskSearch.set('company', companyParam)
+                const isActive = tasksPathActive && taskStatusParam === param
                 return (
                   <li key={param}>
                     <NavLink
-                      to={{ pathname: '/', search: taskSearch.toString() }}
+                      to={`/tasks${tasksLinkSearch(param)}`}
                       className={`group relative flex items-center justify-between gap-2 overflow-hidden rounded-lg py-2 pr-2 pl-3 text-sm font-medium transition-all duration-200 ${
                         isActive
                           ? `bg-gradient-to-r text-stitch-on-surface shadow-sm ring-1 dark:text-stone-100 ${myTasksGroup.activeRow}`

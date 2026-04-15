@@ -9,6 +9,7 @@ import { ToastProvider } from '@/components/ui/toast-context'
 import { LoginPage } from '@/pages/LoginPage'
 import { SetupPage } from '@/pages/SetupPage'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { TasksPage } from '@/pages/TasksPage'
 import { CompaniesPage } from '@/pages/CompaniesPage'
 import { CompanyDetailPage } from '@/pages/CompanyDetailPage'
 import { PositionsPage } from '@/pages/PositionsPage'
@@ -57,6 +58,7 @@ export default function App() {
                     }
                   >
                     <Route path="/" element={<DashboardPage />} />
+                    <Route path="/tasks" element={<TasksPage />} />
                     <Route path="/time" element={<WorkingTimePage />} />
                     <Route path="/calendar" element={<CalendarPage />} />
                     <Route path="/companies" element={<CompaniesPage />} />

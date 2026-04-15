@@ -1,17 +1,12 @@
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate, useSearchParams, Navigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Check, ChevronDown, ListFilter, Users } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, Users } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { differenceInCalendarDays } from 'date-fns'
 
 import { useAuth } from '@/auth/useAuth'
-import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
 import { getSupabase } from '@/lib/supabase'
-import { formatDue } from '@/lib/dates'
-import { Modal } from '@/components/ui/Modal'
-import { useWorkTimer } from '@/work/WorkTimerContext'
-import { useToast } from '@/hooks/useToast'
 import { formatAssignmentStatus, positionLifecyclePill } from '@/lib/candidateStatus'
 
 function nestedOne<T>(v: T | T[] | null | undefined): T | null {
@@ -20,72 +15,26 @@ function nestedOne<T>(v: T | T[] | null | undefined): T | null {
 }
 
 export function DashboardPage() {
+  const [searchParams] = useSearchParams()
+  if (
+    searchParams.has('taskStatus') ||
+    searchParams.get('addTask') === '1' ||
+    searchParams.get('trackTime') === '1'
+  ) {
+    return <Navigate to={{ pathname: '/tasks', search: searchParams.toString() }} replace />
+  }
+  return <DashboardHome />
+}
+
+function DashboardHome() {
+  const [searchParams] = useSearchParams()
   const { user } = useAuth()
   const supabase = getSupabase()
   const uid = user?.id
   const reduceMotion = useReducedMotion()
   const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const qc = useQueryClient()
-  const timer = useWorkTimer()
-  const { success, error: toastError } = useToast()
-  const [trackOpen, setTrackOpen] = useState(false)
-  const [trackPosId, setTrackPosId] = useState('')
-  const [positionsScope, setPositionsScope] = useState<'open' | 'on_hold' | 'all'>('open')
-  /** `all` = show every task; `Set` = only tasks whose position's company id is in the set */
-  const [companyTaskFilter, setCompanyTaskFilter] = useState<'all' | Set<string>>('all')
-  const [companyFilterOpen, setCompanyFilterOpen] = useState(false)
-  const companyFilterRef = useRef<HTMLDivElement>(null)
-  const [taskModalOpen, setTaskModalOpen] = useState(false)
-  const [newTaskTitle, setNewTaskTitle] = useState('')
-  const [newTaskPositionId, setNewTaskPositionId] = useState('')
-  const [newTaskPositionCandidateId, setNewTaskPositionCandidateId] = useState('')
-  const [newTaskDescription, setNewTaskDescription] = useState('')
-  const [taskTemplateId, setTaskTemplateId] = useState('')
-  const [saveTaskAsTemplate, setSaveTaskAsTemplate] = useState(false)
-  const taskStatusParam = searchParams.get('taskStatus')
   const companyParam = searchParams.get('company')
-  const taskStatusFilter =
-    taskStatusParam === 'todo' || taskStatusParam === 'in_progress' || taskStatusParam === 'done' ? taskStatusParam : null
-
-  const tasksQ = useQuery({
-    queryKey: ['dashboard-tasks', uid, taskStatusFilter],
-    enabled: Boolean(supabase && uid),
-    queryFn: async () => {
-      let q = supabase!
-        .from('tasks')
-        .select(
-          `
-          id,
-          title,
-          status,
-          due_at,
-          position_id,
-          position_candidate_id,
-          positions ( id, title, company_id, companies ( id, name ) ),
-          position_candidates ( id, candidates ( id, full_name ) )
-        `,
-        )
-        .eq('user_id', uid!)
-
-      if (taskStatusFilter) {
-        q = q.eq('status', taskStatusFilter)
-      } else {
-        q = q.neq('status', 'done')
-      }
-
-      const ordered =
-        taskStatusFilter === 'done'
-          ? q.order('updated_at', { ascending: false })
-          : q.order('due_at', { ascending: true, nullsFirst: false })
-
-      const { data, error } = await ordered
-      if (error) throw error
-      return data ?? []
-    },
-  })
-
-  const kpisQ = useDashboardTaskKpis()
+  const [positionsScope, setPositionsScope] = useState<'open' | 'on_hold' | 'all'>('open')
 
   const topPositionsQ = useQuery({
     queryKey: ['dashboard-top-positions', uid, positionsScope],
@@ -150,195 +99,11 @@ export function DashboardPage() {
     },
   })
 
-  const allPositionsForTaskQ = useQuery({
-    queryKey: ['dashboard-all-positions', uid],
-    enabled: Boolean(supabase && uid && taskModalOpen),
-    queryFn: async () => {
-      const { data, error } = await supabase!
-        .from('positions')
-        .select('id, title, companies ( name )')
-        .eq('user_id', uid!)
-        .is('deleted_at', null)
-        .order('title')
-      if (error) throw error
-      return data ?? []
-    },
-  })
-
-  const taskTemplatesQ = useQuery({
-    queryKey: ['task-templates', uid],
-    enabled: Boolean(supabase && uid && taskModalOpen),
-    queryFn: async () => {
-      const { data, error } = await supabase!
-        .from('task_templates')
-        .select('id, title, description')
-        .eq('user_id', uid!)
-        .order('title')
-      if (error) throw error
-      return data ?? []
-    },
-  })
-
-  const positionCandidatesForTaskQ = useQuery({
-    queryKey: ['dashboard-task-pcs', uid, newTaskPositionId],
-    enabled: Boolean(supabase && uid && taskModalOpen && newTaskPositionId.trim()),
-    queryFn: async () => {
-      const { data, error } = await supabase!
-        .from('position_candidates')
-        .select('id, status, candidates ( id, full_name )')
-        .eq('user_id', uid!)
-        .eq('position_id', newTaskPositionId.trim())
-        .eq('status', 'in_progress')
-        .order('created_at', { ascending: false })
-      if (error) throw error
-      return data ?? []
-    },
-  })
-
-  const timerPositionsQ = useQuery({
-    queryKey: ['dashboard-timer-positions', uid],
-    enabled: Boolean(supabase && uid),
-    queryFn: async () => {
-      const { data, error } = await supabase!
-        .from('positions')
-        .select('id, title, status, companies ( name )')
-        .eq('user_id', uid!)
-        .is('deleted_at', null)
-        .in('status', ['active', 'on_hold'])
-        .order('title')
-      if (error) throw error
-      return data ?? []
-    },
-  })
-
-  const tasks = tasksQ.data ?? []
-  const kpis = kpisQ.data
-  const pipelineStats = pipelineStatsQ.data
-
-  const taskCompanyIds = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const row of tasks) {
-      const pos = row.positions as unknown as
-        | { companies: { id: string; name: string } | null; company_id?: string | null }
-        | null
-      const id = pos?.companies?.id ?? pos?.company_id
-      const name = pos?.companies?.name
-      if (id && name) map.set(id, name)
-    }
-    return map
-  }, [tasks])
-
-  const filteredTasks = useMemo(() => {
-    if (companyTaskFilter === 'all') return tasks
-    if (companyTaskFilter.size === 0) return []
-    return tasks.filter((row) => {
-      const pos = row.positions as unknown as
-        | { companies: { id: string } | null; company_id?: string | null }
-        | null
-      const cid = pos?.companies?.id ?? pos?.company_id
-      if (cid == null) return false
-      return companyTaskFilter.has(cid)
-    })
-  }, [tasks, companyTaskFilter])
-
-  useEffect(() => {
-    if (!companyParam) return
-    setCompanyTaskFilter(new Set([companyParam]))
-  }, [companyParam])
-
   const displayTopPositions = useMemo(() => {
     const rows = topPositionsQ.data ?? []
     if (!companyParam) return rows
     return rows.filter((p) => p.company_id === companyParam)
   }, [topPositionsQ.data, companyParam])
-
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      if (!companyFilterRef.current?.contains(e.target as Node)) setCompanyFilterOpen(false)
-    }
-    if (companyFilterOpen) document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [companyFilterOpen])
-
-  useEffect(() => {
-    if (searchParams.get('addTask') !== '1') return
-    setNewTaskTitle('')
-    setNewTaskDescription('')
-    setNewTaskPositionCandidateId('')
-    setTaskTemplateId('')
-    setSaveTaskAsTemplate(false)
-    const pid = sessionStorage.getItem('yulis_task_prefill_position_id')
-    setNewTaskPositionId(pid ?? '')
-    setTaskModalOpen(true)
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev)
-        next.delete('addTask')
-        return next
-      },
-      { replace: true },
-    )
-  }, [searchParams, setSearchParams])
-
-  useEffect(() => {
-    if (searchParams.get('trackTime') !== '1') return
-    setTrackOpen(true)
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev)
-        next.delete('trackTime')
-        return next
-      },
-      { replace: true },
-    )
-  }, [searchParams, setSearchParams])
-
-  useEffect(() => {
-    setNewTaskPositionCandidateId('')
-  }, [newTaskPositionId])
-
-  const addTaskFromDashboard = useMutation({
-    mutationFn: async () => {
-      if (!newTaskPositionId.trim()) throw new Error('Choose a position')
-      const row: Record<string, unknown> = {
-        user_id: uid!,
-        position_id: newTaskPositionId.trim(),
-        title: newTaskTitle.trim() || 'Task',
-        description: newTaskDescription.trim() || null,
-        status: 'todo',
-        due_at: null,
-      }
-      if (newTaskPositionCandidateId.trim()) {
-        row.position_candidate_id = newTaskPositionCandidateId.trim()
-      }
-      const { error } = await supabase!.from('tasks').insert(row)
-      if (error) throw error
-      if (saveTaskAsTemplate && newTaskTitle.trim()) {
-        const { error: te } = await supabase!.from('task_templates').insert({
-          user_id: uid!,
-          title: newTaskTitle.trim(),
-          description: newTaskDescription.trim() || null,
-        })
-        if (te) throw te
-      }
-    },
-    onSuccess: async () => {
-      success('Task added')
-      setTaskModalOpen(false)
-      setNewTaskTitle('')
-      setNewTaskDescription('')
-      setNewTaskPositionId('')
-      setNewTaskPositionCandidateId('')
-      setTaskTemplateId('')
-      setSaveTaskAsTemplate(false)
-      await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
-      await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
-      await qc.invalidateQueries({ queryKey: ['position-tasks'] })
-      await qc.invalidateQueries({ queryKey: ['task-templates'] })
-      await qc.invalidateQueries({ queryKey: ['notification-count'] })
-    },
-    onError: (e: Error) => toastError(e.message),
-  })
 
   const pipelineHints = useMemo(() => {
     const rows = displayTopPositions
@@ -368,33 +133,10 @@ export function DashboardPage() {
     return { stuck, stale }
   }, [displayTopPositions])
 
-  useEffect(() => {
-    if (!trackOpen) return
-    const rows = timerPositionsQ.data ?? []
-    if (rows.length && !trackPosId) setTrackPosId(rows[0]!.id)
-  }, [trackOpen, timerPositionsQ.data, trackPosId])
-
-  const markTaskDone = useMutation({
-    mutationFn: async (taskId: string) => {
-      const { error } = await supabase!.from('tasks').update({ status: 'done' }).eq('id', taskId).eq('user_id', uid!)
-      if (error) throw error
-    },
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
-      await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
-      await qc.invalidateQueries({ queryKey: ['position-tasks'] })
-      await qc.invalidateQueries({ queryKey: ['notification-count'] })
-    },
-  })
-
-  function taskAccent(status: string): string {
-    if (status === 'in_progress') return 'border-l-[#97daff] bg-gradient-to-r from-[#97daff]/12 to-white dark:from-cyan-500/15 dark:to-stone-900'
-    return 'border-l-[#b4fdb4] bg-gradient-to-r from-[#b4fdb4]/10 to-white dark:from-emerald-500/10 dark:to-stone-900'
-  }
+  const pipelineStats = pipelineStatsQ.data
 
   return (
     <div className="flex flex-col gap-8 md:gap-10">
-      {/* Stitch-style hero — task focus */}
       <motion.section
         className="border-stitch-on-surface/10 relative overflow-hidden rounded-3xl border bg-gradient-to-br from-lume-coral/22 via-white to-lume-violet/16 p-6 shadow-[0_24px_60px_rgba(155,62,32,0.14),0_0_0_1px_rgba(167,139,250,0.08)] md:p-10 dark:from-orange-500/18 dark:via-stone-900 dark:to-violet-900/25 dark:shadow-[0_0_0_1px_rgba(167,139,250,0.12)]"
         initial={reduceMotion ? false : { opacity: 0, y: 14 }}
@@ -416,49 +158,6 @@ export function DashboardPage() {
           </h1>
         </div>
       </motion.section>
-
-      {kpis ? (
-        <motion.section
-          aria-label="Task overview"
-          initial={reduceMotion ? false : { opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35 }}
-        >
-          <h2 className="sr-only">Task counts</h2>
-          <p className="text-ink-muted text-sm font-medium tracking-tight dark:text-stone-300">
-            Everything open — sorted by due date.
-          </p>
-          <article className="mt-3 grid grid-cols-3 gap-0 overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-[0_16px_40px_rgba(48,46,43,0.07)] dark:border-stone-600 dark:bg-stone-900 dark:shadow-[0_16px_40px_rgba(0,0,0,0.25)] md:rounded-3xl">
-            <div className="flex flex-col items-center justify-center border-r border-stone-200/70 bg-gradient-to-b from-amber-50/90 to-white px-4 py-5 text-center dark:border-stone-600 dark:from-amber-950/35 dark:to-stone-900">
-              <span className="text-ink-muted mb-0.5 text-[10px] font-bold tracking-[0.18em] uppercase dark:text-stone-400">
-                To do
-              </span>
-              <p className="text-stitch-on-surface text-3xl font-extrabold tabular-nums dark:text-stone-100">{kpis.todo}</p>
-              <span className="text-stitch-muted mt-1 text-[11px] font-medium dark:text-stone-500">
-                {kpis.todo === 1 ? '1 waiting' : `${kpis.todo} waiting`}
-              </span>
-            </div>
-            <div className="flex flex-col items-center justify-center border-r border-stone-200/70 bg-gradient-to-b from-sky-50/95 to-white px-4 py-5 text-center dark:border-stone-600 dark:from-sky-950/30 dark:to-stone-900">
-              <span className="text-ink-muted mb-0.5 text-[10px] font-bold tracking-[0.18em] uppercase dark:text-stone-400">
-                In progress
-              </span>
-              <p className="text-stitch-on-surface text-3xl font-extrabold tabular-nums dark:text-stone-100">{kpis.inProgress}</p>
-              <span className="text-stitch-muted mt-1 text-[11px] font-medium dark:text-stone-500">
-                {kpis.inProgress === 0 ? 'None active' : `${kpis.inProgress} active`}
-              </span>
-            </div>
-            <div className="flex flex-col items-center justify-center bg-gradient-to-b from-rose-50/90 to-white px-4 py-5 text-center dark:from-rose-950/30 dark:to-stone-900">
-              <span className="text-ink-muted mb-0.5 text-[10px] font-bold tracking-[0.18em] uppercase dark:text-stone-400">
-                Overdue
-              </span>
-              <p className="text-stitch-on-surface text-3xl font-extrabold tabular-nums dark:text-stone-100">{kpis.overdue}</p>
-              <span className="text-stitch-muted mt-1 text-[11px] font-medium dark:text-stone-500">
-                {kpis.overdue > 0 ? `${kpis.overdue} past due` : 'On schedule'}
-              </span>
-            </div>
-          </article>
-        </motion.section>
-      ) : null}
 
       {pipelineHints.stuck.length > 0 || pipelineHints.stale.length > 0 ? (
         <motion.section
@@ -487,533 +186,151 @@ export function DashboardPage() {
         </motion.section>
       ) : null}
 
-      <section aria-labelledby="tasks-heading">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <h2
-            id="tasks-heading"
-            className="text-stitch-on-surface flex items-center gap-2 text-xl font-extrabold md:text-2xl dark:text-stone-100"
-          >
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-lume-jade/25 to-lume-sky/20 text-teal-900 shadow-sm dark:from-teal-500/25 dark:to-cyan-500/20 dark:text-teal-100">
-              <Check className="h-5 w-5 stroke-[2.5]" aria-hidden />
-            </span>
-            {taskStatusFilter === 'todo'
-              ? 'Tasks · To do'
-              : taskStatusFilter === 'in_progress'
-                ? 'Tasks · In progress'
-                : taskStatusFilter === 'done'
-                  ? 'Tasks · Done'
-                  : 'Your tasks'}
-          </h2>
-          <div className="relative shrink-0" ref={companyFilterRef}>
-            <button
-              type="button"
-              onClick={() => setCompanyFilterOpen((o) => !o)}
-              className={`border-line flex h-10 w-10 items-center justify-center rounded-2xl border shadow-sm transition dark:border-line-dark ${
-                companyTaskFilter !== 'all'
-                  ? 'bg-stone-200/90 text-ink ring-2 ring-stone-300 dark:bg-stone-700 dark:text-stone-100 dark:ring-stone-600'
-                  : 'bg-white/90 text-stone-600 dark:bg-stone-800 dark:text-stone-300'
-              }`}
-              aria-expanded={companyFilterOpen}
-              aria-haspopup="listbox"
-              aria-label="Filter tasks by company"
-            >
-              <ListFilter className="h-5 w-5" aria-hidden />
-            </button>
-            {companyFilterOpen ? (
-              <div
-                className="border-line bg-paper absolute top-full right-0 z-20 mt-2 w-[min(18rem,calc(100vw-2rem))] rounded-2xl border p-3 shadow-xl dark:border-line-dark dark:bg-stone-900"
-                role="listbox"
-                aria-label="Companies"
+      <section aria-labelledby="candidates-overview-heading">
+        <details
+          open
+          className="group border-stitch-on-surface/10 rounded-3xl border bg-white/50 open:bg-white/90 open:shadow-md dark:border-stone-700 dark:bg-stone-900/40 dark:open:bg-stone-900/70"
+        >
+          <summary className="list-none cursor-pointer rounded-t-3xl px-4 py-4 marker:hidden [&::-webkit-details-marker]:hidden">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <h2
+                id="candidates-overview-heading"
+                className="text-stitch-on-surface flex items-center gap-2 text-xl font-extrabold md:text-2xl dark:text-stone-100"
               >
-                <p className="text-ink-muted mb-2 text-xs font-semibold uppercase tracking-wide">Companies</p>
-                <div className="mb-2 flex flex-wrap gap-2">
+                <span className="bg-stone-100 text-stitch-on-surface flex h-9 w-9 items-center justify-center rounded-xl dark:bg-stone-800 dark:text-stone-100">
+                  <Users className="h-5 w-5 stroke-[2.25]" aria-hidden />
+                </span>
+                Candidates overview
+              </h2>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <div className="flex flex-wrap gap-2 text-xs font-bold uppercase">
                   <button
                     type="button"
-                    className="rounded-full bg-[#9b3e20] px-3 py-1 text-xs font-bold text-white dark:bg-orange-600"
-                    onClick={() => {
-                      setCompanyTaskFilter('all')
-                      setCompanyFilterOpen(false)
+                    className={`rounded-full px-3 py-1 ${positionsScope === 'open' ? 'bg-[#9b3e20] text-white dark:bg-orange-600' : 'border border-stone-300 dark:border-stone-600'}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setPositionsScope('open')
+                    }}
+                  >
+                    Open
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded-full px-3 py-1 ${positionsScope === 'on_hold' ? 'bg-[#9b3e20] text-white dark:bg-orange-600' : 'border border-stone-300 dark:border-stone-600'}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setPositionsScope('on_hold')
+                    }}
+                  >
+                    On hold
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded-full px-3 py-1 ${positionsScope === 'all' ? 'bg-[#9b3e20] text-white dark:bg-orange-600' : 'border border-stone-300 dark:border-stone-600'}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setPositionsScope('all')
                     }}
                   >
                     All
                   </button>
-                  <button
-                    type="button"
-                    className="border-line rounded-full border px-3 py-1 text-xs font-bold dark:border-stone-600"
-                    onClick={() => setCompanyTaskFilter(new Set())}
-                  >
-                    Unselect all
-                  </button>
                 </div>
-                <ul className="max-h-52 space-y-1 overflow-y-auto">
-                  {[...taskCompanyIds.entries()].map(([id, name]) => {
-                    const checked = companyTaskFilter === 'all' ? true : companyTaskFilter.has(id)
-                    return (
-                      <li key={id}>
-                        <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-stone-100 dark:hover:bg-stone-800">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => {
-                              if (companyTaskFilter === 'all') {
-                                const all = new Set(taskCompanyIds.keys())
-                                all.delete(id)
-                                setCompanyTaskFilter(all)
-                                return
-                              }
-                              const next = new Set(companyTaskFilter)
-                              if (next.has(id)) next.delete(id)
-                              else next.add(id)
-                              if (next.size === taskCompanyIds.size) setCompanyTaskFilter('all')
-                              else setCompanyTaskFilter(next)
-                            }}
-                          />
-                          <span className="truncate">{name}</span>
-                        </label>
-                      </li>
-                    )
-                  })}
-                </ul>
-                {taskCompanyIds.size === 0 ? (
-                  <p className="text-ink-muted text-xs">No companies on open tasks yet.</p>
-                ) : null}
+                <ChevronDown className="text-stitch-muted h-5 w-5 shrink-0 transition group-open:rotate-180" aria-hidden />
               </div>
-            ) : null}
-          </div>
-        </div>
-        <p className="text-stitch-muted mt-1 text-sm">
-          {taskStatusFilter === 'done'
-            ? 'Recently completed — newest first.'
-            : taskStatusFilter
-              ? 'Filtered from the sidebar — sorted by due date.'
-              : 'Everything open — sorted by due date.'}
-        </p>
-        {tasksQ.isLoading ? (
-          <p className="text-stitch-muted mt-4 text-sm">Loading…</p>
-        ) : tasks.length === 0 ? (
-          <motion.p
-            className="text-stitch-muted mt-4 rounded-2xl border border-dashed border-[#97daff]/60 bg-[#97daff]/10 px-4 py-6 text-center text-sm dark:border-cyan-800 dark:bg-cyan-950/30"
-            initial={reduceMotion ? false : { opacity: 0 }}
-            animate={{ opacity: 1 }}
-          >
-            {taskStatusFilter === 'done' ? (
-              <>No completed tasks yet.</>
-            ) : taskStatusFilter ? (
-              <>
-                No tasks in this status.{' '}
-                <Link to="/" className="text-ink font-semibold underline dark:text-stone-200">
-                  View all open tasks
-                </Link>
-                .
-              </>
-            ) : (
-              <>
-                No open tasks. Use the <span className="font-semibold">+</span> button (Add task) or open a{' '}
-                <Link to="/positions" className="text-ink font-semibold underline dark:text-stone-200">
-                  position
-                </Link>
-                .
-              </>
-            )}
-          </motion.p>
-        ) : filteredTasks.length === 0 && companyTaskFilter !== 'all' ? (
-          <p className="text-stitch-muted mt-4 rounded-2xl border border-dashed border-stone-300 px-4 py-6 text-center text-sm dark:border-stone-600">
-            No tasks for the selected companies. Choose <span className="font-semibold">All</span> or pick at least one company.
-          </p>
-        ) : (
-          <ul className="mt-4 space-y-3">
-            {filteredTasks.map((row, i) => {
-              const pos = row.positions as unknown as
-                | { id: string; title: string; companies: { id?: string; name: string } | null }
-                | null
-              const pcJoin = row.position_candidates as unknown as {
-                id: string
-                candidates: { id: string; full_name: string } | { id: string; full_name: string }[] | null
-              } | null
-              const cand = nestedOne(pcJoin?.candidates ?? null)
-              const posTitle = pos?.title ?? 'Position'
-              const companyName = pos?.companies?.name
-              const dueLabel = row.due_at ? formatDue(row.due_at) : null
-              return (
-                <motion.li
-                  key={row.id}
-                  initial={reduceMotion ? false : { opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: reduceMotion ? 0 : i * 0.03 }}
-                  className={`flex gap-3 rounded-2xl border border-white/60 py-4 pl-5 pr-3 shadow-[0_12px_32px_rgba(48,46,43,0.06)] dark:border-stone-700 ${taskAccent(row.status)} border-l-4`}
-                >
-                  <div className="min-w-0 flex-1">
-                    {dueLabel ? (
-                      <p className="text-stitch-muted mb-1 text-[11px] font-medium dark:text-stone-500">Due date: {dueLabel}</p>
-                    ) : (
-                      <p className="text-stitch-muted mb-1 text-[11px] font-medium dark:text-stone-500">Due date: none set</p>
-                    )}
-                    <p className="text-sm leading-relaxed text-[#302e2b] dark:text-stone-100">
-                      You need to <span className="font-bold">{row.title}</span> for position{' '}
-                      <Link
-                        to={`/positions/${row.position_id}`}
-                        className="text-ink font-semibold underline-offset-2 hover:underline dark:text-stone-200"
-                      >
-                        {posTitle}
-                      </Link>
-                      {companyName ? <span className="text-stitch-muted dark:text-stone-400"> ({companyName})</span> : null}
-                      {cand ? (
-                        <>
-                          {' '}
-                          for candidate{' '}
-                          <Link
-                            to={`/positions/${row.position_id}?candidate=${cand.id}`}
-                            className="text-ink font-semibold underline-offset-2 hover:underline dark:text-stone-200"
-                          >
-                            {cand.full_name}
-                          </Link>
-                        </>
-                      ) : null}
-                      .
-                    </p>
-                    {row.status === 'in_progress' ? (
-                      <p className="text-ink-muted mt-2 text-xs font-semibold uppercase tracking-wide dark:text-stone-400">
-                        In progress
-                      </p>
-                    ) : null}
-                    {row.status === 'done' ? (
-                      <p className="text-ink-muted mt-2 text-xs font-semibold uppercase tracking-wide dark:text-stone-400">Done</p>
-                    ) : null}
-                  </div>
-                  {row.status === 'done' ? null : (
-                    <button
-                      type="button"
-                      className="text-stitch-muted hover:bg-emerald-500/15 hover:text-emerald-700 dark:hover:text-emerald-300 mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center self-start rounded-2xl border border-emerald-200/60 bg-white/80 transition dark:border-emerald-800/60 dark:bg-stone-800/80"
-                      aria-label={`Mark done: ${row.title}`}
-                      disabled={markTaskDone.isPending && markTaskDone.variables === row.id}
-                      onClick={() => markTaskDone.mutate(row.id)}
-                    >
-                      {markTaskDone.isPending && markTaskDone.variables === row.id ? (
-                        <span className="h-5 w-5 animate-pulse rounded-full bg-emerald-400/50" aria-hidden />
-                      ) : (
-                        <Check className="h-5 w-5 stroke-[2.75] text-emerald-700 dark:text-emerald-400" aria-hidden />
-                      )}
-                    </button>
-                  )}
-                </motion.li>
-              )
-            })}
-          </ul>
-        )}
-      </section>
-
-      <Modal open={trackOpen} onClose={() => setTrackOpen(false)} title="Track time on a role">
-        <p className="text-ink-muted mb-3 text-sm">Every session is tied to a position. Stop the header timer when you are done.</p>
-        {timer.open ? (
-          <p className="text-ink mb-3 text-sm font-medium dark:text-stone-200">A timer is already running — stop it first.</p>
-        ) : null}
-        {timerPositionsQ.isLoading ? (
-          <p className="text-sm">Loading roles…</p>
-        ) : (timerPositionsQ.data ?? []).length === 0 ? (
-          <p className="text-sm">No active positions. Create or reopen a role first.</p>
-        ) : (
-          <>
-            <label className="mb-3 flex flex-col gap-1 text-sm">
-              Position
-              <select
-                value={trackPosId}
-                onChange={(e) => setTrackPosId(e.target.value)}
-                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-              >
-                {(timerPositionsQ.data ?? []).map((row) => {
-                  const co = row.companies as unknown as { name: string } | null
-                  return (
-                    <option key={row.id} value={row.id}>
-                      {row.title}
-                      {co?.name ? ` — ${co.name}` : ''}
-                    </option>
-                  )
-                })}
-              </select>
-            </label>
-            <button
-              type="button"
-              disabled={Boolean(timer.open) || !trackPosId}
-              className="w-full rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] py-2.5 text-sm font-bold text-white disabled:opacity-50"
-              onClick={async () => {
-                const row = (timerPositionsQ.data ?? []).find((r) => r.id === trackPosId)
-                const title = row?.title ?? 'Role'
-                const r = await timer.start(trackPosId, title)
-                if (r.error) toastError(r.error)
-                else {
-                  success('Timer started')
-                  setTrackOpen(false)
-                  await qc.invalidateQueries({ queryKey: ['notification-count'] })
-                }
-              }}
-            >
-              Start timer
-            </button>
-          </>
-        )}
-      </Modal>
-
-      <Modal open={taskModalOpen} onClose={() => setTaskModalOpen(false)} title="New task">
-        <p className="text-ink-muted mb-3 text-sm">
-          {sessionStorage.getItem('yulis_task_prefill_position_id')
-            ? 'Role is pre-filled from the position you were viewing. Change it if needed.'
-            : 'Pick which role this task belongs to.'}
-        </p>
-        {allPositionsForTaskQ.isLoading ? (
-          <p className="text-sm">Loading roles…</p>
-        ) : (allPositionsForTaskQ.data ?? []).length === 0 ? (
-          <p className="text-sm">No positions yet. Create a role first.</p>
-        ) : (
-          <form
-            className="flex flex-col gap-3"
-            onSubmit={(e) => {
-              e.preventDefault()
-              void addTaskFromDashboard.mutateAsync()
-            }}
-          >
-            <label className="flex flex-col gap-1 text-sm font-medium">
-              Position
-              <select
-                value={newTaskPositionId}
-                onChange={(e) => setNewTaskPositionId(e.target.value)}
-                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                required
-              >
-                <option value="">Select a role…</option>
-                {(allPositionsForTaskQ.data ?? []).map((row) => {
-                  const co = row.companies as unknown as { name: string } | null
-                  return (
-                    <option key={row.id} value={row.id}>
-                      {row.title}
-                      {co?.name ? ` — ${co.name}` : ''}
-                    </option>
-                  )
-                })}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-sm font-medium">
-              From template
-              <select
-                value={taskTemplateId}
-                onChange={(e) => {
-                  const v = e.target.value
-                  setTaskTemplateId(v)
-                  const t = (taskTemplatesQ.data ?? []).find((x) => x.id === v)
-                  if (t) {
-                    setNewTaskTitle(t.title)
-                    setNewTaskDescription((t.description as string | null) ?? '')
-                  }
-                }}
-                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-              >
-                <option value="">None</option>
-                {(taskTemplatesQ.data ?? []).map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {newTaskPositionId.trim() ? (
-              <label className="flex flex-col gap-1 text-sm font-medium">
-                Candidate on role (optional)
-                <select
-                  value={newTaskPositionCandidateId}
-                  onChange={(e) => setNewTaskPositionCandidateId(e.target.value)}
-                  className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                >
-                  <option value="">Position-wide task</option>
-                  {(positionCandidatesForTaskQ.data ?? []).map((pc) => {
-                    const h = nestedOne(pc.candidates as { id: string; full_name: string } | { id: string; full_name: string }[] | null)
-                    return (
-                      <option key={pc.id} value={pc.id}>
-                        {h?.full_name ?? 'Candidate'}
-                      </option>
-                    )
-                  })}
-                </select>
-              </label>
-            ) : null}
-            <label className="flex flex-col gap-1 text-sm font-medium">
-              Title
-              <input
-                value={newTaskTitle}
-                onChange={(e) => setNewTaskTitle(e.target.value)}
-                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                placeholder="What needs doing?"
-                required
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm font-medium">
-              Description
-              <textarea
-                value={newTaskDescription}
-                onChange={(e) => setNewTaskDescription(e.target.value)}
-                rows={3}
-                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                placeholder="Optional details"
-              />
-            </label>
-            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
-              <input type="checkbox" checked={saveTaskAsTemplate} onChange={(e) => setSaveTaskAsTemplate(e.target.checked)} />
-              Save as template
-            </label>
-            <button
-              type="submit"
-              disabled={addTaskFromDashboard.isPending}
-              className="rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] py-2.5 text-sm font-bold text-white disabled:opacity-50"
-            >
-              {addTaskFromDashboard.isPending ? 'Saving…' : 'Save task'}
-            </button>
-          </form>
-        )}
-      </Modal>
-
-      <section aria-labelledby="candidates-overview-heading">
-      <details
-        open
-        className="group border-stitch-on-surface/10 rounded-3xl border bg-white/50 open:bg-white/90 open:shadow-md dark:border-stone-700 dark:bg-stone-900/40 dark:open:bg-stone-900/70"
-      >
-        <summary className="list-none cursor-pointer rounded-t-3xl px-4 py-4 marker:hidden [&::-webkit-details-marker]:hidden">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <h2
-              id="candidates-overview-heading"
-              className="text-stitch-on-surface flex items-center gap-2 text-xl font-extrabold md:text-2xl dark:text-stone-100"
-            >
-              <span className="bg-stone-100 text-stitch-on-surface flex h-9 w-9 items-center justify-center rounded-xl dark:bg-stone-800 dark:text-stone-100">
-                <Users className="h-5 w-5 stroke-[2.25]" aria-hidden />
-              </span>
-              Candidates overview
-            </h2>
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <div className="flex flex-wrap gap-2 text-xs font-bold uppercase">
-                <button
-                  type="button"
-                  className={`rounded-full px-3 py-1 ${positionsScope === 'open' ? 'bg-[#9b3e20] text-white dark:bg-orange-600' : 'border border-stone-300 dark:border-stone-600'}`}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setPositionsScope('open')
-                  }}
-                >
-                  Open
-                </button>
-                <button
-                  type="button"
-                  className={`rounded-full px-3 py-1 ${positionsScope === 'on_hold' ? 'bg-[#9b3e20] text-white dark:bg-orange-600' : 'border border-stone-300 dark:border-stone-600'}`}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setPositionsScope('on_hold')
-                  }}
-                >
-                  On hold
-                </button>
-                <button
-                  type="button"
-                  className={`rounded-full px-3 py-1 ${positionsScope === 'all' ? 'bg-[#9b3e20] text-white dark:bg-orange-600' : 'border border-stone-300 dark:border-stone-600'}`}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setPositionsScope('all')
-                  }}
-                >
-                  All
-                </button>
-              </div>
-              <ChevronDown className="text-stitch-muted h-5 w-5 shrink-0 transition group-open:rotate-180" aria-hidden />
             </div>
-          </div>
-          <p className="text-stitch-muted mt-1 text-sm">Roles and who you&apos;re moving — filter the list, or collapse this block to focus on tasks.</p>
-        </summary>
-        <div className="border-stitch-on-surface/10 border-t px-4 pb-4 dark:border-stone-700">
-          {topPositionsQ.isLoading ? (
-            <p className="text-stitch-muted text-sm">Loading…</p>
-          ) : displayTopPositions.length === 0 ? (
-            <p className="text-stitch-muted text-sm">No positions yet.</p>
-          ) : (
-            <ul className="space-y-3">
-              {displayTopPositions.map((p) => {
-                const company = (p.companies as unknown as { name: string } | null)?.name
-                const cands =
-                  (p.position_candidates as unknown as Array<{
-                    id: string
-                    status: string
-                    created_at: string
-                    updated_at: string
-                    candidate_id: string
-                    candidates: { id: string; full_name: string } | { id: string; full_name: string }[] | null
-                    position_stages: { name: string } | null
-                  }>) ?? []
-                const pill = positionLifecyclePill(p.status as string)
-                return (
-                  <li
-                    key={p.id}
-                    className="rounded-2xl border border-stone-200/80 bg-white/80 shadow-sm dark:border-stone-600 dark:bg-stone-900/50"
-                  >
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      className="cursor-pointer rounded-2xl p-3 transition hover:bg-stone-50/90 dark:hover:bg-stone-800/40"
-                      onClick={() => navigate(`/positions/${p.id}`)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          navigate(`/positions/${p.id}`)
-                        }
-                      }}
+            <p className="text-stitch-muted mt-1 text-sm">Roles and who you&apos;re moving — filter the list, or collapse this block.</p>
+          </summary>
+          <div className="border-stitch-on-surface/10 border-t px-4 pb-4 dark:border-stone-700">
+            {topPositionsQ.isLoading ? (
+              <p className="text-stitch-muted text-sm">Loading…</p>
+            ) : displayTopPositions.length === 0 ? (
+              <p className="text-stitch-muted text-sm">No positions yet.</p>
+            ) : (
+              <ul className="space-y-3">
+                {displayTopPositions.map((p) => {
+                  const company = (p.companies as unknown as { name: string } | null)?.name
+                  const cands =
+                    (p.position_candidates as unknown as Array<{
+                      id: string
+                      status: string
+                      created_at: string
+                      updated_at: string
+                      candidate_id: string
+                      candidates: { id: string; full_name: string } | { id: string; full_name: string }[] | null
+                      position_stages: { name: string } | null
+                    }>) ?? []
+                  const pill = positionLifecyclePill(p.status as string)
+                  return (
+                    <li
+                      key={p.id}
+                      className="rounded-2xl border border-stone-200/80 bg-white/80 shadow-sm dark:border-stone-600 dark:bg-stone-900/50"
                     >
-                      <div className="flex items-start gap-3">
-                        <div className="min-w-0 flex-1">
-                          <span className="text-stitch-on-surface block truncate font-semibold dark:text-stone-100" title={p.title}>
-                            {p.title}
-                          </span>
-                          {company ? <p className="text-stitch-muted mt-1 truncate text-xs">{company}</p> : null}
-                        </div>
-                        <span
-                          className={`inline-flex shrink-0 items-center self-start rounded-full border px-2.5 py-0.5 text-[11px] font-bold tracking-wide whitespace-nowrap uppercase ${pill.className}`}
-                        >
-                          {pill.label}
-                        </span>
-                      </div>
-                      {cands.length === 0 ? <p className="text-stitch-muted mt-2 text-xs">No candidates yet.</p> : null}
-                    </div>
-                    {cands.length ? (
-                      <ul
-                        className="space-y-1 border-t border-stone-200/60 px-3 pt-2 pb-3 dark:border-stone-600"
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => e.stopPropagation()}
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        className="cursor-pointer rounded-2xl p-3 transition hover:bg-stone-50/90 dark:hover:bg-stone-800/40"
+                        onClick={() => navigate(`/positions/${p.id}`)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            navigate(`/positions/${p.id}`)
+                          }
+                        }}
                       >
-                        {cands.map((pc) => {
-                          const cand = nestedOne(pc.candidates)
-                          const cid = cand?.id ?? pc.candidate_id
-                          const daysOnRole = differenceInCalendarDays(new Date(), new Date(pc.created_at))
-                          return (
-                            <li key={pc.id} className="flex flex-wrap items-center gap-2 text-sm">
-                              <Link
-                                to={`/positions/${p.id}?candidate=${cid}`}
-                                className="font-medium text-[#006384] hover:underline dark:text-cyan-300"
-                              >
-                                {cand?.full_name ?? '—'}
-                              </Link>
-                              <span
-                                className="text-stitch-muted shrink-0 rounded-md border border-stone-200/80 bg-stone-50 px-1.5 py-0.5 text-[10px] font-bold tabular-nums dark:border-stone-600 dark:bg-stone-800"
-                                title="Days since added to this role"
-                              >
-                                {daysOnRole}d
-                              </span>
-                              <span className="text-stitch-muted text-xs">
-                                {pc.position_stages?.name ?? '—'} · {formatAssignmentStatus(pc.status)}
-                              </span>
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    ) : null}
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </div>
-      </details>
+                        <div className="flex items-start gap-3">
+                          <div className="min-w-0 flex-1">
+                            <span className="text-stitch-on-surface block truncate font-semibold dark:text-stone-100" title={p.title}>
+                              {p.title}
+                            </span>
+                            {company ? <p className="text-stitch-muted mt-1 truncate text-xs">{company}</p> : null}
+                          </div>
+                          <span
+                            className={`inline-flex shrink-0 items-center self-start rounded-full border px-2.5 py-0.5 text-[11px] font-bold tracking-wide whitespace-nowrap uppercase ${pill.className}`}
+                          >
+                            {pill.label}
+                          </span>
+                        </div>
+                        {cands.length === 0 ? <p className="text-stitch-muted mt-2 text-xs">No candidates yet.</p> : null}
+                      </div>
+                      {cands.length ? (
+                        <ul
+                          className="space-y-1 border-t border-stone-200/60 px-3 pt-2 pb-3 dark:border-stone-600"
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        >
+                          {cands.map((pc) => {
+                            const cand = nestedOne(pc.candidates)
+                            const cid = cand?.id ?? pc.candidate_id
+                            const daysOnRole = differenceInCalendarDays(new Date(), new Date(pc.created_at))
+                            return (
+                              <li key={pc.id} className="flex flex-wrap items-center gap-2 text-sm">
+                                <Link
+                                  to={`/positions/${p.id}?candidate=${cid}`}
+                                  className="font-medium text-[#006384] hover:underline dark:text-cyan-300"
+                                >
+                                  {cand?.full_name ?? '—'}
+                                </Link>
+                                <span
+                                  className="text-stitch-muted shrink-0 rounded-md border border-stone-200/80 bg-stone-50 px-1.5 py-0.5 text-[10px] font-bold tabular-nums dark:border-stone-600 dark:bg-stone-800"
+                                  title="Days since added to this role"
+                                >
+                                  {daysOnRole}d
+                                </span>
+                                <span className="text-stitch-muted text-xs">
+                                  {pc.position_stages?.name ?? '—'} · {formatAssignmentStatus(pc.status)}
+                                </span>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      ) : null}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+        </details>
       </section>
     </div>
   )

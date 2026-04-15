@@ -53,7 +53,7 @@ export function buildQuickFabActions(opts: {
     subtitle: 'Choose role on the next screen',
     icon: ClipboardList,
     iconBgClass: iconTask,
-    onSelect: done(() => navigate('/?addTask=1')),
+    onSelect: done(() => navigate('/tasks?addTask=1')),
   })
 
   const createCandidate = (): QuickFabAction => ({
@@ -98,7 +98,7 @@ export function buildQuickFabActions(opts: {
     subtitle: 'Start a timer on a role',
     icon: Clock,
     iconBgClass: iconClock,
-    onSelect: done(() => navigate('/?trackTime=1')),
+    onSelect: done(() => navigate('/tasks?trackTime=1')),
   })
 
   return [

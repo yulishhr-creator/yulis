@@ -337,7 +337,7 @@ export function PositionDetailPage() {
     await qc.invalidateQueries({ queryKey: ['position-public-list-token', id] })
     await qc.invalidateQueries({ queryKey: ['positions'] })
     await qc.invalidateQueries({ queryKey: ['candidates'] })
-    await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
+    await qc.invalidateQueries({ queryKey: ['tasks-page'] })
     await qc.invalidateQueries({ queryKey: ['notification-count'] })
   }
 
@@ -676,7 +676,7 @@ export function PositionDetailPage() {
     onSuccess: async () => {
       success('Task removed')
       await qc.invalidateQueries({ queryKey: ['position-tasks', id] })
-      await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
+      await qc.invalidateQueries({ queryKey: ['tasks-page'] })
     },
     onError: (e: Error) => toastError(e.message),
   })
