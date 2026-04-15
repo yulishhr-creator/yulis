@@ -11,6 +11,8 @@ import {
   Link2,
   Trash2,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Upload,
   Copy,
   ExternalLink,
@@ -1725,30 +1727,67 @@ export function PositionDetailPage() {
             <h3 className="font-semibold">Recruitment stages</h3>
             <ul className="mt-3 space-y-3">
               {(stagesQ.data ?? []).map((s, idx) => (
-                <li key={s.id} className="border-line bg-white/60 space-y-2 rounded-xl border px-3 py-3 dark:border-line-dark dark:bg-stone-900/40">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <label className="block text-xs font-medium text-stone-600 dark:text-stone-400">
-                        Stage name
-                        <input
-                          defaultValue={s.name}
-                          onBlur={(e) => {
-                            const v = e.target.value.trim()
-                            if (!v || v === s.name) return
-                            void updateStageMeta.mutateAsync({ id: s.id, name: v })
-                          }}
-                          className="border-line mt-0.5 w-full rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
-                        />
-                      </label>
-                      <label className="block text-xs font-medium text-stone-600 dark:text-stone-400">
-                        Description
-                        <textarea
-                          rows={2}
-                          defaultValue={s.description ?? ''}
-                          onBlur={(e) => void updateStageMeta.mutateAsync({ id: s.id, description: e.target.value.trim() || null })}
-                          className="border-line mt-0.5 w-full rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
-                        />
-                      </label>
+                <li key={s.id} className="border-line bg-white/60 space-y-3 rounded-xl border px-3 py-3 dark:border-line-dark dark:bg-stone-900/40">
+                  <div className="flex items-start justify-between gap-3 border-b border-stone-200/80 pb-3 dark:border-stone-600">
+                    <div className="min-w-0 flex-1">
+                      <input
+                        defaultValue={s.name}
+                        onBlur={(e) => {
+                          const v = e.target.value.trim()
+                          if (!v || v === s.name) return
+                          void updateStageMeta.mutateAsync({ id: s.id, name: v })
+                        }}
+                        placeholder="Stage name"
+                        aria-label="Stage name"
+                        className="placeholder:text-stitch-muted w-full border-0 bg-transparent text-xl font-extrabold tracking-tight text-stone-900 outline-none ring-0 placeholder:font-semibold focus:ring-0 dark:text-stone-100 dark:placeholder:text-stone-500 md:text-2xl"
+                      />
+                      <p className="text-ink-muted mt-1 text-[11px] font-semibold uppercase tracking-wide dark:text-stone-500">
+                        Sort order {s.sort_order}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 gap-1">
+                      <button
+                        type="button"
+                        className="border-line text-ink-muted hover:bg-stone-50 dark:hover:bg-stone-800 flex h-9 w-9 items-center justify-center rounded-xl border bg-white/90 shadow-sm transition disabled:cursor-not-allowed disabled:opacity-35 dark:border-line-dark dark:bg-stone-900/80"
+                        onClick={() => void moveStage(s.id, -1)}
+                        disabled={idx === 0}
+                        aria-label="Move stage up"
+                      >
+                        <ChevronUp className="h-4 w-4" aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        className="border-line text-ink-muted hover:bg-stone-50 dark:hover:bg-stone-800 flex h-9 w-9 items-center justify-center rounded-xl border bg-white/90 shadow-sm transition disabled:cursor-not-allowed disabled:opacity-35 dark:border-line-dark dark:bg-stone-900/80"
+                        onClick={() => void moveStage(s.id, 1)}
+                        disabled={idx === (stagesQ.data ?? []).length - 1}
+                        aria-label="Move stage down"
+                      >
+                        <ChevronDown className="h-4 w-4" aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        className="border-line text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 flex h-9 w-9 items-center justify-center rounded-xl border border-red-200 bg-white/90 shadow-sm transition disabled:cursor-not-allowed disabled:opacity-35 dark:border-red-900/50 dark:bg-stone-900/80 dark:text-red-300"
+                        onClick={() => {
+                          if (window.confirm(`Delete stage “${s.name}”?`)) void deleteStageMut.mutateAsync(s.id)
+                        }}
+                        disabled={deleteStageMut.isPending}
+                        aria-label="Delete stage"
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:gap-6">
+                    <label className="block max-w-xl flex-1 text-xs font-medium text-stone-600 dark:text-stone-400">
+                      Description
+                      <textarea
+                        rows={2}
+                        defaultValue={s.description ?? ''}
+                        onBlur={(e) => void updateStageMeta.mutateAsync({ id: s.id, description: e.target.value.trim() || null })}
+                        className="border-line mt-0.5 max-w-xl w-full rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
+                      />
+                    </label>
+                    <div className="flex min-w-0 shrink-0 flex-col gap-2 md:w-56">
                       <label className="block text-xs font-medium text-stone-600 dark:text-stone-400">
                         Interviewers
                         <input
@@ -1774,44 +1813,21 @@ export function PositionDetailPage() {
                               if (!Number.isFinite(n)) return
                               void updateStageMeta.mutateAsync({ id: s.id, duration_minutes: n })
                             }}
-                            className="border-line mt-0.5 block w-28 rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
+                            className="border-line mt-0.5 block w-full max-w-[7rem] rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
                           />
                         </label>
-                        <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-stone-600 dark:text-stone-400">
+                        <label className="flex cursor-pointer items-center gap-2 pb-2 text-xs font-medium text-stone-600 dark:text-stone-400">
                           <input
                             type="checkbox"
                             defaultChecked={Boolean(s.is_remote)}
                             onChange={(e) => void updateStageMeta.mutateAsync({ id: s.id, is_remote: e.target.checked })}
+                            className="rounded border-stone-300 dark:border-stone-600"
                           />
                           Remote
                         </label>
                       </div>
                     </div>
-                    <div className="flex shrink-0 flex-col gap-1">
-                      <button type="button" className="rounded-lg border px-2 py-1 text-xs dark:border-line-dark" onClick={() => void moveStage(s.id, -1)} disabled={idx === 0}>
-                        Up
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-lg border px-2 py-1 text-xs dark:border-line-dark"
-                        onClick={() => void moveStage(s.id, 1)}
-                        disabled={idx === (stagesQ.data ?? []).length - 1}
-                      >
-                        Down
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-lg border border-red-200 px-2 py-1 text-xs text-red-700 dark:border-red-900/60 dark:text-red-200"
-                        onClick={() => {
-                          if (window.confirm(`Delete stage “${s.name}”?`)) void deleteStageMut.mutateAsync(s.id)
-                        }}
-                        disabled={deleteStageMut.isPending}
-                      >
-                        Delete
-                      </button>
-                    </div>
                   </div>
-                  <p className="text-ink-muted text-xs">Sort order {s.sort_order}</p>
                 </li>
               ))}
             </ul>

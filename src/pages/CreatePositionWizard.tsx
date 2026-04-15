@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Briefcase, Building2, Coins, Plus, Sparkles } from 'lucide-react'
+import { Briefcase, Building2, ChevronDown, ChevronUp, Coins, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
@@ -481,92 +481,107 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
             <ul className="space-y-3">
               {stages.map((s, i) => (
                 <li key={i} className={wizardSectionClass()}>
-                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-stone-600 dark:text-stone-400">Stage {i + 1}</span>
-                    <div className="flex gap-1">
-                      <button type="button" className="rounded-lg border px-2 py-0.5 text-xs" onClick={() => moveStage(i, -1)} disabled={i === 0}>
-                        Up
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-lg border px-2 py-0.5 text-xs"
-                        onClick={() => moveStage(i, 1)}
-                        disabled={i === stages.length - 1}
-                      >
-                        Down
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-lg border border-rose-300 px-2 py-0.5 text-xs text-rose-800"
-                        onClick={() => stages.length > 1 && setStages((prev) => prev.filter((_, j) => j !== i))}
-                        disabled={stages.length <= 1}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-3">
-                    <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-                      <FieldLabel required>Stage name</FieldLabel>
+                  <div className="mb-4 flex items-start justify-between gap-3 border-b border-stone-200/80 pb-3 dark:border-stone-600">
+                    <div className="min-w-0 flex-1">
                       <input
                         value={s.name}
                         onChange={(e) => {
                           const v = e.target.value
                           setStages((prev) => prev.map((row, j) => (j === i ? { ...row, name: v } : row)))
                         }}
-                        placeholder="e.g. Phone screen"
-                        className="border-line rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
+                        placeholder="Stage name"
+                        required
+                        aria-label="Stage name (required)"
+                        className="placeholder:text-stitch-muted w-full border-0 bg-transparent text-xl font-extrabold tracking-tight text-[#302e2b] outline-none ring-0 placeholder:font-semibold focus:ring-0 dark:text-stone-100 dark:placeholder:text-stone-500 md:text-2xl"
                       />
-                    </label>
-                    <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-                      <FieldLabel optionalHint="(optional)">Short description</FieldLabel>
-                      <input
+                      <p className="text-ink-muted mt-1 text-[11px] font-semibold uppercase tracking-wide dark:text-stone-500">
+                        Stage {i + 1}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 gap-1">
+                      <button
+                        type="button"
+                        className="border-line text-ink-muted hover:bg-stone-50 dark:hover:bg-stone-800 flex h-9 w-9 items-center justify-center rounded-xl border bg-white/90 shadow-sm transition disabled:cursor-not-allowed disabled:opacity-35 dark:border-line-dark dark:bg-stone-900/80"
+                        onClick={() => moveStage(i, -1)}
+                        disabled={i === 0}
+                        aria-label="Move stage up"
+                      >
+                        <ChevronUp className="h-4 w-4" aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        className="border-line text-ink-muted hover:bg-stone-50 dark:hover:bg-stone-800 flex h-9 w-9 items-center justify-center rounded-xl border bg-white/90 shadow-sm transition disabled:cursor-not-allowed disabled:opacity-35 dark:border-line-dark dark:bg-stone-900/80"
+                        onClick={() => moveStage(i, 1)}
+                        disabled={i === stages.length - 1}
+                        aria-label="Move stage down"
+                      >
+                        <ChevronDown className="h-4 w-4" aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        className="border-line text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex h-9 w-9 items-center justify-center rounded-xl border border-rose-200 bg-white/90 shadow-sm transition disabled:cursor-not-allowed disabled:opacity-35 dark:border-rose-900/50 dark:bg-stone-900/80 dark:text-rose-300"
+                        onClick={() => stages.length > 1 && setStages((prev) => prev.filter((_, j) => j !== i))}
+                        disabled={stages.length <= 1}
+                        aria-label="Remove stage"
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:gap-6">
+                    <label className="flex max-w-xl flex-1 flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                      <FieldLabel optionalHint="(optional)">Description</FieldLabel>
+                      <textarea
                         value={s.description}
                         onChange={(e) => {
                           const v = e.target.value
                           setStages((prev) => prev.map((row, j) => (j === i ? { ...row, description: v } : row)))
                         }}
+                        rows={2}
                         placeholder="What happens in this stage"
-                        className="border-line rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
+                        className="border-line max-w-xl rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
                       />
                     </label>
-                    <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-                      <FieldLabel optionalHint="(optional)">Interviewers</FieldLabel>
-                      <input
-                        value={s.interviewers}
-                        onChange={(e) => {
-                          const v = e.target.value
-                          setStages((prev) => prev.map((row, j) => (j === i ? { ...row, interviewers: v } : row)))
-                        }}
-                        placeholder="Names or emails"
-                        className="border-line rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
-                      />
-                    </label>
-                    <div className="flex flex-wrap items-end gap-3">
-                      <label className="flex items-center gap-2 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                    <div className="flex min-w-0 shrink-0 flex-col gap-3 md:w-56">
+                      <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                        <FieldLabel optionalHint="(optional)">Interviewers</FieldLabel>
                         <input
-                          type="checkbox"
-                          checked={s.isRemote}
-                          onChange={(e) => {
-                            const v = e.target.checked
-                            setStages((prev) => prev.map((row, j) => (j === i ? { ...row, isRemote: v } : row)))
-                          }}
-                        />
-                        <FieldLabel optionalHint="(optional)">Remote interview</FieldLabel>
-                      </label>
-                      <label className="flex min-w-[8rem] flex-1 flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-                        <FieldLabel optionalHint="(optional)">Duration (minutes)</FieldLabel>
-                        <input
-                          value={s.durationMinutes}
+                          value={s.interviewers}
                           onChange={(e) => {
                             const v = e.target.value
-                            setStages((prev) => prev.map((row, j) => (j === i ? { ...row, durationMinutes: v } : row)))
+                            setStages((prev) => prev.map((row, j) => (j === i ? { ...row, interviewers: v } : row)))
                           }}
-                          className="border-line rounded-xl border bg-white px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/80"
-                          inputMode="numeric"
-                          placeholder="e.g. 45"
+                          placeholder="Names or emails"
+                          className="border-line rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
                         />
                       </label>
+                      <div className="flex flex-wrap items-end gap-3">
+                        <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                          <FieldLabel optionalHint="(optional)">Duration (min)</FieldLabel>
+                          <input
+                            value={s.durationMinutes}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setStages((prev) => prev.map((row, j) => (j === i ? { ...row, durationMinutes: v } : row)))
+                            }}
+                            className="border-line rounded-xl border bg-white px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/80"
+                            inputMode="numeric"
+                            placeholder="e.g. 45"
+                          />
+                        </label>
+                        <label className="text-ink-muted flex shrink-0 cursor-pointer items-center gap-2 pb-2 text-sm dark:text-stone-400">
+                          <input
+                            type="checkbox"
+                            checked={s.isRemote}
+                            onChange={(e) => {
+                              const v = e.target.checked
+                              setStages((prev) => prev.map((row, j) => (j === i ? { ...row, isRemote: v } : row)))
+                            }}
+                            className="rounded border-stone-300 dark:border-stone-600"
+                          />
+                          <span className="font-medium text-[#302e2b] dark:text-stone-200">Remote</span>
+                        </label>
+                      </div>
                     </div>
                   </div>
                 </li>
