@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   addMonths,
@@ -299,6 +299,18 @@ export function CalendarPage() {
 
   const pickedKey = picked ? format(picked, 'yyyy-MM-dd') : null
   const pickedDayEvents = pickedKey ? (eventsByDay.get(pickedKey) ?? []) : []
+
+  const location = useLocation()
+  const navigateClear = useNavigate()
+
+  useEffect(() => {
+    const editId = (location.state as { editEventId?: string } | null)?.editEventId
+    if (!editId || !eventsQ.data) return
+    const ev = eventsQ.data.find((e) => e.id === editId)
+    if (!ev) return
+    openEdit(ev)
+    navigateClear(`${location.pathname}${location.search}`, { replace: true, state: {} })
+  }, [location.state, location.pathname, location.search, eventsQ.data])
 
   function openCreateForPickedDay() {
     if (!picked) return

@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   addMonths,
   eachDayOfInterval,
@@ -12,11 +12,13 @@ import {
   startOfMonth,
   startOfWeek,
 } from 'date-fns'
-import { CalendarClock, CalendarDays, Star } from 'lucide-react'
+import { CalendarClock, CalendarDays, Pencil, Star, Trash2 } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { useMemo, useState } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
+import { useToast } from '@/hooks/useToast'
+import { Modal } from '@/components/ui/Modal'
 import { getSupabase } from '@/lib/supabase'
 
 type One<T> = T | T[] | null
@@ -66,6 +68,22 @@ function relationForEvent(ev: CalendarEventRow): { label: string; to: string } |
   return null
 }
 
+function relationLabelOverview(ev: CalendarEventRow): { label: string; to?: string } | null {
+  const company = one(ev.companies)
+  const position = one(ev.positions)
+  const candidate = one(ev.candidates)
+  if (ev.company_id) {
+    return company ? { label: company.name, to: `/companies/${ev.company_id}` } : { label: 'Company' }
+  }
+  if (ev.position_id) {
+    return position ? { label: position.title, to: `/positions/${ev.position_id}` } : { label: 'Position' }
+  }
+  if (ev.candidate_id) {
+    return candidate ? { label: candidate.full_name, to: `/candidates/${ev.candidate_id}` } : { label: 'Candidate' }
+  }
+  return null
+}
+
 const notifCardClass =
   'border-stitch-on-surface/10 rounded-2xl border-b-4 border-b-[#006384]/60 bg-white p-4 shadow-[0_16px_36px_rgba(48,46,43,0.08)] dark:border-stone-700 dark:bg-stone-900'
 
@@ -74,8 +92,11 @@ export function OverviewCalendarAndEvents() {
   const supabase = getSupabase()
   const uid = user?.id
   const navigate = useNavigate()
+  const qc = useQueryClient()
+  const { success, error: toastError } = useToast()
   const reduceMotion = useReducedMotion()
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()))
+  const [picked, setPicked] = useState<Date | null>(null)
 
   const monthStart = startOfMonth(cursor)
   const monthEnd = endOfMonth(cursor)
@@ -130,6 +151,35 @@ export function OverviewCalendarAndEvents() {
     }
     return map
   }, [eventsQ.data])
+
+  const pickedKey = picked ? format(picked, 'yyyy-MM-dd') : null
+  const pickedDayEvents = pickedKey ? (eventsByDay.get(pickedKey) ?? []) : []
+
+  const deleteEvent = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase!.from('calendar_events').delete().eq('id', id).eq('user_id', uid!)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      success('Event deleted')
+      await qc.invalidateQueries({ queryKey: ['calendar-events'] })
+      await qc.invalidateQueries({ queryKey: ['notification-count'] })
+      await qc.invalidateQueries({ queryKey: ['notifications-calendar-events'] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  function openCreateForPickedDay() {
+    if (!picked) return
+    const d = format(picked, 'yyyy-MM-dd')
+    setPicked(null)
+    navigate(`/calendar?new=1&date=${d}`)
+  }
+
+  function goEditOnCalendar(ev: CalendarEventRow) {
+    setPicked(null)
+    navigate('/calendar', { state: { editEventId: ev.id } })
+  }
 
   const upcomingAll = upcomingQ.data ?? []
   const upcomingImportant = upcomingAll.filter((e) => e.is_important)
@@ -201,11 +251,28 @@ export function OverviewCalendarAndEvents() {
             const dayEvents = eventsByDay.get(key) ?? []
             const inMonth = isSameMonth(day, cursor)
             const isToday = isSameDay(day, new Date())
-            return (
+                       return (
               <button
                 key={key}
                 type="button"
-                onClick={() => navigate(`/calendar?date=${key}`)}
+                onClick={() => {
+                  // #region agent log
+                  fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ce4a42' },
+                    body: JSON.stringify({
+                      sessionId: 'ce4a42',
+                      runId: 'post-fix',
+                      hypothesisId: 'H1-verify',
+                      location: 'OverviewCalendarAndEvents.tsx:dayCell',
+                      message: 'dashboard_calendar_day_opens_local_modal',
+                      data: { dateKey: key, dayEventCount: dayEvents.length },
+                      timestamp: Date.now(),
+                    }),
+                  }).catch(() => {})
+                  // #endregion
+                  setPicked(day)
+                }}
                 className={`flex min-h-[4.5rem] flex-col rounded-xl border border-stone-200/80 p-1 text-left text-[10px] transition hover:bg-stone-50/90 sm:min-h-[5rem] sm:text-xs dark:border-stone-600 dark:hover:bg-stone-800/50 ${
                   inMonth ? 'bg-white/90 dark:bg-stone-900/60' : 'opacity-40'
                 } ${isToday ? 'ring-2 ring-[#006384]/50 dark:ring-cyan-400/45' : ''}`}
@@ -284,6 +351,97 @@ export function OverviewCalendarAndEvents() {
           </p>
         ) : null}
       </section>
+
+      <Modal open={picked !== null} onClose={() => setPicked(null)} title={picked ? format(picked, 'EEEE, MMM d') : ''} size="md">
+        <div className="flex flex-col gap-3">
+          {pickedDayEvents.length === 0 ? (
+            <>
+              <p className="text-ink-muted text-sm">Nothing here yet.</p>
+              <button
+                type="button"
+                className="w-full rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] py-2.5 text-sm font-bold text-white"
+                onClick={openCreateForPickedDay}
+              >
+                Create event
+              </button>
+            </>
+          ) : (
+            <ul className="space-y-3 text-sm">
+              {pickedDayEvents.map((ev) => {
+                const rel = relationLabelOverview(ev)
+                return (
+                  <li key={ev.id} className="rounded-xl border border-stone-200/80 px-3 py-2 dark:border-stone-600">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          {ev.is_important ? (
+                            <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-500" aria-label="Important" />
+                          ) : null}
+                          <p className="font-semibold">{ev.title}</p>
+                        </div>
+                        {ev.subtitle ? <p className="text-ink-muted mt-0.5 text-xs">{ev.subtitle}</p> : null}
+                        <p className="text-ink-muted mt-1 text-xs tabular-nums">
+                          {format(new Date(ev.starts_at), 'HH:mm')}
+                          {ev.ends_at ? ` – ${format(new Date(ev.ends_at), 'HH:mm')}` : ''}
+                        </p>
+                        {ev.reminder_at ? (
+                          <p className="text-ink-muted mt-1 text-xs">
+                            Reminder {format(new Date(ev.reminder_at), 'HH:mm')}
+                          </p>
+                        ) : null}
+                        {rel ? (
+                          <p className="text-ink-muted mt-1 text-xs">
+                            {rel.to ? (
+                              <Link
+                                to={rel.to}
+                                className="text-[#006384] font-medium underline-offset-2 hover:underline dark:text-cyan-400"
+                              >
+                                {rel.label}
+                              </Link>
+                            ) : (
+                              rel.label
+                            )}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="flex shrink-0 gap-0.5">
+                        <button
+                          type="button"
+                          className="rounded-lg p-2 text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
+                          aria-label="Edit event"
+                          onClick={() => goEditOnCalendar(ev)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-lg p-2 text-stone-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                          aria-label="Delete event"
+                          disabled={deleteEvent.isPending}
+                          onClick={() => {
+                            if (window.confirm('Delete this event?')) deleteEvent.mutate(ev.id)
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          {pickedDayEvents.length > 0 ? (
+            <button
+              type="button"
+              className="border-line w-full rounded-full border py-2 text-sm font-bold dark:border-stone-600"
+              onClick={openCreateForPickedDay}
+            >
+              Create event
+            </button>
+          ) : null}
+        </div>
+      </Modal>
     </div>
   )
 }
