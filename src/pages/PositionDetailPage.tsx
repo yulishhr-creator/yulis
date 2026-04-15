@@ -2015,7 +2015,6 @@ export function PositionDetailPage() {
                   return (
                     <div className="border-line flex min-h-[min(50vh,22rem)] min-w-[220px] max-w-[280px] shrink-0 flex-col rounded-2xl border border-stone-200/80 bg-white/85 p-2 dark:border-stone-600 dark:bg-stone-900/55">
                       <h3 className="text-ink px-1 text-[11px] font-extrabold tracking-wide uppercase dark:text-stone-200">Pipeline</h3>
-                      <p className="text-stitch-muted px-1 text-xs tabular-nums">{pipelineKanbanCandidates.length}</p>
                       <p className="text-ink-muted px-1 text-xs dark:text-stone-500">Add stages in workflow to organize candidates by step.</p>
                       <div className="mt-2 flex flex-1 flex-col gap-2 overflow-y-auto">
                         {pipelineKanbanCandidates.map((c) => renderPipelineKanbanCard(c))}
@@ -2040,7 +2039,6 @@ export function PositionDetailPage() {
                       onDrop={(e) => onCandidateDropStage(e, st.id)}
                     >
                       <h3 className="text-ink px-1 text-[11px] font-extrabold tracking-wide uppercase dark:text-stone-200">{st.name}</h3>
-                      <p className="text-stitch-muted px-1 text-xs tabular-nums">{cards.length}</p>
                       <div className="mt-2 flex flex-1 flex-col gap-2 overflow-y-auto">{cards.map((c) => renderPipelineKanbanCard(c))}</div>
                     </div>
                   )
@@ -2258,7 +2256,6 @@ export function PositionDetailPage() {
                 <h3 className="text-ink px-1 text-[11px] font-extrabold tracking-wide uppercase dark:text-stone-200">
                   {positionTaskStatusLabel(st)}
                 </h3>
-                <p className="text-stitch-muted px-1 text-xs tabular-nums">{positionTasksByStatus[st].length}</p>
                 <div className="mt-2 flex flex-1 flex-col gap-2 overflow-y-auto">
                   {positionTasksByStatus[st].length === 0 ? (
                     <p className="text-ink-muted px-1 text-xs italic dark:text-stone-500">Drop tasks here.</p>
