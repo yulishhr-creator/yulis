@@ -10,6 +10,7 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { logActivityEvent } from '@/lib/activityLog'
 import { assignmentStatusPill, positionLifecyclePill } from '@/lib/candidateStatus'
 import { useToast } from '@/hooks/useToast'
+import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
 import { usePipelineHeadlineStats } from '@/hooks/usePipelineHeadlineStats'
 import { CreatePositionWizard } from '@/pages/CreatePositionWizard'
 
@@ -513,7 +514,15 @@ export function PositionsPage() {
   }, [companyFromUrl, tabCompanies])
 
   const scopedClientName = tabCompanies.find((c) => c.id === scopedCompanyId)?.name
-  const { data: clientHeadline, isLoading: clientHeadlineLoading } = usePipelineHeadlineStats(scopedCompanyId)
+  const { data: clientHeadline, isLoading: clientPipelineHeadlineLoading } = usePipelineHeadlineStats(scopedCompanyId)
+  const { data: clientTaskKpis, isPending: clientTaskKpisPending } = useDashboardTaskKpis(scopedCompanyId, {
+    enabled: Boolean(scopedCompanyId),
+  })
+  const clientHeroLoading =
+    clientPipelineHeadlineLoading || (Boolean(scopedCompanyId) && clientTaskKpisPending)
+  const clientCandCount = clientHeadline?.activeCandidateCount ?? 0
+  const clientPosCount = clientHeadline?.activePositionCount ?? 0
+  const clientOpenTasksCount = (clientTaskKpis?.todo ?? 0) + (clientTaskKpis?.inProgress ?? 0)
 
   /** Drop stale ?company= from URL once we know client list */
   useEffect(() => {
@@ -559,13 +568,14 @@ export function PositionsPage() {
               </p>
             ) : null}
             <h2 className="text-page-title text-xl font-extrabold tracking-tight md:text-2xl">
-              {clientHeadlineLoading ? (
+              {clientHeroLoading ? (
                 <>You&apos;re currently working on…</>
               ) : (
                 <>
-                  You&apos;re currently working on {clientHeadline?.activeCandidateCount ?? 0} candidates within{' '}
-                  {clientHeadline?.activePositionCount ?? 0}{' '}
-                  {(clientHeadline?.activePositionCount ?? 0) === 1 ? 'position' : 'positions'}.
+                  You&apos;re currently working on {clientCandCount}{' '}
+                  {clientCandCount === 1 ? 'Candidate' : 'Candidates'} within {clientPosCount}{' '}
+                  {clientPosCount === 1 ? 'Position' : 'Positions'} - {clientOpenTasksCount} open{' '}
+                  {clientOpenTasksCount === 1 ? 'Task' : 'Tasks'}.
                 </>
               )}
             </h2>

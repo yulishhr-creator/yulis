@@ -12,15 +12,17 @@ export type DashboardTaskKpis = {
 
 /**
  * Aggregate task counts for the user. When `companyId` is set, only tasks on positions for that client.
+ * Pass `{ enabled: false }` to skip the query (e.g. when the UI only needs scoped KPIs sometimes).
  */
-export function useDashboardTaskKpis(companyId?: string | null) {
+export function useDashboardTaskKpis(companyId?: string | null, options?: { enabled?: boolean }) {
   const { user } = useAuth()
   const supabase = getSupabase()
   const uid = user?.id
+  const queryEnabled = options?.enabled !== false
 
   return useQuery({
     queryKey: ['dashboard-task-kpis', uid, companyId ?? 'all'],
-    enabled: Boolean(supabase && uid),
+    enabled: Boolean(supabase && uid && queryEnabled),
     queryFn: async (): Promise<DashboardTaskKpis> => {
       const now = new Date().toISOString()
 
