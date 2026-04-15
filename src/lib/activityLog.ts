@@ -11,6 +11,8 @@ export type ActivityEventType =
   | 'candidate_reached_critical_stage'
   | 'position_created'
   | 'note_added'
+  /** Lightweight per-assignment tag stored as an activity row (user-deletable). */
+  | 'candidate_tag'
 
 export type LogActivityInput = {
   event_type: ActivityEventType

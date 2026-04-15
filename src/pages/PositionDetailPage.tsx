@@ -19,6 +19,7 @@ import {
   ExternalLink,
   GitBranch,
   Mail,
+  Phone,
   Ban,
   Play,
   Pause,
@@ -27,7 +28,7 @@ import {
   ArrowLeft,
   GripVertical,
 } from 'lucide-react'
-import { differenceInCalendarDays, format, formatDistanceToNow } from 'date-fns'
+import { differenceInCalendarDays, format } from 'date-fns'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
@@ -37,7 +38,7 @@ import { Modal } from '@/components/ui/Modal'
 import { PageSpinner } from '@/components/ui/PageSpinner'
 import { useToast } from '@/hooks/useToast'
 import { criticalStageThreshold, logActivityEvent } from '@/lib/activityLog'
-import { formatAssignmentStatus } from '@/lib/candidateStatus'
+import { assignmentStatusPill, formatAssignmentStatus } from '@/lib/candidateStatus'
 import { logPositionCandidateTransition } from '@/lib/positionTransitions'
 import { isMissingRequirementsColumnError, normalizeRequirementsText, parseRequirementTokens } from '@/lib/requirementValues'
 import { CompanyClientAvatar } from '@/components/companies/CompanyClientAvatar'
@@ -57,6 +58,7 @@ type CandidateProfile = {
   full_name: string
   email: string | null
   phone: string | null
+  linkedin?: string | null
   resume_storage_path?: string | null
   deleted_at?: string | null
 }
@@ -106,6 +108,7 @@ type ActivityRow = {
   created_at: string
   candidate_id: string | null
   position_candidate_id: string | null
+  metadata?: Record<string, unknown> | null
 }
 
 type PositionTaskStatus = 'open' | 'closed' | 'archived'
@@ -144,6 +147,14 @@ function taskLinkedCandidate(t: PositionTaskRow): { id: string; full_name: strin
 }
 
 /** Two-letter style initials from a person or free-text label (e.g. "Dor Farjun" → "DF"). */
+function LinkedInGlyph(props: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden className={props.className}>
+      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22 22h-20v-20h20v20z" />
+    </svg>
+  )
+}
+
 function personInitials(label: string): string {
   const parts = label.trim().split(/\s+/).filter(Boolean)
   if (parts.length === 0) return '?'
@@ -172,6 +183,7 @@ function activityKindCopy(eventType: string): { label: string; explainer: string
     position_status_changed: { label: 'Role status', explainer: 'This job was set to active, on hold, succeeded, or cancelled.' },
     candidate_file_uploaded: { label: 'File', explainer: 'A document was attached to a candidate.' },
     note_added: { label: 'Your note', explainer: 'A manual note you logged on this role.' },
+    candidate_tag: { label: 'Tag', explainer: 'A label on this candidate for this role.' },
   }
   return map[eventType] ?? { label: 'Event', explainer: 'Something changed on this role.' }
 }
@@ -368,7 +380,7 @@ export function PositionDetailPage() {
           status,
           source,
           created_at,
-          candidates ( id, full_name, email, phone, resume_storage_path, deleted_at ),
+          candidates ( id, full_name, email, phone, linkedin, resume_storage_path, deleted_at ),
           position_stages ( name )
         `,
         )
@@ -421,7 +433,7 @@ export function PositionDetailPage() {
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('activity_events')
-        .select('id, event_type, title, subtitle, created_at, candidate_id, position_candidate_id')
+        .select('id, event_type, title, subtitle, created_at, candidate_id, position_candidate_id, metadata')
         .eq('position_id', id!)
         .eq('user_id', user!.id)
         .order('created_at', { ascending: false })
@@ -490,9 +502,24 @@ export function PositionDetailPage() {
   const shareChannelRef = useRef<HTMLDivElement>(null)
   const [candidateDragId, setCandidateDragId] = useState<string | null>(null)
   const [candidateDropStage, setCandidateDropStage] = useState<string | null>(null)
+  const [drawerHeaderExpanded, setDrawerHeaderExpanded] = useState(false)
+  const [drawerPanelEntered, setDrawerPanelEntered] = useState(false)
+  const [drawerCommentText, setDrawerCommentText] = useState('')
+  const [drawerAssignStatusOpen, setDrawerAssignStatusOpen] = useState(false)
+  const drawerAssignStatusRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (tab !== 'tasks') setSelectedPositionTask(null)
   }, [tab])
+
+  useEffect(() => {
+    if (highlightCandidate) {
+      setDrawerHeaderExpanded(false)
+      setDrawerAssignStatusOpen(false)
+      const id = requestAnimationFrame(() => setDrawerPanelEntered(true))
+      return () => cancelAnimationFrame(id)
+    }
+    setDrawerPanelEntered(false)
+  }, [highlightCandidate])
 
   useEffect(() => {
     if (!position) return
@@ -1062,6 +1089,58 @@ export function PositionDetailPage() {
     onError: (e: Error) => toastError(e.message),
   })
 
+  const addDrawerComment = useMutation({
+    mutationFn: async (payload: { text: string; candidateId: string; positionCandidateId: string }) => {
+      const t = payload.text.trim()
+      if (!t) throw new Error('Enter a comment')
+      await logActivityEvent(supabase!, user!.id, {
+        event_type: 'note_added',
+        position_id: id!,
+        candidate_id: payload.candidateId,
+        position_candidate_id: payload.positionCandidateId,
+        title: 'Comment',
+        subtitle: t,
+      })
+    },
+    onSuccess: async () => {
+      setDrawerCommentText('')
+      success('Comment added')
+      await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const addCandidateTag = useMutation({
+    mutationFn: async (payload: { label: string; candidateId: string; positionCandidateId: string }) => {
+      const label = payload.label.trim()
+      if (!label) throw new Error('Enter a tag')
+      await logActivityEvent(supabase!, user!.id, {
+        event_type: 'candidate_tag',
+        position_id: id!,
+        candidate_id: payload.candidateId,
+        position_candidate_id: payload.positionCandidateId,
+        title: label,
+        subtitle: null,
+      })
+    },
+    onSuccess: async () => {
+      success('Tag added')
+      await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const deleteActivityEvent = useMutation({
+    mutationFn: async (eventId: string) => {
+      const { error } = await supabase!.from('activity_events').delete().eq('id', eventId).eq('user_id', user!.id)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
   const createShareToken = useMutation({
     mutationFn: async (candidateId: string) => {
       const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
@@ -1238,6 +1317,14 @@ export function PositionDetailPage() {
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
+      if (!drawerAssignStatusRef.current?.contains(e.target as Node)) setDrawerAssignStatusOpen(false)
+    }
+    if (drawerAssignStatusOpen) document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [drawerAssignStatusOpen])
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
       if (!shareChannelRef.current?.contains(e.target as Node)) setShareChannelOpen(false)
     }
     if (shareChannelOpen) document.addEventListener('mousedown', onDoc)
@@ -1392,167 +1479,99 @@ export function PositionDetailPage() {
     ? `Opened ${format(new Date(createdAt), 'MMM d, yyyy')}`
     : 'Opened —'
 
-  function renderCandidateCard(c: PositionCandidateJunction) {
+  function formatActivityArrowPath(subtitle: string | null): string {
+    if (!subtitle) return '—'
+    return subtitle.replace(/\s*→\s*/g, ' > ').replace(/\s*->\s*/g, ' > ').trim()
+  }
+
+  function timelineKindStyles(eventType: string): { rail: string; dot: string; pill: string; pillLabel: string } {
+    switch (eventType) {
+      case 'candidate_stage_changed':
+        return {
+          rail: 'bg-sky-200/90 dark:bg-sky-900/50',
+          dot: 'bg-sky-500 shadow-sm dark:bg-sky-400',
+          pill: 'border-sky-200/90 bg-sky-50 text-sky-950 dark:border-sky-800 dark:bg-sky-950/45 dark:text-sky-100',
+          pillLabel: 'Stage',
+        }
+      case 'candidate_status_changed':
+        return {
+          rail: 'bg-violet-200/90 dark:bg-violet-900/45',
+          dot: 'bg-violet-500 shadow-sm dark:bg-violet-400',
+          pill: 'border-violet-200/90 bg-violet-50 text-violet-950 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-100',
+          pillLabel: 'Status',
+        }
+      case 'candidate_created':
+        return {
+          rail: 'bg-emerald-200/90 dark:bg-emerald-900/45',
+          dot: 'bg-emerald-500 shadow-sm dark:bg-emerald-400',
+          pill: 'border-emerald-200/90 bg-emerald-50 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100',
+          pillLabel: 'Joined',
+        }
+      case 'candidate_file_uploaded':
+        return {
+          rail: 'bg-amber-200/90 dark:bg-amber-900/45',
+          dot: 'bg-amber-500 shadow-sm dark:bg-amber-400',
+          pill: 'border-amber-200/90 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100',
+          pillLabel: 'File',
+        }
+      case 'candidate_reached_critical_stage':
+        return {
+          rail: 'bg-orange-200/90 dark:bg-orange-900/45',
+          dot: 'bg-orange-500 shadow-sm dark:bg-orange-400',
+          pill: 'border-orange-200/90 bg-orange-50 text-orange-950 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-100',
+          pillLabel: 'Milestone',
+        }
+      default:
+        return {
+          rail: 'bg-stone-200/90 dark:bg-stone-700/60',
+          dot: 'bg-stone-500 dark:bg-stone-400',
+          pill: 'border-stone-200/80 bg-stone-50 text-stone-800 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-200',
+          pillLabel: 'Event',
+        }
+    }
+  }
+
+  function tailStatusFromSubtitle(subtitle: string | null): string {
+    if (!subtitle) return 'in_progress'
+    const parts = subtitle.split(/→|->/)
+    const last = parts[parts.length - 1]?.trim()
+    if (!last) return 'in_progress'
+    return last.replace(/\s+/g, '_')
+  }
+
+  function renderWithdrawnCandidateRow(c: PositionCandidateJunction) {
     const prof = nestedCandidate(c.candidates)
     const candId = prof?.id
     const stageName = nestedStageName(c.position_stages)
-    const hl = Boolean(candId && highlightCandidate === candId)
-    const inPipeline = c.status === 'in_progress'
-    const resumePath = prof?.resume_storage_path ?? null
     const displayName = prof?.full_name ?? 'Unnamed'
     return (
       <li
         key={c.id}
         id={candId ? `cand-${candId}` : `pc-${c.id}`}
-        className={`border-line rounded-xl border bg-white/60 p-3 dark:border-line-dark dark:bg-stone-900/40 ${hl ? 'ring-accent ring-2' : ''}`}
+        className="border-line rounded-xl border bg-white/60 p-3 dark:border-line-dark dark:bg-stone-900/40"
       >
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-            {resumePath ? (
-              <button
-                type="button"
-                className="border-line text-ink-muted hover:bg-paper hover:text-accent shrink-0 rounded-lg border p-1.5 transition dark:border-line-dark dark:hover:bg-stone-800"
-                title="Preview résumé"
-                aria-label="Preview résumé"
-                onClick={() => void previewResume(resumePath)}
-              >
-                <FileText className="h-4 w-4" aria-hidden />
-              </button>
-            ) : null}
-            <Link
-              to={`?tab=candidates&candidate=${candId ?? ''}`}
-              className="font-medium text-[#9b3e20] hover:underline dark:text-orange-300"
-            >
-              {displayName}
-              <ChevronRight className="ml-1 inline h-4 w-4 opacity-50" aria-hidden />
-            </Link>
-            {hl && inPipeline ? (
-              <div className="flex items-center gap-0.5">
-                <button
-                  type="button"
-                  title="Mark rejected"
-                  aria-label="Mark rejected"
-                  onClick={() => {
-                    if (!window.confirm('Mark this assignment as rejected?')) return
-                    const close = window.confirm('Also mark open tasks for this assignment as done?')
-                    void patchAssignmentStatus.mutateAsync({ positionCandidateId: c.id, nextStatus: 'rejected', closeTasks: close })
-                  }}
-                  className="border-line flex h-7 w-7 items-center justify-center rounded-md border bg-white text-stone-800 hover:bg-stone-50 dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800"
-                >
-                  <X className="h-3.5 w-3.5 stroke-[2.5]" aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  title="Withdraw from role"
-                  aria-label="Withdraw from role"
-                  onClick={() => {
-                    if (!window.confirm('Withdraw this candidate from this role?')) return
-                    const close = window.confirm('Also mark open tasks for this assignment as done?')
-                    void patchAssignmentStatus.mutateAsync({ positionCandidateId: c.id, nextStatus: 'withdrawn', closeTasks: close })
-                  }}
-                  className="border-line flex h-7 w-7 items-center justify-center rounded-md border bg-white text-stone-800 hover:bg-stone-50 dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800"
-                >
-                  <Trash2 className="h-3.5 w-3.5 stroke-[2.5]" aria-hidden />
-                </button>
-              </div>
-            ) : null}
-          </div>
+          <Link
+            to={`?tab=candidates&candidate=${candId ?? ''}`}
+            className="text-accent min-w-0 flex-1 font-semibold hover:underline dark:text-orange-300"
+          >
+            {displayName}
+            <ChevronRight className="ml-1 inline h-4 w-4 opacity-50" aria-hidden />
+          </Link>
           <button
             type="button"
             onClick={() => {
               if (window.confirm(`Withdraw ${displayName} from this role?`)) void withdrawFromRole.mutateAsync(c.id)
             }}
-            className="text-ink-muted hover:text-red-600 flex items-center gap-1 text-xs"
+            className="text-ink-muted hover:text-red-600 flex shrink-0 items-center gap-1 text-xs"
           >
             <Trash2 className="h-3.5 w-3.5" aria-hidden />
             Withdraw
           </button>
         </div>
-        <p className="text-ink-muted text-xs">
+        <p className="text-ink-muted mt-1 text-xs">
           {c.source} · {stageName} · {formatAssignmentStatus(c.status as string)}
         </p>
-        <label className="mt-2 block text-xs font-medium">
-          Stage
-          <select
-            value={c.position_stage_id ?? ''}
-            onChange={(e) =>
-              void updateCandidateStage.mutateAsync({ positionCandidateId: c.id, stageId: e.target.value || null })
-            }
-            className="border-line mt-1 w-full rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
-          >
-            <option value="">—</option>
-            {(stagesQ.data ?? []).map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="mt-2 block text-xs font-medium">
-          Status
-          <select
-            key={`${c.id}-${c.status}`}
-            value={c.status as string}
-            disabled={patchAssignmentStatus.isPending}
-            onChange={(e) => {
-              const v = e.target.value as 'in_progress' | 'rejected' | 'withdrawn'
-              if (v === c.status) return
-              if (!window.confirm('Change this assignment’s status?')) return
-              const closeTasks = v !== 'in_progress' ? window.confirm('Also mark open tasks for this assignment as done?') : false
-              void patchAssignmentStatus.mutateAsync({ positionCandidateId: c.id, nextStatus: v, closeTasks })
-            }}
-            className="border-line mt-1 w-full rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
-          >
-            <option value="in_progress">In progress</option>
-            <option value="rejected">Rejected</option>
-            <option value="withdrawn">Withdrawn</option>
-          </select>
-        </label>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              if (!candId) return
-              setResumePickForId(candId)
-              queueMicrotask(() => resumeFileRef.current?.click())
-            }}
-            className="border-line inline-flex items-center gap-2 rounded-lg border bg-white/80 px-3 py-2 text-xs font-medium shadow-sm dark:border-line-dark dark:bg-stone-900/60"
-          >
-            <Upload className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            {resumePath ? 'Replace résumé' : 'Upload résumé'}
-          </button>
-          <span className="text-ink-muted text-[11px]">PDF or Word</span>
-          {candId ? (
-            <button
-              type="button"
-              onClick={() => void createShareToken.mutateAsync(candId)}
-              className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs dark:border-line-dark"
-            >
-              <Link2 className="h-3.5 w-3.5" aria-hidden />
-              Share link
-            </button>
-          ) : null}
-        </div>
-        {hl && !inPipeline ? (
-          <p className="mt-2 text-sm font-medium text-stone-600 dark:text-stone-400">
-            Status: {formatAssignmentStatus(c.status as string)}
-          </p>
-        ) : null}
-        {hl && candId ? (
-          <div className="mt-3 border-t border-stone-200/80 pt-3 dark:border-stone-600">
-            <h3 className="text-xs font-bold uppercase tracking-wide text-stone-500">Candidate activity</h3>
-            <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-sm">
-              {(activityQ.data ?? [])
-                .filter((a) => a.candidate_id === candId || a.position_candidate_id === c.id)
-                .map((a) => (
-                  <li key={a.id} className="text-ink-muted text-xs">
-                    <span className="text-ink font-medium">{a.title}</span>
-                    {a.subtitle ? ` — ${a.subtitle}` : null} · {formatDistanceToNow(new Date(a.created_at), { addSuffix: true })}
-                  </li>
-                ))}
-            </ul>
-          </div>
-        ) : null}
       </li>
     )
   }
@@ -1994,7 +2013,8 @@ export function PositionDetailPage() {
         <div className="relative">
           <section id="position-candidates-section" className="scroll-mt-24 space-y-4">
             <p className="text-ink-muted text-xs dark:text-stone-400">
-              Pipeline board: drag cards between stages. Click a card for actions, résumé, and history.
+              Pipeline board: drag cards between stages. Click a card to open the side panel (status, tags, comments, and
+              history).
             </p>
 
             <input
@@ -2087,7 +2107,7 @@ export function PositionDetailPage() {
                 {filteredCandidates.filter((c) => c.status !== 'in_progress').length === 0 ? (
                   <li className="text-ink-muted text-sm">No rejected or withdrawn assignments with current filters.</li>
                 ) : (
-                  filteredCandidates.filter((c) => c.status !== 'in_progress').map(renderCandidateCard)
+                  filteredCandidates.filter((c) => c.status !== 'in_progress').map(renderWithdrawnCandidateRow)
                 )}
               </ul>
             </section>
@@ -2102,13 +2122,12 @@ export function PositionDetailPage() {
                 onClick={closeCandidateDrawer}
               />
               <aside
-                className="border-line fixed top-0 right-0 z-50 flex h-full w-full max-w-md flex-col border-l bg-white shadow-2xl dark:border-line-dark dark:bg-stone-900"
+                className={`border-line fixed top-0 right-0 z-50 flex h-full w-full max-w-2xl flex-col border-l bg-white shadow-2xl transition-transform duration-300 ease-out dark:border-line-dark dark:bg-stone-900 sm:max-w-[34rem] ${
+                  drawerPanelEntered ? 'translate-x-0' : 'translate-x-full'
+                }`}
                 aria-label="Candidate details"
               >
-                <div className="flex items-center justify-between border-b border-stone-200/90 px-4 py-3 dark:border-stone-700">
-                  <h2 className="truncate text-lg font-bold text-stone-900 dark:text-stone-100">
-                    {nestedCandidate(drawerCandidate.candidates)?.full_name ?? 'Candidate'}
-                  </h2>
+                <div className="flex items-center justify-end border-b border-stone-200/90 px-3 py-2 dark:border-stone-700">
                   <button
                     type="button"
                     className="rounded-lg p-2 hover:bg-stone-100 dark:hover:bg-stone-800"
@@ -2118,8 +2137,408 @@ export function PositionDetailPage() {
                     <X className="h-5 w-5" aria-hidden />
                   </button>
                 </div>
-                <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                  <ul className="list-none space-y-0 p-0">{renderCandidateCard(drawerCandidate)}</ul>
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  {(() => {
+                    const c = drawerCandidate
+                    const prof = nestedCandidate(c.candidates)
+                    const candId = prof?.id
+                    const displayName = prof?.full_name ?? 'Unnamed'
+                    const stageName = nestedStageName(c.position_stages)
+                    const inPipeline = c.status === 'in_progress'
+                    const resumePath = prof?.resume_storage_path ?? null
+                    const email = prof?.email?.trim() || null
+                    const phone = prof?.phone?.trim() || null
+                    const linkedinRaw = prof?.linkedin?.trim() || null
+                    const linkedinHref =
+                      linkedinRaw != null && linkedinRaw !== ''
+                        ? linkedinRaw.startsWith('http')
+                          ? linkedinRaw
+                          : `https://${linkedinRaw}`
+                        : null
+                    const actRows = (activityQ.data ?? []).filter(
+                      (a) => a.candidate_id === candId || a.position_candidate_id === c.id,
+                    )
+                    const tagRows = actRows.filter((a) => a.event_type === 'candidate_tag')
+                    const commentRows = actRows
+                      .filter((a) => a.event_type === 'note_added')
+                      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                    const timelineRows = actRows
+                      .filter((a) => a.event_type !== 'note_added' && a.event_type !== 'candidate_tag')
+                      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                    const assignPill = assignmentStatusPill(c.status as string)
+                    return (
+                      <>
+                        <div className="border-b border-stone-200/90 px-5 pb-4 pt-2 dark:border-stone-700">
+                          <div className="flex gap-4">
+                            <div
+                              className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-stone-200 bg-stone-100 text-lg font-bold text-stone-600 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300"
+                              aria-hidden
+                            >
+                              {personInitials(displayName)}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+                                <h2 className="text-stitch-on-surface text-xl font-bold tracking-tight dark:text-stone-100">
+                                  {displayName}
+                                </h2>
+                                <button
+                                  type="button"
+                                  className="text-[#006384] hover:text-[#004d63] inline-flex items-center gap-1 text-sm font-medium dark:text-cyan-300 dark:hover:text-cyan-200"
+                                  onClick={() => {
+                                    if (!candId) return
+                                    const label = window.prompt('Tag label')
+                                    if (label == null || !label.trim()) return
+                                    void addCandidateTag.mutateAsync({
+                                      label: label.trim(),
+                                      candidateId: candId,
+                                      positionCandidateId: c.id,
+                                    })
+                                  }}
+                                >
+                                  <span aria-hidden className="text-base leading-none">
+                                    +
+                                  </span>
+                                  Add tag
+                                </button>
+                                <div className="relative flex shrink-0 items-center gap-1.5" ref={drawerAssignStatusRef}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDrawerAssignStatusOpen((o) => !o)}
+                                    disabled={patchAssignmentStatus.isPending}
+                                    className={`border-line flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold shadow-sm transition dark:border-line-dark ${
+                                      c.status === 'in_progress'
+                                        ? 'border-emerald-200/90 bg-gradient-to-br from-emerald-50 to-white text-emerald-900 dark:border-emerald-800/80 dark:from-emerald-950/60 dark:to-stone-900 dark:text-emerald-200'
+                                        : c.status === 'rejected'
+                                          ? 'border-rose-200/90 bg-gradient-to-br from-rose-50 to-white text-rose-900 dark:border-rose-800/80 dark:from-rose-950/50 dark:to-stone-900 dark:text-rose-100'
+                                          : 'border-stone-200/90 bg-gradient-to-br from-stone-100 to-white text-stone-800 dark:border-stone-600 dark:from-stone-800/80 dark:to-stone-900 dark:text-stone-200'
+                                    }`}
+                                    aria-expanded={drawerAssignStatusOpen}
+                                    aria-haspopup="listbox"
+                                  >
+                                    {c.status === 'in_progress' ? (
+                                      <Play className="h-4 w-4 shrink-0 fill-current text-emerald-600 dark:text-emerald-400" aria-hidden />
+                                    ) : c.status === 'rejected' ? (
+                                      <Ban className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-300" aria-hidden />
+                                    ) : (
+                                      <Pause className="h-4 w-4 shrink-0 text-stone-600 dark:text-stone-400" aria-hidden />
+                                    )}
+                                    <span>{formatAssignmentStatus(c.status as string)}</span>
+                                    <ChevronDown className="h-4 w-4 shrink-0 opacity-60" aria-hidden />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="border-line flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border bg-white text-[#006384] shadow-sm hover:bg-stone-50 dark:border-line-dark dark:bg-stone-800 dark:text-cyan-300 dark:hover:bg-stone-700"
+                                    title="Pipeline board"
+                                    aria-label="Open pipeline board"
+                                    onClick={() => {
+                                      closeCandidateDrawer()
+                                      requestAnimationFrame(() =>
+                                        document.getElementById('position-candidates-section')?.scrollIntoView({
+                                          behavior: 'smooth',
+                                          block: 'start',
+                                        }),
+                                      )
+                                    }}
+                                  >
+                                    <GitBranch className="h-4 w-4" aria-hidden />
+                                  </button>
+                                  {drawerAssignStatusOpen ? (
+                                    <div
+                                      role="listbox"
+                                      className="border-line absolute top-full right-0 z-[60] mt-1 min-w-[12rem] rounded-xl border bg-white py-1 shadow-xl dark:border-line-dark dark:bg-stone-900"
+                                    >
+                                      {(
+                                        [
+                                          { v: 'in_progress' as const, label: 'In progress', icon: Play, cls: 'text-emerald-800 dark:text-emerald-300' },
+                                          { v: 'rejected' as const, label: 'Rejected', icon: Ban, cls: 'text-rose-800 dark:text-rose-200' },
+                                          { v: 'withdrawn' as const, label: 'Withdrawn', icon: Pause, cls: 'text-stone-700 dark:text-stone-300' },
+                                        ] as const
+                                      ).map(({ v, label, icon: Icon, cls }) => (
+                                        <button
+                                          key={v}
+                                          type="button"
+                                          role="option"
+                                          className={`hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold ${cls}`}
+                                          onClick={() => {
+                                            setDrawerAssignStatusOpen(false)
+                                            if (v === c.status) return
+                                            if (!window.confirm('Change this assignment’s status?')) return
+                                            const closeTasks = v !== 'in_progress' ? window.confirm('Also mark open tasks for this assignment as done?') : false
+                                            void patchAssignmentStatus.mutateAsync({
+                                              positionCandidateId: c.id,
+                                              nextStatus: v,
+                                              closeTasks,
+                                            })
+                                          }}
+                                        >
+                                          <Icon className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
+                                          {label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+                              {tagRows.length > 0 ? (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {tagRows.map((t) => (
+                                    <span
+                                      key={t.id}
+                                      className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-900 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-100"
+                                    >
+                                      {t.title}
+                                      <button
+                                        type="button"
+                                        className="hover:text-rose-600 rounded p-0.5 dark:hover:text-rose-400"
+                                        aria-label={`Remove tag ${t.title}`}
+                                        onClick={() => {
+                                          if (window.confirm('Remove this tag?')) void deleteActivityEvent.mutateAsync(t.id)
+                                        }}
+                                      >
+                                        <Trash2 className="h-3 w-3" aria-hidden />
+                                      </button>
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
+                              <div className="text-ink-muted mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm dark:text-stone-400">
+                                {email ? (
+                                  <a
+                                    href={`mailto:${email}`}
+                                    className="inline-flex min-w-0 items-center gap-1.5 text-[#4a5568] hover:text-[#006384] dark:text-stone-400 dark:hover:text-cyan-300"
+                                  >
+                                    <Mail className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
+                                    <span className="truncate">{email}</span>
+                                  </a>
+                                ) : null}
+                                {phone ? (
+                                  <a
+                                    href={`tel:${phone}`}
+                                    className="inline-flex items-center gap-1.5 text-[#4a5568] hover:text-[#006384] dark:text-stone-400 dark:hover:text-cyan-300"
+                                  >
+                                    <Phone className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
+                                    <span>{phone}</span>
+                                  </a>
+                                ) : null}
+                                {linkedinHref ? (
+                                  <a
+                                    href={linkedinHref}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1.5 text-[#4a5568] hover:text-[#006384] dark:text-stone-400 dark:hover:text-cyan-300"
+                                  >
+                                    <LinkedInGlyph className="h-4 w-4 shrink-0 opacity-80" />
+                                    <span className="sr-only">LinkedIn</span>
+                                  </a>
+                                ) : null}
+                              </div>
+                              <button
+                                type="button"
+                                className="text-[#006384] hover:text-[#004d63] mt-2 text-sm font-medium dark:text-cyan-300 dark:hover:text-cyan-200"
+                                onClick={() => setDrawerHeaderExpanded((v) => !v)}
+                              >
+                                {drawerHeaderExpanded ? 'See less' : 'See more'}
+                              </button>
+                              {drawerHeaderExpanded ? (
+                                <div className="mt-3 space-y-3 border-t border-stone-100 pt-3 text-sm dark:border-stone-700">
+                                  <p className="text-ink-muted">
+                                    <span className="font-medium text-stone-700 dark:text-stone-300">Stage</span>{' '}
+                                    <span className="text-stone-900 dark:text-stone-100">{stageName}</span> (change by
+                                    dragging the card on the board)
+                                  </p>
+                                  <p className="text-ink-muted">
+                                    <span className="font-medium text-stone-700 dark:text-stone-300">Source</span>{' '}
+                                    {c.source}
+                                  </p>
+                                  <div className="flex flex-wrap gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (!candId) return
+                                        if (resumePath) void previewResume(resumePath)
+                                        else {
+                                          setResumePickForId(candId)
+                                          queueMicrotask(() => resumeFileRef.current?.click())
+                                        }
+                                      }}
+                                      className="rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-medium hover:bg-stone-50 dark:border-stone-600 dark:hover:bg-stone-800"
+                                    >
+                                      {resumePath ? 'Open résumé' : 'Upload résumé'}
+                                    </button>
+                                    {candId ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => void createShareToken.mutateAsync(candId)}
+                                        className="rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-medium hover:bg-stone-50 dark:border-stone-600 dark:hover:bg-stone-800"
+                                      >
+                                        Candidate share link
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 border-b border-stone-100 px-5 py-3 dark:border-stone-700">
+                          <div className="flex items-center gap-2">
+                            {inPipeline ? (
+                              <span
+                                className="border-accent/40 bg-accent/15 text-accent inline-flex h-10 w-10 items-center justify-center rounded-xl border shadow-inner dark:border-orange-400/40 dark:bg-orange-950/35 dark:text-orange-200"
+                                title="Active on this role"
+                                aria-label="Active on this role"
+                              >
+                                <Check className="h-5 w-5 stroke-[2.5]" aria-hidden />
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                title="Mark assignment in progress again"
+                                aria-label="Mark assignment in progress again"
+                                onClick={() => {
+                                  if (!window.confirm('Set this assignment back to in progress?')) return
+                                  void patchAssignmentStatus.mutateAsync({
+                                    positionCandidateId: c.id,
+                                    nextStatus: 'in_progress',
+                                    closeTasks: false,
+                                  })
+                                }}
+                                className="border-line text-ink-muted hover:border-accent/40 hover:text-accent inline-flex h-10 w-10 items-center justify-center rounded-xl border bg-white dark:border-line-dark dark:bg-stone-900"
+                              >
+                                <Check className="h-5 w-5 stroke-[2]" aria-hidden />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              title="Withdraw from this role"
+                              aria-label="Withdraw from this role"
+                              onClick={() => {
+                                if (window.confirm(`Withdraw ${displayName} from this role?`)) void withdrawFromRole.mutateAsync(c.id)
+                              }}
+                              className="border-line text-ink-muted hover:border-rose-300 hover:text-rose-600 inline-flex h-10 w-10 items-center justify-center rounded-xl border bg-white dark:border-line-dark dark:bg-stone-900 dark:hover:text-rose-400"
+                            >
+                              <Trash2 className="h-5 w-5" aria-hidden />
+                            </button>
+                          </div>
+                          <span
+                            className={`hidden max-w-[12rem] truncate rounded-full border px-2.5 py-0.5 text-xs font-semibold sm:inline-flex ${assignPill.className}`}
+                          >
+                            {assignPill.label}
+                          </span>
+                        </div>
+
+                        <div className="px-5 py-4">
+                          <h3 className="text-ink-muted text-xs font-bold uppercase tracking-wide">Activity</h3>
+                          {timelineRows.length === 0 ? (
+                            <p className="text-ink-muted mt-2 text-sm">No pipeline events for this candidate yet.</p>
+                          ) : (
+                            <ul className="mt-3 space-y-0">
+                              {timelineRows.map((a) => {
+                                const deco = timelineKindStyles(a.event_type)
+                                const primary =
+                                  a.event_type === 'candidate_status_changed'
+                                    ? formatActivityArrowPath(a.subtitle)
+                                    : a.event_type === 'candidate_stage_changed'
+                                      ? formatActivityArrowPath(a.subtitle)
+                                      : a.title
+                                const statusTail =
+                                  a.event_type === 'candidate_status_changed'
+                                    ? assignmentStatusPill(tailStatusFromSubtitle(a.subtitle))
+                                    : null
+                                const pillLabel =
+                                  a.event_type === 'candidate_status_changed' && statusTail
+                                    ? statusTail.label
+                                    : deco.pillLabel
+                                const pillClass =
+                                  a.event_type === 'candidate_status_changed' && statusTail
+                                    ? statusTail.className
+                                    : deco.pill
+                                return (
+                                  <li key={a.id} className="relative flex gap-3 pb-6 last:pb-0">
+                                    <div className="flex flex-col items-center">
+                                      <span className={`z-[1] h-3.5 w-3.5 rounded-full ${deco.dot}`} />
+                                      <span className={`mt-0.5 w-0.5 flex-1 min-h-[1.25rem] rounded-full ${deco.rail}`} />
+                                    </div>
+                                    <div className="min-w-0 flex-1 pt-0.5">
+                                      <p className="text-stitch-on-surface text-sm font-semibold leading-snug dark:text-stone-100">
+                                        {primary}
+                                      </p>
+                                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                                        <span
+                                          className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${pillClass}`}
+                                        >
+                                          {pillLabel}
+                                        </span>
+                                        <time
+                                          className="text-ink-muted text-xs tabular-nums"
+                                          dateTime={a.created_at}
+                                        >
+                                          {format(new Date(a.created_at), 'MMM d, yyyy · h:mm a')}
+                                        </time>
+                                      </div>
+                                    </div>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          )}
+                        </div>
+
+                        <div className="border-t border-stone-100 bg-stone-50/60 px-5 py-4 dark:border-stone-700 dark:bg-stone-900/50">
+                          <h3 className="text-ink-muted text-xs font-bold uppercase tracking-wide">Comments</h3>
+                          <div className="mt-2 flex gap-2">
+                            <input
+                              value={drawerCommentText}
+                              onChange={(e) => setDrawerCommentText(e.target.value)}
+                              placeholder="Write a comment…"
+                              className="border-line min-w-0 flex-1 rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900"
+                            />
+                            <button
+                              type="button"
+                              disabled={!drawerCommentText.trim() || addDrawerComment.isPending || !candId}
+                              onClick={() => {
+                                if (!candId) return
+                                void addDrawerComment.mutateAsync({
+                                  text: drawerCommentText,
+                                  candidateId: candId,
+                                  positionCandidateId: c.id,
+                                })
+                              }}
+                              className="bg-accent text-white shrink-0 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40 dark:bg-orange-600"
+                            >
+                              Add
+                            </button>
+                          </div>
+                          <ul className="mt-3 space-y-2">
+                            {commentRows.map((cm) => (
+                              <li
+                                key={cm.id}
+                                className="flex items-start justify-between gap-2 rounded-xl border border-stone-200/90 bg-white px-3 py-2 text-sm dark:border-stone-600 dark:bg-stone-900/80"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-stone-800 dark:text-stone-100">{cm.subtitle}</p>
+                                  <p className="text-ink-muted mt-1 text-xs tabular-nums">
+                                    {format(new Date(cm.created_at), 'MMM d, yyyy · h:mm a')}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="text-ink-muted hover:text-rose-600 shrink-0 rounded p-1 dark:hover:text-rose-400"
+                                  aria-label="Delete comment"
+                                  onClick={() => {
+                                    if (window.confirm('Delete this comment?')) void deleteActivityEvent.mutateAsync(cm.id)
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4" aria-hidden />
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </>
+                    )
+                  })()}
                 </div>
               </aside>
             </>
