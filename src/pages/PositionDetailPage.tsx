@@ -138,6 +138,25 @@ function taskLinkedCandidate(t: PositionTaskRow): { id: string; full_name: strin
   return { id: profile.id, full_name: profile.full_name ?? 'Unnamed' }
 }
 
+/** Two-letter style initials from a person or free-text label (e.g. "Dor Farjun" → "DF"). */
+function personInitials(label: string): string {
+  const parts = label.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) {
+    const w = parts[0]!
+    return w.length >= 2 ? w.slice(0, 2).toUpperCase() : (w[0]! + w[0]!).toUpperCase()
+  }
+  return (parts[0]![0]! + parts[1]![0]!).toUpperCase()
+}
+
+function formatIlsAmountDisplay(rawDigits: string): string {
+  const t = rawDigits.replace(/,/g, '').trim()
+  if (!t) return ''
+  const n = Number(t)
+  if (!Number.isFinite(n)) return rawDigits.trim()
+  return `₪${n.toLocaleString('en-US')}`
+}
+
 function activityKindCopy(eventType: string): { label: string; explainer: string } {
   const map: Record<string, { label: string; explainer: string }> = {
     candidate_created: { label: 'Candidate added', explainer: 'Someone was added to this role.' },
@@ -159,6 +178,7 @@ function DetailHoverField({
   rows,
   onSave,
   disabled,
+  readOnlyFormat,
 }: {
   label: string
   value: string
@@ -166,6 +186,8 @@ function DetailHoverField({
   rows?: number
   onSave: (next: string) => void | Promise<void>
   disabled?: boolean
+  /** When set, non-edit view shows this instead of raw `value` (still saves `draft` from typed input). */
+  readOnlyFormat?: (value: string) => string
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
@@ -180,7 +202,11 @@ function DetailHoverField({
           <p className="text-stitch-muted text-[11px] font-bold tracking-wide uppercase dark:text-stone-500">{label}</p>
           {!editing ? (
             <p className="text-stitch-on-surface mt-0.5 whitespace-pre-wrap text-sm dark:text-stone-100">
-              {value.trim() ? value : '—'}
+              {!value.trim()
+                ? '—'
+                : readOnlyFormat
+                  ? readOnlyFormat(value)
+                  : value}
             </p>
           ) : multiline ? (
             <textarea
@@ -558,7 +584,13 @@ export function PositionDetailPage() {
   }
 
   function parseIlsAmountInput(raw: string): number | null | 'invalid' {
-    const t = raw.replace(/,/g, '').trim()
+    const t = raw
+      .replace(/,/g, '')
+      .replace(/\s/g, '')
+      .replace(/₪/g, '')
+      .replace(/NIS/gi, '')
+      .replace(/ILS/gi, '')
+      .trim()
     if (!t) return null
     const n = Number(t)
     return Number.isFinite(n) ? n : 'invalid'
@@ -1838,60 +1870,6 @@ export function PositionDetailPage() {
               }}
             />
             <DetailHoverField
-              label="Interviewer (hiring manager)"
-              value={hiringManagerName}
-              onSave={async (next) => {
-                const v = next.trim() || null
-                const { error } = await supabase!
-                  .from('positions')
-                  .update({ hiring_manager_name: v })
-                  .eq('id', id!)
-                  .eq('user_id', user!.id)
-                if (error) toastError(error.message)
-                else {
-                  setHiringManagerName(v ?? '')
-                  success('Saved')
-                  await invalidateAll()
-                }
-              }}
-            />
-            <DetailHoverField
-              label="Hiring manager email"
-              value={hiringManagerEmail}
-              onSave={async (next) => {
-                const v = next.trim() || null
-                const { error } = await supabase!
-                  .from('positions')
-                  .update({ hiring_manager_email: v })
-                  .eq('id', id!)
-                  .eq('user_id', user!.id)
-                if (error) toastError(error.message)
-                else {
-                  setHiringManagerEmail(v ?? '')
-                  success('Saved')
-                  await invalidateAll()
-                }
-              }}
-            />
-            <DetailHoverField
-              label="Hiring manager phone"
-              value={hiringManagerPhone}
-              onSave={async (next) => {
-                const v = next.trim() || null
-                const { error } = await supabase!
-                  .from('positions')
-                  .update({ hiring_manager_phone: v })
-                  .eq('id', id!)
-                  .eq('user_id', user!.id)
-                if (error) toastError(error.message)
-                else {
-                  setHiringManagerPhone(v ?? '')
-                  success('Saved')
-                  await invalidateAll()
-                }
-              }}
-            />
-            <DetailHoverField
               label="Client salary budget (ILS)"
               value={salaryBudgetStr}
               onSave={async (next) => {
@@ -1915,6 +1893,67 @@ export function PositionDetailPage() {
             />
           </div>
 
+          <h2 className="text-stitch-on-surface mt-10 text-lg font-extrabold tracking-tight dark:text-stone-100">Hiring manager</h2>
+          <p className="text-ink-muted mt-2 text-xs dark:text-stone-500">
+            Client-side contact for this role (name, email, and phone).
+          </p>
+          <div className="mt-3 flex flex-col gap-1">
+            <DetailHoverField
+              label="Name"
+              value={hiringManagerName}
+              onSave={async (next) => {
+                const v = next.trim() || null
+                const { error } = await supabase!
+                  .from('positions')
+                  .update({ hiring_manager_name: v })
+                  .eq('id', id!)
+                  .eq('user_id', user!.id)
+                if (error) toastError(error.message)
+                else {
+                  setHiringManagerName(v ?? '')
+                  success('Saved')
+                  await invalidateAll()
+                }
+              }}
+            />
+            <DetailHoverField
+              label="Email"
+              value={hiringManagerEmail}
+              onSave={async (next) => {
+                const v = next.trim() || null
+                const { error } = await supabase!
+                  .from('positions')
+                  .update({ hiring_manager_email: v })
+                  .eq('id', id!)
+                  .eq('user_id', user!.id)
+                if (error) toastError(error.message)
+                else {
+                  setHiringManagerEmail(v ?? '')
+                  success('Saved')
+                  await invalidateAll()
+                }
+              }}
+            />
+            <DetailHoverField
+              label="Phone"
+              value={hiringManagerPhone}
+              onSave={async (next) => {
+                const v = next.trim() || null
+                const { error } = await supabase!
+                  .from('positions')
+                  .update({ hiring_manager_phone: v })
+                  .eq('id', id!)
+                  .eq('user_id', user!.id)
+                if (error) toastError(error.message)
+                else {
+                  setHiringManagerPhone(v ?? '')
+                  success('Saved')
+                  await invalidateAll()
+                }
+              }}
+            />
+          </div>
+
           <h2 className="text-stitch-on-surface mt-10 text-lg font-extrabold tracking-tight dark:text-stone-100">Milestones &amp; fees</h2>
           <p className="text-ink-muted mt-2 text-xs dark:text-stone-500">
             Recruitment fee for this role — the amount you expect from the client (same as in the creation flow).
@@ -1923,6 +1962,7 @@ export function PositionDetailPage() {
             <DetailHoverField
               label="Recruitment fee (ILS)"
               value={recruitmentFeeStr}
+              readOnlyFormat={formatIlsAmountDisplay}
               onSave={async (next) => {
                 const parsed = parseIlsAmountInput(next)
                 if (parsed === 'invalid') {
@@ -2527,11 +2567,21 @@ export function PositionDetailPage() {
                     <div className="flex min-w-0 shrink-0 flex-col gap-2 md:w-56">
                       <label className="block text-xs font-medium text-stone-600 dark:text-stone-400">
                         Interviewers
-                        <input
-                          defaultValue={s.interviewers ?? ''}
-                          onBlur={(e) => void updateStageMeta.mutateAsync({ id: s.id, interviewers: e.target.value.trim() || null })}
-                          className="border-line mt-0.5 w-full rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
-                        />
+                        <div className="mt-0.5 flex items-center gap-2">
+                          <span
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-stone-200 bg-stone-100 text-[10px] font-bold tracking-tight text-stone-600 tabular-nums dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300"
+                            title={s.interviewers?.trim() ? s.interviewers : 'No interviewer name'}
+                            aria-hidden
+                          >
+                            {personInitials(s.interviewers ?? '')}
+                          </span>
+                          <input
+                            defaultValue={s.interviewers ?? ''}
+                            onBlur={(e) => void updateStageMeta.mutateAsync({ id: s.id, interviewers: e.target.value.trim() || null })}
+                            className="border-line min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
+                            placeholder="Name(s)"
+                          />
+                        </div>
                       </label>
                       <div className="flex flex-wrap items-end gap-3">
                         <label className="text-xs font-medium text-stone-600 dark:text-stone-400">
