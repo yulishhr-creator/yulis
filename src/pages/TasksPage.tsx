@@ -1,5 +1,5 @@
 import { Link, useSearchParams } from 'react-router-dom'
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
 import { Check, ChevronDown, GripVertical, ListFilter, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -102,7 +102,6 @@ export function TasksPage() {
     queryKey: ['tasks-page', uid],
     enabled: Boolean(supabase && uid),
     staleTime: 20_000,
-    placeholderData: keepPreviousData,
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('tasks')
@@ -232,16 +231,13 @@ export function TasksPage() {
     if (!showArchived && urlStatusFilter !== 'archived') {
       list = list.filter((row) => row.status !== 'archived')
     }
-    if (companyTaskFilter !== 'all') {
-      if (companyTaskFilter.size === 0) list = []
-      else {
-        list = list.filter((row) => {
-          const pos = row.positions as { companies: { id: string } | null; company_id?: string | null } | null
-          const cid = pos?.companies?.id ?? pos?.company_id
-          if (cid == null) return false
-          return companyTaskFilter.has(cid)
-        })
-      }
+    if (companyTaskFilter !== 'all' && companyTaskFilter.size > 0) {
+      list = list.filter((row) => {
+        const pos = row.positions as { companies: { id: string } | null; company_id?: string | null } | null
+        const cid = pos?.companies?.id ?? pos?.company_id
+        if (cid == null) return false
+        return companyTaskFilter.has(cid)
+      })
     }
     const q = searchText.trim().toLowerCase()
     if (q) {
@@ -624,9 +620,9 @@ export function TasksPage() {
                 <button
                   type="button"
                   className="border-line rounded-full border px-3 py-1 text-xs font-bold dark:border-stone-600"
-                  onClick={() => setCompanyTaskFilter(new Set())}
+                  onClick={() => setCompanyTaskFilter('all')}
                 >
-                  Unselect all
+                  Clear client filter
                 </button>
               </div>
               <ul className="max-h-52 space-y-1 overflow-y-auto">
@@ -664,10 +660,12 @@ export function TasksPage() {
       </div>
 
       <div className="border-stitch-on-surface/10 overflow-x-auto rounded-2xl border border-stone-200/80 bg-white/80 dark:border-stone-600 dark:bg-stone-900/50">
-        {tasksQ.isLoading && !tasksQ.data ? (
+        {tasksQ.isPending && tasks.length === 0 ? (
+          <PageSpinner message="Loading tasks…" className="p-6" />
+        ) : tasksQ.isFetching && tasks.length === 0 && kpis && kpis.open + kpis.closed + kpis.archived > 0 ? (
           <PageSpinner message="Loading tasks…" className="p-6" />
         ) : tasks.length === 0 ? (
-          <p className="text-ink-muted p-6 text-sm">No tasks yet. Add one from the quick menu or a position page.</p>
+          <p className="text-ink-muted p-6 text-sm">No tasks yet. Add one from the quick menu.</p>
         ) : filteredTasks.length === 0 ? (
           <p className="text-ink-muted p-6 text-sm">No tasks match your filters.</p>
         ) : (
