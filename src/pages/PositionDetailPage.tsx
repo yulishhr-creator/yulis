@@ -58,6 +58,7 @@ type CandidateProfile = {
   email: string | null
   phone: string | null
   resume_storage_path?: string | null
+  deleted_at?: string | null
 }
 
 type PositionCandidateJunction = {
@@ -321,6 +322,7 @@ export function PositionDetailPage() {
 
   const posQ = useQuery({
     queryKey: ['position', id, user?.id],
+    networkMode: 'always',
     enabled: Boolean(supabase && user && id),
     queryFn: async () => {
       const { data, error } = await supabase!
@@ -336,6 +338,7 @@ export function PositionDetailPage() {
 
   const stagesQ = useQuery({
     queryKey: ['position-stages', id, user?.id],
+    networkMode: 'always',
     enabled: Boolean(supabase && user && id),
     queryFn: async () => {
       const { data, error } = await supabase!
@@ -351,6 +354,7 @@ export function PositionDetailPage() {
 
   const candidatesQ = useQuery({
     queryKey: ['position-candidates', id, user?.id],
+    networkMode: 'always',
     enabled: Boolean(supabase && user && id),
     queryFn: async () => {
       const { data, error } = await supabase!
@@ -369,15 +373,19 @@ export function PositionDetailPage() {
         )
         .eq('position_id', id!)
         .eq('user_id', user!.id)
-        .is('candidates.deleted_at', null)
         .order('created_at', { ascending: false })
       if (error) throw error
-      return (data ?? []) as PositionCandidateJunction[]
+      const rows = (data ?? []) as PositionCandidateJunction[]
+      return rows.filter((row) => {
+        const c = nestedCandidate(row.candidates)
+        return c == null || !c.deleted_at
+      })
     },
   })
 
   const tasksQ = useQuery({
     queryKey: ['position-tasks', id, user?.id],
+    networkMode: 'always',
     enabled: Boolean(supabase && user && id),
     queryFn: async () => {
       const { data, error } = await supabase!
@@ -407,6 +415,7 @@ export function PositionDetailPage() {
 
   const activityQ = useQuery({
     queryKey: ['position-activity', id, user?.id],
+    networkMode: 'always',
     enabled: Boolean(supabase && user && id),
     queryFn: async () => {
       const { data, error } = await supabase!
@@ -428,6 +437,7 @@ export function PositionDetailPage() {
 
   const publicListTokenQ = useQuery({
     queryKey: ['position-public-list-token', id, user?.id],
+    networkMode: 'always',
     enabled: Boolean(supabase && user && id && positionIsOpen),
     queryFn: async () => {
       const { data, error } = await supabase!
@@ -1357,8 +1367,22 @@ export function PositionDetailPage() {
     )
   }
 
-  if (!position) {
+  if (posQ.isPending) {
     return <PageSpinner message="Loading role…" className="min-h-[50vh]" />
+  }
+
+  if (!position) {
+    return (
+      <div className="bg-paper text-ink flex min-h-dvh flex-col items-center justify-center gap-3 px-6 dark:bg-paper-dark dark:text-stone-100">
+        <p className="text-center text-sm font-semibold text-stone-800 dark:text-stone-100">We couldn&apos;t load this role.</p>
+        <p className="text-ink-muted max-w-sm text-center text-xs dark:text-stone-400">
+          Something went wrong while fetching this page. Try again or go back to your positions list.
+        </p>
+        <Link to="/positions" className="text-accent text-sm font-semibold underline dark:text-orange-300">
+          Back to positions
+        </Link>
+      </div>
+    )
   }
 
   const createdAt = (position as { created_at?: string }).created_at

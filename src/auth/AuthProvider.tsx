@@ -22,6 +22,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next)
+      // Unblock UI even if getSession() hangs (storage lock, extension interference).
+      setLoading(false)
     })
 
     return () => subscription.unsubscribe()
