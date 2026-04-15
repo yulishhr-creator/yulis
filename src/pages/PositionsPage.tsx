@@ -1,76 +1,16 @@
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { differenceInCalendarDays } from 'date-fns'
-import { Briefcase, Building2, ChevronDown, ChevronRight, Coins, GripVertical, Search, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronRight, GripVertical, Search } from 'lucide-react'
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { logActivityEvent } from '@/lib/activityLog'
-import { candidateStatusPill } from '@/lib/candidateStatus'
+import { assignmentStatusPill, positionLifecyclePill } from '@/lib/candidateStatus'
 import { useToast } from '@/hooks/useToast'
-import { isMissingRequirementsColumnError, parseRequirementTokens } from '@/lib/requirementValues'
-const DRAFT_KEY = 'yulis_position_wizard_draft'
-
-const WIZARD_STEPS = ['Details', 'Review'] as const
-
-type Draft = {
-  step: number
-  companyId: string
-  title: string
-  industry: string
-  plannedFee: string
-  requirements: string
-}
-
-function loadDraft(): Partial<Draft> {
-  try {
-    const raw = sessionStorage.getItem(DRAFT_KEY)
-    if (!raw) return {}
-    return JSON.parse(raw) as Partial<Draft>
-  } catch {
-    return {}
-  }
-}
-
-function saveDraft(d: Partial<Draft>) {
-  try {
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(d))
-  } catch {
-    /* ignore */
-  }
-}
-
-/** Position row status — labels aligned with board columns on this page. */
-function positionStatusPill(status: string): { label: string; className: string } {
-  switch (status) {
-    case 'pending':
-    case 'in_progress':
-      return {
-        label: 'In progress',
-        className:
-          'border-sky-200/80 bg-sky-50 text-sky-900 dark:border-cyan-700/60 dark:bg-cyan-950/40 dark:text-cyan-100',
-      }
-    case 'success':
-      return {
-        label: 'Success',
-        className:
-          'border-emerald-200/80 bg-emerald-50 text-emerald-900 dark:border-emerald-700/60 dark:bg-emerald-950/40 dark:text-emerald-100',
-      }
-    case 'cancelled':
-      return {
-        label: 'Cancelled',
-        className:
-          'border-stone-200/80 bg-stone-100 text-stone-700 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300',
-      }
-    default:
-      return {
-        label: status.replace('_', ' '),
-        className: 'border-stone-200/80 bg-stone-50 text-stone-700 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300',
-      }
-  }
-}
+import { CreatePositionWizard } from '@/pages/CreatePositionWizard'
 
 /** Tenure on role: days under a week, else rounded weeks (e.g. 5d, 2w). */
 function formatCandidateAge(createdAt: string): string {
@@ -80,21 +20,26 @@ function formatCandidateAge(createdAt: string): string {
   return `${w}w`
 }
 
-type CandidateNested = {
+/** One row from position_candidates with nested candidate + stage. */
+type BoardAssignmentRow = {
   id: string
-  full_name: string
   status: string
   created_at: string
-  updated_at: string
-  deleted_at: string | null
-  /** Supabase may return object or single-element array for nested FK */
+  candidates: { id: string; full_name: string; deleted_at: string | null } | { id: string; full_name: string; deleted_at: string | null }[] | null
   position_stages: { name: string } | { name: string }[] | null
 }
 
-function candidateStageName(st: CandidateNested['position_stages']): string {
+function candidateStageName(st: BoardAssignmentRow['position_stages']): string {
   if (!st) return '—'
   if (Array.isArray(st)) return st[0]?.name ?? '—'
   return st.name ?? '—'
+}
+
+function boardCandidateOne(
+  v: BoardAssignmentRow['candidates'],
+): { id: string; full_name: string; deleted_at: string | null } | null {
+  if (v == null) return null
+  return Array.isArray(v) ? (v[0] ?? null) : v
 }
 
 function positionMatchesSearch(p: PositionListItem, raw: string): boolean {
@@ -103,19 +48,21 @@ function positionMatchesSearch(p: PositionListItem, raw: string): boolean {
   if ((p.title ?? '').toLowerCase().includes(q)) return true
   const co = (p.companies as { name?: string } | null)?.name ?? ''
   if (co.toLowerCase().includes(q)) return true
-  for (const c of p.candidates ?? []) {
-    if (c.deleted_at) continue
+  for (const pc of p.candidates ?? []) {
+    const c = boardCandidateOne(pc.candidates)
+    if (!c || c.deleted_at) continue
     if ((c.full_name ?? '').toLowerCase().includes(q)) return true
-    if (candidateStageName(c.position_stages).toLowerCase().includes(q)) return true
+    if (candidateStageName(pc.position_stages).toLowerCase().includes(q)) return true
   }
   return false
 }
 
 function partitionByStatus(list: PositionListItem[]) {
-  const inProgress = list.filter((p) => p.status === 'pending' || p.status === 'in_progress')
-  const success = list.filter((p) => p.status === 'success')
+  const active = list.filter((p) => p.status === 'active')
+  const onHold = list.filter((p) => p.status === 'on_hold')
+  const succeeded = list.filter((p) => p.status === 'succeeded')
   const cancelled = list.filter((p) => p.status === 'cancelled')
-  return { inProgress, success, cancelled }
+  return { active, onHold, succeeded, cancelled }
 }
 
 type PositionListItem = {
@@ -125,7 +72,7 @@ type PositionListItem = {
   company_id: string
   created_at: string
   companies: unknown
-  candidates?: CandidateNested[] | null
+  candidates?: BoardAssignmentRow[] | null
 }
 
 function PositionCard({
@@ -143,8 +90,11 @@ function PositionCard({
 }) {
   const co = p.companies as { name: string } | null
   const daysSince = differenceInCalendarDays(new Date(), new Date(p.created_at))
-  const pill = positionStatusPill(p.status)
-  const cands = (p.candidates ?? []).filter((c) => !c.deleted_at)
+  const pill = positionLifecyclePill(p.status)
+  const cands = (p.candidates ?? []).filter((pc) => {
+    const c = boardCandidateOne(pc.candidates)
+    return c && !c.deleted_at
+  })
   const [expanded, setExpanded] = useState(false)
 
   return (
@@ -214,12 +164,13 @@ function PositionCard({
           </div>
           {expanded && cands.length > 0 ? (
             <ul className="mt-1.5 space-y-1.5 border-t border-stone-200/70 pt-1.5 dark:border-stone-600">
-              {cands.map((c) => {
-                const st = candidateStageName(c.position_stages)
-                const out = candidateStatusPill(c.status)
+              {cands.map((pc) => {
+                const c = boardCandidateOne(pc.candidates)!
+                const st = candidateStageName(pc.position_stages)
+                const out = assignmentStatusPill(pc.status)
                 return (
                   <li
-                    key={c.id}
+                    key={pc.id}
                     className="flex flex-wrap items-center gap-2 rounded-xl bg-stone-50/90 px-2.5 py-2 text-sm dark:bg-stone-800/60"
                   >
                     <Link to={`/positions/${p.id}?candidate=${c.id}`} className="min-w-0 flex-1 font-medium text-[#006384] hover:underline dark:text-cyan-300" draggable={false}>
@@ -231,7 +182,7 @@ function PositionCard({
                       {out.label}
                     </span>
                     <span className="text-ink-muted shrink-0 text-[10px] font-semibold tabular-nums dark:text-stone-500" title="Time on role">
-                      {formatCandidateAge(c.created_at)}
+                      {formatCandidateAge(pc.created_at)}
                     </span>
                     <span className="text-ink-muted w-full text-[10px] dark:text-stone-500">{st}</span>
                   </li>
@@ -245,7 +196,7 @@ function PositionCard({
   )
 }
 
-type DropZone = 'active' | 'success' | 'cancelled'
+type DropZone = 'active' | 'on_hold' | 'succeeded' | 'cancelled'
 
 function dropSlotKey(companyId: string, zone: DropZone): string {
   return `${companyId}:${zone}`
@@ -276,7 +227,7 @@ function CompanyBoardColumn({
   onDragOverSlot: (e: React.DragEvent, companyId: string, zone: DropZone) => void
   onDropSlot: (e: React.DragEvent, companyId: string, zone: DropZone) => void
 }) {
-  const { inProgress, success, cancelled } = partitionByStatus(colPositions)
+  const { active, onHold, succeeded, cancelled } = partitionByStatus(colPositions)
 
   function leaveSlot(e: React.DragEvent, slot: string) {
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
@@ -289,7 +240,8 @@ function CompanyBoardColumn({
     const hot = dropHover === slot
     const base = 'mt-2 min-h-[2.5rem] rounded-xl transition-colors'
     if (!hot) return `${base} border border-transparent`
-    if (zone === 'success') return `${base} bg-emerald-500/10 ring-2 ring-emerald-500/35`
+    if (zone === 'succeeded') return `${base} bg-emerald-500/10 ring-2 ring-emerald-500/35`
+    if (zone === 'on_hold') return `${base} bg-amber-500/10 ring-2 ring-amber-500/35`
     if (zone === 'cancelled') return `${base} bg-stone-400/10 ring-2 ring-stone-400/40`
     return `${base} bg-[#fd8863]/10 ring-2 ring-[#9b3e20]/35 dark:bg-orange-500/10 dark:ring-orange-400/40`
   }
@@ -303,11 +255,13 @@ function CompanyBoardColumn({
         onDragLeave={(e) => leaveSlot(e, slot)}
         className={
           dropHover === slot
-            ? zone === 'success'
+            ? zone === 'succeeded'
               ? 'rounded-xl ring-2 ring-emerald-500/30 ring-offset-1 ring-offset-white dark:ring-offset-stone-900'
               : zone === 'cancelled'
                 ? 'rounded-xl ring-2 ring-stone-400/40 ring-offset-1 ring-offset-white dark:ring-offset-stone-900'
-                : 'rounded-xl ring-2 ring-[#9b3e20]/25 ring-offset-1 ring-offset-white dark:ring-offset-stone-900'
+                : zone === 'on_hold'
+                  ? 'rounded-xl ring-2 ring-amber-400/35 ring-offset-1 ring-offset-white dark:ring-offset-stone-900'
+                  : 'rounded-xl ring-2 ring-[#9b3e20]/25 ring-offset-1 ring-offset-white dark:ring-offset-stone-900'
             : ''
         }
       >
@@ -348,13 +302,9 @@ function CompanyBoardColumn({
       <h3 className="text-ink border-stitch-on-surface/10 border-b pb-2 text-sm font-extrabold dark:border-stone-600 dark:text-stone-100">
         {companyName}
       </h3>
-      {sectionShell(
-        'active',
-        'In progress',
-        'Open roles (not yet fulfilled or cancelled).',
-        inProgress,
-      )}
-      {sectionShell('success', 'Success', 'Fulfilled placements.', success)}
+      {sectionShell('active', 'Active', 'Open roles — actively sourcing.', active)}
+      {sectionShell('on_hold', 'On hold', 'Paused roles.', onHold)}
+      {sectionShell('succeeded', 'Succeeded', 'Fulfilled placements.', succeeded)}
       {sectionShell('cancelled', 'Cancelled', 'Closed without hire.', cancelled)}
     </div>
   )
@@ -396,9 +346,12 @@ export function PositionsPage() {
           `
           id, title, status, company_id, created_at, updated_at,
           companies ( name ),
-          candidates (
-            id, full_name, status, created_at, updated_at, deleted_at,
-            position_stages ( name )
+          position_candidates (
+            id,
+            status,
+            created_at,
+            position_stages ( name ),
+            candidates ( id, full_name, deleted_at )
           )
         `,
         )
@@ -418,12 +371,12 @@ export function PositionsPage() {
     },
     onSuccess: async ({ next, prev, id }) => {
       if (!supabase || !user) return
-      if (next === 'success') {
-        success('Moved to Success')
+      if (next === 'succeeded') {
+        success('Moved to Succeeded')
         await logActivityEvent(supabase, user.id, {
           event_type: 'position_status_changed',
           position_id: id,
-          title: 'Position fulfilled',
+          title: 'Position succeeded',
           subtitle: `${prev} → ${next}`,
           metadata: { from: prev, to: next },
         })
@@ -436,12 +389,21 @@ export function PositionsPage() {
           subtitle: `${prev} → ${next}`,
           metadata: { from: prev, to: next },
         })
-      } else {
-        success('Moved to In progress')
+      } else if (next === 'on_hold') {
+        success('Moved to On hold')
         await logActivityEvent(supabase, user.id, {
           event_type: 'position_status_changed',
           position_id: id,
-          title: 'Position reopened',
+          title: 'Position on hold',
+          subtitle: `${prev} → ${next}`,
+          metadata: { from: prev, to: next },
+        })
+      } else {
+        success('Moved to Active')
+        await logActivityEvent(supabase, user.id, {
+          event_type: 'position_status_changed',
+          position_id: id,
+          title: 'Position status updated',
           subtitle: `${prev} → ${next}`,
           metadata: { from: prev, to: next },
         })
@@ -464,13 +426,11 @@ export function PositionsPage() {
     }
   }
 
-  function targetStatusForZone(zone: DropZone, current: string): 'pending' | 'in_progress' | 'success' | 'cancelled' | null {
-    if (zone === 'success') return current === 'success' ? null : 'success'
+  function targetStatusForZone(zone: DropZone, current: string): 'active' | 'on_hold' | 'succeeded' | 'cancelled' | null {
+    if (zone === 'succeeded') return current === 'succeeded' ? null : 'succeeded'
     if (zone === 'cancelled') return current === 'cancelled' ? null : 'cancelled'
-    if (zone === 'active') {
-      if (current === 'pending' || current === 'in_progress') return null
-      return 'in_progress'
-    }
+    if (zone === 'active') return current === 'active' ? null : 'active'
+    if (zone === 'on_hold') return current === 'on_hold' ? null : 'on_hold'
     return null
   }
 
@@ -524,7 +484,7 @@ export function PositionsPage() {
     <div className="flex flex-col gap-6">
       <ScreenHeader
         title="Positions"
-        subtitle="Filter by client, then drag roles between In progress, Success, and Cancelled."
+        subtitle="Filter by client, then drag roles between Active, On hold, Succeeded, and Cancelled."
         backTo="/"
         right={
           <Link
@@ -564,9 +524,9 @@ export function PositionsPage() {
       </div>
 
       <p className="text-ink-muted text-xs dark:text-stone-500">
-        Drag a role by the grip into <strong className="text-ink dark:text-stone-300">In progress</strong>,{' '}
-        <strong className="text-ink dark:text-stone-300">Success</strong>, or <strong className="text-ink dark:text-stone-300">Cancelled</strong>{' '}
-        within a client column.
+        Drag a role by the grip into <strong className="text-ink dark:text-stone-300">Active</strong>,{' '}
+        <strong className="text-ink dark:text-stone-300">On hold</strong>, <strong className="text-ink dark:text-stone-300">Succeeded</strong>, or{' '}
+        <strong className="text-ink dark:text-stone-300">Cancelled</strong> within a client column.
       </p>
 
       {positionsQ.isLoading ? (
@@ -650,310 +610,6 @@ export function PositionsPage() {
           )}
         </div>
       )}
-    </div>
-  )
-}
-
-function wizardSectionClass(): string {
-  return 'rounded-2xl border border-stone-200/90 bg-stone-50/40 p-4 dark:border-stone-600/80 dark:bg-stone-900/35'
-}
-
-function CreatePositionWizard({ companies }: { companies: { id: string; name: string; status?: string }[] }) {
-  const { user } = useAuth()
-  const supabase = getSupabase()
-  const navigate = useNavigate()
-  const qc = useQueryClient()
-  const { success, error: toastError } = useToast()
-  const d0 = loadDraft()
-  const [step, setStep] = useState(Math.min(1, Math.max(0, d0.step ?? 0)))
-  const [companyId, setCompanyId] = useState(d0.companyId ?? companies[0]?.id ?? '')
-  const [title, setTitle] = useState(d0.title ?? '')
-  const [industry, setIndustry] = useState(d0.industry ?? '')
-  const [plannedFee, setPlannedFee] = useState(d0.plannedFee ?? '')
-  const [requirements, setRequirements] = useState(
-    typeof d0.requirements === 'string'
-      ? d0.requirements
-      : Array.isArray((d0 as { requirementItemValues?: string[] }).requirementItemValues)
-        ? ((d0 as { requirementItemValues: string[] }).requirementItemValues ?? []).join('\n')
-        : '',
-  )
-  const [pending, setPending] = useState(false)
-
-  useEffect(() => {
-    saveDraft({ step, companyId, title, industry, plannedFee, requirements })
-  }, [step, companyId, title, industry, plannedFee, requirements])
-
-  function parseBudgetIls(): number | null {
-    const raw = plannedFee.trim().replace(/\s/g, '').replace(',', '.')
-    if (!raw) return null
-    const n = Number(raw)
-    if (!Number.isFinite(n) || n < 0) return null
-    return n
-  }
-
-  async function onCreate() {
-    if (!supabase || !user || !companyId) return
-    const budget = parseBudgetIls()
-    if (plannedFee.trim() && budget == null) {
-      toastError('Budget must be a valid number, or leave it empty.')
-      return
-    }
-    setPending(true)
-    const trimmedReq = requirements.trim()
-    const baseRow = {
-      user_id: user.id,
-      company_id: companyId,
-      title: title.trim() || 'New position',
-      industry: industry.trim() || null,
-      status: 'pending' as const,
-      planned_fee_ils: budget,
-    }
-
-    let data: { id: string; title: string } | null = null
-    let error: { message: string } | null = null
-
-    if (trimmedReq) {
-      const tryText = await supabase.from('positions').insert({ ...baseRow, requirements: trimmedReq }).select('id, title').single()
-      if (!tryText.error) {
-        data = tryText.data as { id: string; title: string }
-      } else if (isMissingRequirementsColumnError(tryText.error.message)) {
-        const tokens = parseRequirementTokens(requirements)
-        const tryArr = await supabase
-          .from('positions')
-          .insert({ ...baseRow, requirement_item_values: tokens })
-          .select('id, title')
-          .single()
-        data = tryArr.data as { id: string; title: string } | null
-        error = tryArr.error
-      } else {
-        error = tryText.error
-      }
-    } else {
-      const ins = await supabase.from('positions').insert(baseRow).select('id, title').single()
-      data = ins.data as { id: string; title: string } | null
-      error = ins.error
-    }
-
-    if (error) {
-      setPending(false)
-      toastError(error.message)
-      return
-    }
-    const posId = data!.id
-    const posTitle = data!.title ?? 'Role'
-    const defaultStages = ['Applied', 'Screening', 'Interview', 'Offer']
-    for (let i = 0; i < defaultStages.length; i++) {
-      await supabase.from('position_stages').insert({
-        user_id: user.id,
-        position_id: posId,
-        sort_order: i,
-        name: defaultStages[i],
-      })
-    }
-    await logActivityEvent(supabase, user.id, {
-      event_type: 'position_created',
-      position_id: posId,
-      title: 'Position created',
-      subtitle: posTitle,
-      metadata: { company_id: companyId },
-    })
-    try {
-      sessionStorage.removeItem(DRAFT_KEY)
-    } catch {
-      /* ignore */
-    }
-    setPending(false)
-    success('Position created')
-    await qc.invalidateQueries({ queryKey: ['positions'] })
-    navigate('/positions', { replace: true })
-  }
-
-  const canContinue = Boolean(companyId && title.trim())
-
-  return (
-    <div className="border-line overflow-hidden rounded-3xl border border-stone-200/80 bg-white shadow-sm dark:border-line-dark dark:bg-stone-900/60 dark:shadow-none">
-      <div className="from-[#fd8863]/20 via-[#97daff]/15 to-[#b4fdb4]/15 border-b border-stone-200/80 bg-gradient-to-br px-5 py-4 dark:border-stone-600 dark:from-orange-950/40 dark:via-stone-900 dark:to-stone-900">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-accent flex items-center gap-2 text-[11px] font-bold tracking-[0.2em] uppercase dark:text-orange-300">
-              <Sparkles className="h-3.5 w-3.5" aria-hidden />
-              New role
-            </p>
-            <h2 className="mt-1 text-lg font-extrabold tracking-tight text-[#302e2b] dark:text-stone-100">
-              {WIZARD_STEPS[step]}
-            </h2>
-          </div>
-          <div className="flex items-center gap-2" aria-hidden>
-            {WIZARD_STEPS.map((_, i) => (
-              <span
-                key={i}
-                className={`h-2 rounded-full transition-all ${i === step ? 'w-8 bg-[#9b3e20] dark:bg-orange-500' : 'w-2 bg-stone-300/90 dark:bg-stone-600'}`}
-              />
-            ))}
-          </div>
-        </div>
-        <p className="text-ink-muted mt-2 text-xs dark:text-stone-400">
-          {step === 0
-            ? 'Everything optional except client and role title — you can refine the role on the next screen.'
-            : 'Check the summary, then create. New roles start in progress; change status anytime on the role page.'}
-        </p>
-      </div>
-
-      <div className="p-5 sm:p-6">
-        {step === 0 ? (
-          <div className="flex flex-col gap-5">
-            <div className={wizardSectionClass()}>
-              <div className="text-ink-muted mb-3 flex items-center gap-2 text-xs font-bold tracking-wide uppercase dark:text-stone-500">
-                <Building2 className="h-4 w-4 text-[#9b3e20] dark:text-orange-400" aria-hidden />
-                Client
-              </div>
-              <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-                Company
-                <select
-                  value={companyId}
-                  onChange={(e) => setCompanyId(e.target.value)}
-                  className="border-line rounded-xl border bg-white px-3 py-2.5 text-base shadow-sm dark:border-line-dark dark:bg-stone-900/80"
-                  required
-                >
-                  {companies.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                      {c.status === 'inactive' ? ' (inactive)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div className={wizardSectionClass()}>
-              <div className="text-ink-muted mb-3 flex items-center gap-2 text-xs font-bold tracking-wide uppercase dark:text-stone-500">
-                <Briefcase className="h-4 w-4 text-[#9b3e20] dark:text-orange-400" aria-hidden />
-                Role
-              </div>
-              <div className="flex flex-col gap-4">
-                <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-                  Role title <span className="text-rose-600 dark:text-rose-400">*</span>
-                  <input
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    className="border-line rounded-xl border bg-white px-3 py-2.5 text-base shadow-sm dark:border-line-dark dark:bg-stone-900/80"
-                    placeholder="e.g. Senior Software Engineer"
-                    autoComplete="off"
-                  />
-                </label>
-                <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-                  Industry <span className="text-ink-muted font-normal">(optional)</span>
-                  <input
-                    value={industry}
-                    onChange={(e) => setIndustry(e.target.value)}
-                    className="border-line rounded-xl border bg-white px-3 py-2.5 text-base shadow-sm dark:border-line-dark dark:bg-stone-900/80"
-                    placeholder="e.g. Fintech, Healthcare…"
-                    autoComplete="off"
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div className={wizardSectionClass()}>
-              <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-                Client brief / requirements <span className="text-ink-muted font-normal">(optional)</span>
-                <textarea
-                  value={requirements}
-                  onChange={(e) => setRequirements(e.target.value)}
-                  disabled={pending}
-                  rows={6}
-                  placeholder="Paste bullets or notes from the client. Skip if you’ll add this later on the role page."
-                  className="border-line resize-y rounded-xl border bg-white px-3 py-2.5 text-sm leading-relaxed shadow-sm dark:border-line-dark dark:bg-stone-900/80"
-                />
-              </label>
-            </div>
-
-            <div className={wizardSectionClass()}>
-              <div className="text-ink-muted mb-3 flex items-center gap-2 text-xs font-bold tracking-wide uppercase dark:text-stone-500">
-                <Coins className="h-4 w-4 text-[#9b3e20] dark:text-orange-400" aria-hidden />
-                Fee
-              </div>
-              <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-                Budget <span className="text-ink-muted font-normal">(optional, ₪)</span>
-                <input
-                  value={plannedFee}
-                  onChange={(e) => setPlannedFee(e.target.value)}
-                  className="border-line rounded-xl border bg-white px-3 py-2.5 text-base shadow-sm dark:border-line-dark dark:bg-stone-900/80"
-                  placeholder="Leave empty if unknown"
-                  inputMode="decimal"
-                  autoComplete="off"
-                />
-              </label>
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-2xl border border-stone-200/90 bg-stone-50/50 p-5 dark:border-stone-600 dark:bg-stone-900/40">
-            <h3 className="text-sm font-extrabold text-[#302e2b] dark:text-stone-100">Summary</h3>
-            <dl className="mt-4 space-y-3 text-sm">
-              <div className="flex flex-wrap justify-between gap-2 border-b border-stone-200/70 pb-3 dark:border-stone-600/80">
-                <dt className="text-ink-muted font-medium">Company</dt>
-                <dd className="text-right font-semibold text-[#302e2b] dark:text-stone-100">
-                  {companies.find((c) => c.id === companyId)?.name ?? '—'}
-                </dd>
-              </div>
-              <div className="flex flex-wrap justify-between gap-2 border-b border-stone-200/70 pb-3 dark:border-stone-600/80">
-                <dt className="text-ink-muted font-medium">Role title</dt>
-                <dd className="text-right font-semibold text-[#302e2b] dark:text-stone-100">{title.trim() || '—'}</dd>
-              </div>
-              <div className="flex flex-wrap justify-between gap-2 border-b border-stone-200/70 pb-3 dark:border-stone-600/80">
-                <dt className="text-ink-muted font-medium">Industry</dt>
-                <dd className="text-right font-semibold text-[#302e2b] dark:text-stone-100">{industry.trim() || '—'}</dd>
-              </div>
-              <div className="flex flex-wrap justify-between gap-2 border-b border-stone-200/70 pb-3 dark:border-stone-600/80">
-                <dt className="text-ink-muted font-medium">Client brief</dt>
-                <dd className="max-w-[min(100%,20rem)] text-right text-[#302e2b] dark:text-stone-100">
-                  {requirements.trim() ? <span className="whitespace-pre-wrap">{requirements.trim()}</span> : '—'}
-                </dd>
-              </div>
-              <div className="flex flex-wrap justify-between gap-2">
-                <dt className="text-ink-muted font-medium">Budget</dt>
-                <dd className="text-right font-semibold text-[#302e2b] dark:text-stone-100">
-                  {parseBudgetIls() != null ? `₪${parseBudgetIls()!.toLocaleString('he-IL')}` : '—'}
-                </dd>
-              </div>
-            </dl>
-            <p className="text-ink-muted mt-4 text-xs leading-relaxed dark:text-stone-500">
-              Default pipeline: Applied → Screening → Interview → Offer. Status starts as <strong className="text-stone-700 dark:text-stone-300">In progress</strong> (pending).
-            </p>
-          </div>
-        )}
-
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          {step > 0 ? (
-            <button
-              type="button"
-              className="rounded-full border border-stone-300 px-5 py-2.5 text-sm font-semibold text-stone-800 transition hover:bg-stone-50 dark:border-stone-600 dark:text-stone-200 dark:hover:bg-stone-800/80"
-              onClick={() => setStep((s) => s - 1)}
-            >
-              Back
-            </button>
-          ) : null}
-          {step < 1 ? (
-            <button
-              type="button"
-              disabled={!canContinue}
-              className="rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-6 py-2.5 text-sm font-bold text-white shadow-md shadow-orange-900/10 disabled:cursor-not-allowed disabled:opacity-45 dark:shadow-none"
-              onClick={() => canContinue && setStep(1)}
-            >
-              Review
-            </button>
-          ) : (
-            <button
-              type="button"
-              disabled={pending || !title.trim()}
-              className="rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-6 py-2.5 text-sm font-bold text-white shadow-md shadow-orange-900/10 disabled:cursor-not-allowed disabled:opacity-45 dark:shadow-none"
-              onClick={() => void onCreate()}
-            >
-              {pending ? 'Creating…' : 'Create position'}
-            </button>
-          )}
-        </div>
-      </div>
     </div>
   )
 }

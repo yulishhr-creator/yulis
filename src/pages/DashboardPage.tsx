@@ -12,38 +12,11 @@ import { formatDue } from '@/lib/dates'
 import { Modal } from '@/components/ui/Modal'
 import { useWorkTimer } from '@/work/WorkTimerContext'
 import { useToast } from '@/hooks/useToast'
-function positionStatusPill(status: string): { label: string; className: string } {
-  switch (status) {
-    case 'pending':
-      return {
-        label: 'Pending',
-        className:
-          'border-amber-200/80 bg-amber-50 text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/50 dark:text-amber-100',
-      }
-    case 'in_progress':
-      return {
-        label: 'In progress',
-        className:
-          'border-sky-200/80 bg-sky-50 text-sky-900 dark:border-cyan-700/60 dark:bg-cyan-950/40 dark:text-cyan-100',
-      }
-    case 'success':
-      return {
-        label: 'Success',
-        className:
-          'border-emerald-200/80 bg-emerald-50 text-emerald-900 dark:border-emerald-700/60 dark:bg-emerald-950/40 dark:text-emerald-100',
-      }
-    case 'cancelled':
-      return {
-        label: 'Cancelled',
-        className:
-          'border-stone-200/80 bg-stone-100 text-stone-700 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300',
-      }
-    default:
-      return {
-        label: status.replace('_', ' '),
-        className: 'border-stone-200/80 bg-stone-50 text-stone-700 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300',
-      }
-  }
+import { formatAssignmentStatus, positionLifecyclePill } from '@/lib/candidateStatus'
+
+function nestedOne<T>(v: T | T[] | null | undefined): T | null {
+  if (v == null) return null
+  return Array.isArray(v) ? (v[0] ?? null) : v
 }
 
 export function DashboardPage() {
@@ -58,7 +31,7 @@ export function DashboardPage() {
   const { success, error: toastError } = useToast()
   const [trackOpen, setTrackOpen] = useState(false)
   const [trackPosId, setTrackPosId] = useState('')
-  const [positionsScope, setPositionsScope] = useState<'open' | 'in_progress' | 'all'>('open')
+  const [positionsScope, setPositionsScope] = useState<'open' | 'on_hold' | 'all'>('open')
   /** `all` = show every task; `Set` = only tasks whose position's company id is in the set */
   const [companyTaskFilter, setCompanyTaskFilter] = useState<'all' | Set<string>>('all')
   const [companyFilterOpen, setCompanyFilterOpen] = useState(false)
@@ -66,6 +39,10 @@ export function DashboardPage() {
   const [taskModalOpen, setTaskModalOpen] = useState(false)
   const [newTaskTitle, setNewTaskTitle] = useState('')
   const [newTaskPositionId, setNewTaskPositionId] = useState('')
+  const [newTaskPositionCandidateId, setNewTaskPositionCandidateId] = useState('')
+  const [newTaskDescription, setNewTaskDescription] = useState('')
+  const [taskTemplateId, setTaskTemplateId] = useState('')
+  const [saveTaskAsTemplate, setSaveTaskAsTemplate] = useState(false)
   const taskStatusParam = searchParams.get('taskStatus')
   const taskStatusFilter =
     taskStatusParam === 'todo' || taskStatusParam === 'in_progress' || taskStatusParam === 'done' ? taskStatusParam : null
@@ -83,9 +60,9 @@ export function DashboardPage() {
           status,
           due_at,
           position_id,
-          candidate_id,
+          position_candidate_id,
           positions ( id, title, company_id, companies ( id, name ) ),
-          candidates ( id, full_name )
+          position_candidates ( id, candidates ( id, full_name ) )
         `,
         )
         .eq('user_id', uid!)
@@ -123,15 +100,23 @@ export function DashboardPage() {
           updated_at,
           company_id,
           companies ( name ),
-          candidates ( id, full_name, status, position_stage_id, updated_at, created_at, position_stages ( name ) )
+          position_candidates (
+            id,
+            status,
+            updated_at,
+            created_at,
+            candidate_id,
+            candidates ( id, full_name ),
+            position_stages ( name )
+          )
         `,
         )
         .eq('user_id', uid!)
         .is('deleted_at', null)
         .order('updated_at', { ascending: false })
         .limit(12)
-      if (positionsScope === 'open') q = q.eq('status', 'pending')
-      else if (positionsScope === 'in_progress') q = q.eq('status', 'in_progress')
+      if (positionsScope === 'open') q = q.in('status', ['active', 'on_hold'])
+      else if (positionsScope === 'on_hold') q = q.eq('status', 'on_hold')
       const { data, error } = await q
       if (error) throw error
       return data ?? []
@@ -147,18 +132,17 @@ export function DashboardPage() {
         .select('id')
         .eq('user_id', uid!)
         .is('deleted_at', null)
-        .in('status', ['pending', 'in_progress'])
+        .in('status', ['active', 'on_hold'])
       if (pErr) throw pErr
       const posIds = (positions ?? []).map((p) => p.id)
       if (posIds.length === 0) {
         return { activeCandidateCount: 0, activePositionCount: 0 }
       }
       const { count, error: cErr } = await supabase!
-        .from('candidates')
+        .from('position_candidates')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', uid!)
-        .is('deleted_at', null)
-        .eq('status', 'pending')
+        .eq('status', 'in_progress')
         .in('position_id', posIds)
       if (cErr) throw cErr
       return { activeCandidateCount: count ?? 0, activePositionCount: posIds.length }
@@ -180,6 +164,36 @@ export function DashboardPage() {
     },
   })
 
+  const taskTemplatesQ = useQuery({
+    queryKey: ['task-templates', uid],
+    enabled: Boolean(supabase && uid && taskModalOpen),
+    queryFn: async () => {
+      const { data, error } = await supabase!
+        .from('task_templates')
+        .select('id, title, description')
+        .eq('user_id', uid!)
+        .order('title')
+      if (error) throw error
+      return data ?? []
+    },
+  })
+
+  const positionCandidatesForTaskQ = useQuery({
+    queryKey: ['dashboard-task-pcs', uid, newTaskPositionId],
+    enabled: Boolean(supabase && uid && taskModalOpen && newTaskPositionId.trim()),
+    queryFn: async () => {
+      const { data, error } = await supabase!
+        .from('position_candidates')
+        .select('id, status, candidates ( id, full_name )')
+        .eq('user_id', uid!)
+        .eq('position_id', newTaskPositionId.trim())
+        .eq('status', 'in_progress')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data ?? []
+    },
+  })
+
   const timerPositionsQ = useQuery({
     queryKey: ['dashboard-timer-positions', uid],
     enabled: Boolean(supabase && uid),
@@ -189,7 +203,7 @@ export function DashboardPage() {
         .select('id, title, status, companies ( name )')
         .eq('user_id', uid!)
         .is('deleted_at', null)
-        .in('status', ['pending', 'in_progress'])
+        .in('status', ['active', 'on_hold'])
         .order('title')
       if (error) throw error
       return data ?? []
@@ -237,6 +251,10 @@ export function DashboardPage() {
   useEffect(() => {
     if (searchParams.get('addTask') !== '1') return
     setNewTaskTitle('')
+    setNewTaskDescription('')
+    setNewTaskPositionCandidateId('')
+    setTaskTemplateId('')
+    setSaveTaskAsTemplate(false)
     const pid = sessionStorage.getItem('yulis_task_prefill_position_id')
     setNewTaskPositionId(pid ?? '')
     setTaskModalOpen(true)
@@ -263,26 +281,48 @@ export function DashboardPage() {
     )
   }, [searchParams, setSearchParams])
 
+  useEffect(() => {
+    setNewTaskPositionCandidateId('')
+  }, [newTaskPositionId])
+
   const addTaskFromDashboard = useMutation({
     mutationFn: async () => {
       if (!newTaskPositionId.trim()) throw new Error('Choose a position')
-      const { error } = await supabase!.from('tasks').insert({
+      const row: Record<string, unknown> = {
         user_id: uid!,
         position_id: newTaskPositionId.trim(),
         title: newTaskTitle.trim() || 'Task',
+        description: newTaskDescription.trim() || null,
         status: 'todo',
         due_at: null,
-      })
+      }
+      if (newTaskPositionCandidateId.trim()) {
+        row.position_candidate_id = newTaskPositionCandidateId.trim()
+      }
+      const { error } = await supabase!.from('tasks').insert(row)
       if (error) throw error
+      if (saveTaskAsTemplate && newTaskTitle.trim()) {
+        const { error: te } = await supabase!.from('task_templates').insert({
+          user_id: uid!,
+          title: newTaskTitle.trim(),
+          description: newTaskDescription.trim() || null,
+        })
+        if (te) throw te
+      }
     },
     onSuccess: async () => {
       success('Task added')
       setTaskModalOpen(false)
       setNewTaskTitle('')
+      setNewTaskDescription('')
       setNewTaskPositionId('')
+      setNewTaskPositionCandidateId('')
+      setTaskTemplateId('')
+      setSaveTaskAsTemplate(false)
       await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
       await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
       await qc.invalidateQueries({ queryKey: ['position-tasks'] })
+      await qc.invalidateQueries({ queryKey: ['task-templates'] })
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
     },
     onError: (e: Error) => toastError(e.message),
@@ -295,22 +335,21 @@ export function DashboardPage() {
     const now = new Date()
     for (const p of rows) {
       const posUpdated = new Date(p.updated_at as string)
-      if (
-        (p.status === 'pending' || p.status === 'in_progress') &&
-        differenceInCalendarDays(now, posUpdated) >= 14
-      ) {
+      if ((p.status === 'active' || p.status === 'on_hold') && differenceInCalendarDays(now, posUpdated) >= 14) {
         stale.push(p.title as string)
       }
-      const cands =
-        (p.candidates as unknown as Array<{
-          full_name: string
+      const pcs =
+        (p.position_candidates as unknown as Array<{
           status: string
           updated_at: string
+          candidates: { full_name: string } | { full_name: string }[] | null
         }>) ?? []
-      for (const c of cands) {
-        if (c.status !== 'pending') continue
-        if (differenceInCalendarDays(now, new Date(c.updated_at)) >= 7) {
-          stuck.push(`${c.full_name} · ${p.title}`)
+      for (const pc of pcs) {
+        if (pc.status !== 'in_progress') continue
+        const cand = nestedOne(pc.candidates)
+        if (!cand?.full_name) continue
+        if (differenceInCalendarDays(now, new Date(pc.updated_at)) >= 7) {
+          stuck.push(`${cand.full_name} · ${p.title}`)
         }
       }
     }
@@ -575,7 +614,11 @@ export function DashboardPage() {
               const pos = row.positions as unknown as
                 | { id: string; title: string; companies: { id?: string; name: string } | null }
                 | null
-              const cand = row.candidates as unknown as { id: string; full_name: string } | null
+              const pcJoin = row.position_candidates as unknown as {
+                id: string
+                candidates: { id: string; full_name: string } | { id: string; full_name: string }[] | null
+              } | null
+              const cand = nestedOne(pcJoin?.candidates ?? null)
               const posTitle = pos?.title ?? 'Position'
               const companyName = pos?.companies?.name
               const dueLabel = row.due_at ? formatDue(row.due_at) : null
@@ -737,6 +780,49 @@ export function DashboardPage() {
               </select>
             </label>
             <label className="flex flex-col gap-1 text-sm font-medium">
+              From template
+              <select
+                value={taskTemplateId}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setTaskTemplateId(v)
+                  const t = (taskTemplatesQ.data ?? []).find((x) => x.id === v)
+                  if (t) {
+                    setNewTaskTitle(t.title)
+                    setNewTaskDescription((t.description as string | null) ?? '')
+                  }
+                }}
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+              >
+                <option value="">None</option>
+                {(taskTemplatesQ.data ?? []).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {newTaskPositionId.trim() ? (
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Candidate on role (optional)
+                <select
+                  value={newTaskPositionCandidateId}
+                  onChange={(e) => setNewTaskPositionCandidateId(e.target.value)}
+                  className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                >
+                  <option value="">Position-wide task</option>
+                  {(positionCandidatesForTaskQ.data ?? []).map((pc) => {
+                    const h = nestedOne(pc.candidates as { id: string; full_name: string } | { id: string; full_name: string }[] | null)
+                    return (
+                      <option key={pc.id} value={pc.id}>
+                        {h?.full_name ?? 'Candidate'}
+                      </option>
+                    )
+                  })}
+                </select>
+              </label>
+            ) : null}
+            <label className="flex flex-col gap-1 text-sm font-medium">
               Title
               <input
                 value={newTaskTitle}
@@ -745,6 +831,20 @@ export function DashboardPage() {
                 placeholder="What needs doing?"
                 required
               />
+            </label>
+            <label className="flex flex-col gap-1 text-sm font-medium">
+              Description
+              <textarea
+                value={newTaskDescription}
+                onChange={(e) => setNewTaskDescription(e.target.value)}
+                rows={3}
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                placeholder="Optional details"
+              />
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+              <input type="checkbox" checked={saveTaskAsTemplate} onChange={(e) => setSaveTaskAsTemplate(e.target.checked)} />
+              Save as template
             </label>
             <button
               type="submit"
@@ -787,13 +887,13 @@ export function DashboardPage() {
                 </button>
                 <button
                   type="button"
-                  className={`rounded-full px-3 py-1 ${positionsScope === 'in_progress' ? 'bg-[#9b3e20] text-white dark:bg-orange-600' : 'border border-stone-300 dark:border-stone-600'}`}
+                  className={`rounded-full px-3 py-1 ${positionsScope === 'on_hold' ? 'bg-[#9b3e20] text-white dark:bg-orange-600' : 'border border-stone-300 dark:border-stone-600'}`}
                   onClick={(e) => {
                     e.stopPropagation()
-                    setPositionsScope('in_progress')
+                    setPositionsScope('on_hold')
                   }}
                 >
-                  In progress
+                  On hold
                 </button>
                 <button
                   type="button"
@@ -821,14 +921,16 @@ export function DashboardPage() {
               {(topPositionsQ.data ?? []).map((p) => {
                 const company = (p.companies as unknown as { name: string } | null)?.name
                 const cands =
-                  (p.candidates as unknown as Array<{
+                  (p.position_candidates as unknown as Array<{
                     id: string
-                    full_name: string
                     status: string
                     created_at: string
+                    updated_at: string
+                    candidate_id: string
+                    candidates: { id: string; full_name: string } | { id: string; full_name: string }[] | null
                     position_stages: { name: string } | null
                   }>) ?? []
-                const pill = positionStatusPill(p.status)
+                const pill = positionLifecyclePill(p.status as string)
                 return (
                   <li
                     key={p.id}
@@ -867,12 +969,17 @@ export function DashboardPage() {
                         onClick={(e) => e.stopPropagation()}
                         onKeyDown={(e) => e.stopPropagation()}
                       >
-                        {cands.map((c) => {
-                          const daysOnRole = differenceInCalendarDays(new Date(), new Date(c.created_at))
+                        {cands.map((pc) => {
+                          const cand = nestedOne(pc.candidates)
+                          const cid = cand?.id ?? pc.candidate_id
+                          const daysOnRole = differenceInCalendarDays(new Date(), new Date(pc.created_at))
                           return (
-                            <li key={c.id} className="flex flex-wrap items-center gap-2 text-sm">
-                              <Link to={`/positions/${p.id}?candidate=${c.id}`} className="font-medium text-[#006384] hover:underline dark:text-cyan-300">
-                                {c.full_name}
+                            <li key={pc.id} className="flex flex-wrap items-center gap-2 text-sm">
+                              <Link
+                                to={`/positions/${p.id}?candidate=${cid}`}
+                                className="font-medium text-[#006384] hover:underline dark:text-cyan-300"
+                              >
+                                {cand?.full_name ?? '—'}
                               </Link>
                               <span
                                 className="text-stitch-muted shrink-0 rounded-md border border-stone-200/80 bg-stone-50 px-1.5 py-0.5 text-[10px] font-bold tabular-nums dark:border-stone-600 dark:bg-stone-800"
@@ -881,7 +988,7 @@ export function DashboardPage() {
                                 {daysOnRole}d
                               </span>
                               <span className="text-stitch-muted text-xs">
-                                {c.position_stages?.name ?? '—'} · {c.status}
+                                {pc.position_stages?.name ?? '—'} · {formatAssignmentStatus(pc.status)}
                               </span>
                             </li>
                           )

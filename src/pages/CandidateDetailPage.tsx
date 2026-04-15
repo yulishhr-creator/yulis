@@ -7,10 +7,10 @@ import { Briefcase, Calendar, ChevronRight, ClipboardList, History, Mail, MapPin
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { formatDateTime, formatDue } from '@/lib/dates'
-import { candidateStatusPill } from '@/lib/candidateStatus'
+import { assignmentStatusPill, candidateGlobalPill } from '@/lib/candidateStatus'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
 
-type TabId = 'overview' | 'tasks' | 'activity'
+type TabId = 'overview' | 'positions' | 'tasks' | 'activity'
 
 type ActivityRow = {
   id: string
@@ -49,11 +49,15 @@ export function CandidateDetailPage() {
         .select(
           `
           id, full_name, email, phone, linkedin, location, current_title, years_exp, salary_expectation,
-          notes, lead_source, source, status, created_at, updated_at, position_id, resume_storage_path,
-          position_stages ( name ),
-          positions (
-            id, title, status,
-            companies ( name )
+          notes, lead_source, status, created_at, updated_at, resume_storage_path,
+          position_candidates (
+            id,
+            status,
+            source,
+            created_at,
+            position_stage_id,
+            position_stages ( name ),
+            positions ( id, title, status, companies ( name ) )
           )
         `,
         )
@@ -70,11 +74,19 @@ export function CandidateDetailPage() {
     queryKey: ['candidate-tasks', id, uid],
     enabled: Boolean(supabase && uid && id),
     queryFn: async () => {
+      const { data: pcs, error: e1 } = await supabase!
+        .from('position_candidates')
+        .select('id')
+        .eq('candidate_id', id!)
+        .eq('user_id', uid!)
+      if (e1) throw e1
+      const pcids = (pcs ?? []).map((r) => r.id as string)
+      if (pcids.length === 0) return []
       const { data, error } = await supabase!
         .from('tasks')
         .select('id, title, status, due_at, created_at, updated_at, position_id, positions ( title )')
-        .eq('candidate_id', id!)
         .eq('user_id', uid!)
+        .in('position_candidate_id', pcids)
         .order('due_at', { ascending: true, nullsFirst: false })
       if (error) throw error
       return data ?? []
@@ -98,17 +110,45 @@ export function CandidateDetailPage() {
   })
 
   const c = candidateQ.data
-  const pos = c?.positions as unknown as { id: string; title: string; status: string; companies: unknown } | null
+
+  const assignments = useMemo(() => {
+    const raw = c?.position_candidates as
+      | Array<{
+          id: string
+          status: string
+          source: string
+          created_at: string
+          position_stages: { name: string } | { name: string }[] | null
+          positions: { id: string; title: string; status: string; companies: unknown } | null
+        }>
+      | {
+          id: string
+          status: string
+          source: string
+          created_at: string
+          position_stages: { name: string } | { name: string }[] | null
+          positions: { id: string; title: string; status: string; companies: unknown } | null
+        }
+      | null
+      | undefined
+    if (!raw) return []
+    return Array.isArray(raw) ? raw : [raw]
+  }, [c?.position_candidates])
+
+  const primaryAssignment = useMemo(
+    () => assignments.find((a) => a.status === 'in_progress') ?? assignments[0] ?? null,
+    [assignments],
+  )
+  const pos = primaryAssignment?.positions ?? null
   const coName = companyName(pos?.companies)
-  const outPill = c ? candidateStatusPill(c.status as string) : null
-  const stage = c ? stageName(c.position_stages as { name: string } | { name: string }[] | null) : '—'
+  const outPill = c ? candidateGlobalPill(c.status as string) : null
 
   const subtitle = useMemo(() => {
-    if (!pos) return 'Candidate'
+    if (!pos) return assignments.length ? `${assignments.length} role(s)` : 'Candidate pool'
     const parts = [pos.title]
     if (coName) parts.push(coName)
     return parts.join(' · ')
-  }, [pos, coName])
+  }, [pos, coName, assignments.length])
 
   if (candidateQ.isLoading) {
     return (
@@ -130,7 +170,8 @@ export function CandidateDetailPage() {
     )
   }
 
-  const daysOnRole = differenceInCalendarDays(new Date(), new Date(c.created_at))
+  const daysInPool = differenceInCalendarDays(new Date(), new Date(c.created_at))
+  const headStage = primaryAssignment ? stageName(primaryAssignment.position_stages) : '—'
 
   return (
     <div className="flex flex-col gap-6">
@@ -144,7 +185,7 @@ export function CandidateDetailPage() {
               to={`/positions/${pos.id}?candidate=${c.id}&tab=candidates`}
               className="border-line bg-white/90 text-ink inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold shadow-sm transition hover:bg-stone-50 dark:border-line-dark dark:bg-stone-900/90 dark:hover:bg-stone-800"
             >
-              Open role
+              Open primary role
               <ChevronRight className="h-4 w-4 opacity-60" aria-hidden />
             </Link>
           ) : null
@@ -154,9 +195,9 @@ export function CandidateDetailPage() {
       <div className="flex flex-wrap items-center gap-2">
         <span
           className="border-violet-400/70 bg-violet-100 text-violet-950 inline-flex items-center rounded-full border-2 px-3 py-1 text-xs font-extrabold tracking-wide uppercase shadow-sm dark:border-violet-500/80 dark:bg-violet-950/80 dark:text-violet-100"
-          title="Pipeline stage"
+          title="Stage on primary assignment"
         >
-          {stage}
+          {headStage}
         </span>
         {outPill ? (
           <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-bold uppercase ${outPill.className}`}>
@@ -164,7 +205,7 @@ export function CandidateDetailPage() {
           </span>
         ) : null}
         <span className="text-ink-muted text-xs dark:text-stone-500">
-          Updated {formatDateTime(c.updated_at)} · {daysOnRole}d on role
+          Updated {formatDateTime(c.updated_at)} · {daysInPool}d in pool
         </span>
       </div>
 
@@ -175,6 +216,7 @@ export function CandidateDetailPage() {
         {(
           [
             ['overview', 'Overview', User],
+            ['positions', 'Positions', Briefcase],
             ['tasks', 'Tasks', ClipboardList],
             ['activity', 'Activity', History],
           ] as const
@@ -253,25 +295,24 @@ export function CandidateDetailPage() {
           <section>
             <h2 className="text-ink flex items-center gap-2 text-sm font-bold uppercase tracking-wide dark:text-stone-200">
               <Briefcase className="h-4 w-4 opacity-70" aria-hidden />
-              Role & record
+              Roles
             </h2>
             <dl className="mt-3 grid gap-3 sm:grid-cols-2">
               <div className="sm:col-span-2">
-                <dt className="text-ink-muted text-xs font-semibold dark:text-stone-500">Position</dt>
+                <dt className="text-ink-muted text-xs font-semibold dark:text-stone-500">Assignments</dt>
                 <dd className="mt-0.5 text-sm">
-                  {pos ? (
-                    <Link to={`/positions/${pos.id}`} className="text-[#9b3e20] font-semibold hover:underline dark:text-orange-300">
-                      {pos.title}
-                      {coName ? ` · ${coName}` : ''}
-                    </Link>
+                  {assignments.length ? (
+                    <button
+                      type="button"
+                      onClick={() => setTab('positions')}
+                      className="text-left text-[#9b3e20] font-semibold underline dark:text-orange-300"
+                    >
+                      {assignments.length} role{assignments.length === 1 ? '' : 's'} — view Positions tab
+                    </button>
                   ) : (
-                    '—'
+                    'Not on any role yet'
                   )}
                 </dd>
-              </div>
-              <div>
-                <dt className="text-ink-muted text-xs font-semibold dark:text-stone-500">Source</dt>
-                <dd className="mt-0.5 text-sm capitalize">{c.source}</dd>
               </div>
               {c.lead_source ? (
                 <div>
@@ -330,13 +371,48 @@ export function CandidateDetailPage() {
           ) : null}
 
           <p className="text-ink-muted border-t border-stone-200/80 pt-3 text-xs dark:border-stone-600">
-            To change stage, status, or upload files, use{' '}
+            To change per-role stage, assignment status, or uploads, open the{' '}
             <Link to={pos ? `/positions/${pos.id}?candidate=${c.id}&tab=candidates` : '/candidates'} className="text-accent font-semibold underline dark:text-orange-300">
-              this candidate on the role page
+              position
             </Link>
             .
           </p>
         </div>
+      ) : null}
+
+      {tab === 'positions' ? (
+        <section className="border-line rounded-2xl border bg-white/70 p-4 dark:border-line-dark dark:bg-stone-900/45">
+          <h2 className="text-ink text-sm font-bold uppercase tracking-wide dark:text-stone-200">Positions</h2>
+          {assignments.length === 0 ? (
+            <p className="text-ink-muted mt-2 text-sm">Not assigned to any role yet. Assign from the Candidates list or a position page.</p>
+          ) : (
+            <ul className="mt-3 space-y-2">
+              {assignments.map((a) => {
+                const p = a.positions
+                const ast = assignmentStatusPill(a.status)
+                return (
+                  <li key={a.id} className="border-line rounded-xl border bg-white/80 px-3 py-2 dark:border-line-dark dark:bg-stone-800/60">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <Link
+                        to={p ? `/positions/${p.id}?candidate=${c.id}&tab=candidates` : '/positions'}
+                        className="font-semibold text-[#9b3e20] hover:underline dark:text-orange-300"
+                      >
+                        {p?.title ?? 'Role'}
+                        {p?.companies ? ` · ${companyName(p.companies) ?? ''}` : ''}
+                      </Link>
+                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${ast.className}`}>
+                        {ast.label}
+                      </span>
+                    </div>
+                    <p className="text-ink-muted mt-1 text-xs">
+                      Stage: {stageName(a.position_stages)} · Per-role source: <span className="capitalize">{a.source}</span>
+                    </p>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
       ) : null}
 
       {tab === 'tasks' ? (

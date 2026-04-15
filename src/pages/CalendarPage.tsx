@@ -34,7 +34,7 @@ type CalendarEventRow = {
   candidate_id: string | null
   company_id: string | null
   positions: One<{ title: string }>
-  candidates: One<{ full_name: string; position_id: string }>
+  candidates: One<{ full_name: string }>
   companies: One<{ name: string }>
 }
 
@@ -47,7 +47,7 @@ type RelKind = 'none' | 'position' | 'candidate' | 'company'
 
 const EVENT_SELECT = `id, title, subtitle, starts_at, ends_at, reminder_at, is_important, position_id, candidate_id, company_id,
   positions ( title ),
-  candidates ( full_name, position_id ),
+  candidates ( full_name ),
   companies ( name )`
 
 const CAL_STALE_MS = 60_000
@@ -147,7 +147,7 @@ export function CalendarPage() {
           .order('title'),
         supabase!
           .from('candidates')
-          .select('id, full_name, position_id')
+          .select('id, full_name')
           .eq('user_id', uid!)
           .is('deleted_at', null)
           .order('full_name'),
@@ -332,8 +332,9 @@ export function CalendarPage() {
         : { label: 'Position' }
     }
     if (ev.candidate_id) {
-      const to = candidate?.position_id ? `/positions/${candidate.position_id}` : undefined
-      return candidate ? { label: candidate.full_name, to } : { label: 'Candidate' }
+      return candidate ?
+          { label: candidate.full_name, to: `/candidates/${ev.candidate_id}` }
+        : { label: 'Candidate' }
     }
     return null
   }

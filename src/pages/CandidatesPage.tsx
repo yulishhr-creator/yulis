@@ -7,37 +7,49 @@ import { Mail, Phone, Search, UserPlus } from 'lucide-react'
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { logActivityEvent } from '@/lib/activityLog'
-import { candidateStatusPill } from '@/lib/candidateStatus'
+import { candidateGlobalPill } from '@/lib/candidateStatus'
+import { logPositionCandidateTransition } from '@/lib/positionTransitions'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/hooks/useToast'
 import { formatDateTime } from '@/lib/dates'
 
-type CandidateDisposition = 'pending' | 'success' | 'cancelled'
+type NestedPosition = {
+  id: string
+  title: string
+  company_id: string
+  companies: { id: string; name: string } | null
+} | null
+
+type PositionCandidateNest = {
+  id: string
+  status: string
+  position_id: string
+  positions: NestedPosition
+  position_stages: { name: string } | null
+}
 
 type CandidateRow = {
   id: string
   full_name: string
+  email: string | null
+  phone: string | null
+  current_title: string | null
   status: string
   created_at: string
   updated_at: string
-  position_id: string
-  email: string | null
-  phone: string | null
-  position_stages: { name: string } | null
-  positions: {
-    id: string
-    title: string
-    status: string
-    company_id: string
-    companies: { id: string; name: string } | null
-  } | null
+  position_candidates: PositionCandidateNest[] | PositionCandidateNest | null
 }
 
 type AssignPositionOption = {
   id: string
   title: string
   companies: { name: string } | null | { name: string }[]
+}
+
+function nestedPcList(v: CandidateRow['position_candidates']): PositionCandidateNest[] {
+  if (v == null) return []
+  return Array.isArray(v) ? v : [v]
 }
 
 function nestedCompanyName(c: AssignPositionOption['companies']): string | null {
@@ -50,13 +62,18 @@ function digitsOnly(s: string): string {
   return s.replace(/\D/g, '')
 }
 
+function activeAssignmentCount(c: CandidateRow): number {
+  return nestedPcList(c.position_candidates).filter((pc) => pc.status === 'in_progress').length
+}
+
 function candidateMatchesSearch(c: CandidateRow, raw: string): boolean {
   const q = raw.trim().toLowerCase()
   if (!q) return true
   const name = (c.full_name ?? '').toLowerCase()
   const email = (c.email ?? '').toLowerCase()
+  const title = (c.current_title ?? '').toLowerCase()
   const phoneRaw = (c.phone ?? '').toLowerCase()
-  if (name.includes(q) || email.includes(q) || phoneRaw.includes(q)) return true
+  if (name.includes(q) || email.includes(q) || phoneRaw.includes(q) || title.includes(q)) return true
   const qDigits = digitsOnly(q)
   if (qDigits.length >= 2) {
     const phoneDigits = digitsOnly(c.phone ?? '')
@@ -78,13 +95,16 @@ export function CandidatesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const showAssignHint = searchParams.get('assign') === '1'
   const openNewCandidateFromQuery = searchParams.get('new') === '1'
-  const [statusFilter, setStatusFilter] = useState<'all' | CandidateDisposition>('pending')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'archived'>('active')
   const [companyTab, setCompanyTab] = useState<'all' | string>('all')
   const [search, setSearch] = useState('')
   const [assignFor, setAssignFor] = useState<CandidateRow | null>(null)
   const [assignPositionId, setAssignPositionId] = useState('')
   const [newCandidateOpen, setNewCandidateOpen] = useState(false)
-  const [newCandidatePositionId, setNewCandidatePositionId] = useState('')
+  const [newName, setNewName] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+  const [newPhone, setNewPhone] = useState('')
+  const [newTitle, setNewTitle] = useState('')
 
   function dismissAssignHint() {
     setSearchParams(
@@ -107,7 +127,10 @@ export function CandidatesPage() {
 
   useEffect(() => {
     if (!openNewCandidateFromQuery) return
-    setNewCandidatePositionId('')
+    setNewName('')
+    setNewEmail('')
+    setNewPhone('')
+    setNewTitle('')
     setNewCandidateOpen(true)
     setSearchParams(
       (prev) => {
@@ -127,9 +150,14 @@ export function CandidatesPage() {
         .from('candidates')
         .select(
           `
-          id, full_name, email, phone, status, created_at, updated_at, position_id,
-          position_stages ( name ),
-          positions ( id, title, status, company_id, companies ( id, name ) )
+          id, full_name, email, phone, current_title, status, created_at, updated_at,
+          position_candidates (
+            id,
+            status,
+            position_id,
+            positions ( id, title, company_id, companies ( id, name ) ),
+            position_stages ( name )
+          )
         `,
         )
         .eq('user_id', uid!)
@@ -152,7 +180,7 @@ export function CandidatesPage() {
         .from('positions')
         .select('id, title, companies ( name )')
         .eq('user_id', uid!)
-        .in('status', ['pending', 'in_progress'])
+        .in('status', ['active', 'on_hold'])
         .order('updated_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as unknown as AssignPositionOption[]
@@ -160,10 +188,16 @@ export function CandidatesPage() {
   })
 
   const assignMutation = useMutation({
-    mutationFn: async ({ candidate, newPositionId }: { candidate: CandidateRow; newPositionId: string }) => {
+    mutationFn: async ({ candidateId, newPositionId }: { candidateId: string; newPositionId: string }) => {
       if (!supabase || !uid) throw new Error('Not signed in')
-      if (newPositionId === candidate.position_id) throw new Error('Already on this role')
-      const oldTitle = candidate.positions?.title ?? 'Previous role'
+      const { data: dup, error: dErr } = await supabase
+        .from('position_candidates')
+        .select('id')
+        .eq('position_id', newPositionId)
+        .eq('candidate_id', candidateId)
+        .maybeSingle()
+      if (dErr) throw dErr
+      if (dup?.id) throw new Error('Already assigned to this role')
       const { data: stages, error: stErr } = await supabase
         .from('position_stages')
         .select('id')
@@ -172,62 +206,144 @@ export function CandidatesPage() {
         .limit(1)
       if (stErr) throw stErr
       const firstStageId = stages?.[0]?.id ?? null
-      const { error: upErr } = await supabase
-        .from('candidates')
-        .update({
+      const { data: pcRow, error: pcErr } = await supabase
+        .from('position_candidates')
+        .insert({
+          user_id: uid,
           position_id: newPositionId,
+          candidate_id: candidateId,
           position_stage_id: firstStageId,
-          updated_at: new Date().toISOString(),
+          status: 'in_progress',
+          source: 'app',
         })
-        .eq('id', candidate.id)
-        .eq('user_id', uid)
-      if (upErr) throw upErr
-      const { error: taskErr } = await supabase
-        .from('tasks')
-        .update({ position_id: newPositionId, updated_at: new Date().toISOString() })
-        .eq('candidate_id', candidate.id)
-        .eq('user_id', uid)
-      if (taskErr) throw taskErr
+        .select('id')
+        .single()
+      if (pcErr) throw pcErr
+      if (firstStageId && pcRow?.id) {
+        await logPositionCandidateTransition(supabase, uid, {
+          position_candidate_id: pcRow.id,
+          transition_type: 'stage',
+          from_stage_id: null,
+          to_stage_id: firstStageId,
+        })
+      }
       await logActivityEvent(supabase, uid, {
-        event_type: 'candidate_reassigned',
+        event_type: 'candidate_created',
         position_id: newPositionId,
-        candidate_id: candidate.id,
-        title: `${candidate.full_name} assigned here`,
-        subtitle: `From: ${oldTitle}`,
-        metadata: { from_position_id: candidate.position_id, to_position_id: newPositionId },
+        candidate_id: candidateId,
+        position_candidate_id: pcRow?.id ?? null,
+        title: 'Candidate assigned to role',
+        subtitle: 'New position assignment',
       })
-      return { oldPid: candidate.position_id, newPid: newPositionId }
+      return { newPid: newPositionId }
     },
-    onSuccess: async ({ oldPid, newPid }) => {
-      success('Candidate assigned to role')
+    onSuccess: async ({ newPid }) => {
+      success('Assigned to role')
       setAssignFor(null)
       setAssignPositionId('')
       await qc.invalidateQueries({ queryKey: ['all-candidates'] })
-      await qc.invalidateQueries({ queryKey: ['position-candidates', oldPid] })
       await qc.invalidateQueries({ queryKey: ['position-candidates', newPid] })
-      await qc.invalidateQueries({ queryKey: ['position-activity', oldPid] })
+      await qc.invalidateQueries({ queryKey: ['position-transition-stats', newPid] })
       await qc.invalidateQueries({ queryKey: ['position-activity', newPid] })
-      await qc.invalidateQueries({ queryKey: ['position-tasks', oldPid] })
-      await qc.invalidateQueries({ queryKey: ['position-tasks', newPid] })
-      await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
       await qc.invalidateQueries({ queryKey: ['candidate-detail'] })
     },
     onError: (e: Error) => toastError(e.message),
   })
 
+  const createCandidateMutation = useMutation({
+    mutationFn: async () => {
+      if (!supabase || !uid) throw new Error('Not signed in')
+      const nm = newName.trim()
+      if (!nm) throw new Error('Name is required')
+      const { data, error } = await supabase
+        .from('candidates')
+        .insert({
+          user_id: uid,
+          full_name: nm,
+          email: newEmail.trim() || null,
+          phone: newPhone.trim() || null,
+          current_title: newTitle.trim() || null,
+          status: 'active',
+        })
+        .select('id')
+        .single()
+      if (error) throw error
+      return data.id as string
+    },
+    onSuccess: async (id) => {
+      success('Candidate created')
+      setNewCandidateOpen(false)
+      setNewName('')
+      setNewEmail('')
+      setNewPhone('')
+      setNewTitle('')
+      await qc.invalidateQueries({ queryKey: ['all-candidates'] })
+      navigate(`/candidates/${id}`)
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const archiveMutation = useMutation({
+    mutationFn: async ({ candidateId, withdrawActive }: { candidateId: string; withdrawActive: boolean }) => {
+      if (!supabase || !uid) throw new Error('Not signed in')
+      if (withdrawActive) {
+        const { data: rows } = await supabase
+          .from('position_candidates')
+          .select('id')
+          .eq('candidate_id', candidateId)
+          .eq('user_id', uid)
+          .eq('status', 'in_progress')
+        for (const r of rows ?? []) {
+          await supabase.from('position_candidates').update({ status: 'withdrawn' }).eq('id', r.id).eq('user_id', uid)
+          await logPositionCandidateTransition(supabase, uid, {
+            position_candidate_id: r.id,
+            transition_type: 'status',
+            from_status: 'in_progress',
+            to_status: 'withdrawn',
+          })
+        }
+      }
+      const { error } = await supabase.from('candidates').update({ status: 'archived' }).eq('id', candidateId).eq('user_id', uid)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      success('Candidate archived')
+      await qc.invalidateQueries({ queryKey: ['all-candidates'] })
+      await qc.invalidateQueries({ queryKey: ['positions'] })
+      await qc.invalidateQueries({ queryKey: ['position-candidates'] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const unarchiveMutation = useMutation({
+    mutationFn: async (candidateId: string) => {
+      if (!supabase || !uid) throw new Error('Not signed in')
+      const { error } = await supabase.from('candidates').update({ status: 'active' }).eq('id', candidateId).eq('user_id', uid)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      success('Candidate restored')
+      await qc.invalidateQueries({ queryKey: ['all-candidates'] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
   const rows = q.data ?? []
+
   const assignOptions = useMemo(() => {
     if (!assignFor) return []
-    return (positionsForAssignQ.data ?? []).filter((p) => p.id !== assignFor.position_id)
+    const assigned = new Set(nestedPcList(assignFor.position_candidates).map((pc) => pc.position_id))
+    return (positionsForAssignQ.data ?? []).filter((p) => !assigned.has(p.id))
   }, [assignFor, positionsForAssignQ.data])
 
   const companiesInView = useMemo(() => {
     const map = new Map<string, string>()
     for (const c of rows) {
-      const cid = c.positions?.company_id
-      if (!cid) continue
-      const name = c.positions?.companies?.name?.trim()
-      map.set(cid, name || 'Unknown client')
+      for (const pc of nestedPcList(c.position_candidates)) {
+        const cid = pc.positions?.company_id
+        const name = pc.positions?.companies?.name?.trim()
+        if (cid) map.set(cid, name || 'Unknown client')
+      }
     }
     return Array.from(map.entries())
       .map(([id, name]) => ({ id, name }))
@@ -243,82 +359,77 @@ export function CandidatesPage() {
   const filteredRows = useMemo(() => {
     let list = rows.filter((c) => candidateMatchesSearch(c, search))
     if (companyTab !== 'all') {
-      list = list.filter((c) => c.positions?.company_id === companyTab)
+      list = list.filter((c) =>
+        nestedPcList(c.position_candidates).some((pc) => pc.positions?.company_id === companyTab),
+      )
     }
     return list
   }, [rows, search, companyTab])
-  const newCandidatePositionOptions = positionsForAssignQ.data ?? []
 
   return (
     <div className="flex flex-col gap-6">
-      <Modal
-        open={newCandidateOpen}
-        onClose={() => setNewCandidateOpen(false)}
-        title="Add candidate"
-        size="md"
-      >
-        <div className="flex flex-col gap-4">
+      <Modal open={newCandidateOpen} onClose={() => setNewCandidateOpen(false)} title="New candidate" size="md">
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void createCandidateMutation.mutateAsync()
+          }}
+        >
           <p className="text-ink-muted text-sm dark:text-stone-400">
-            Choose an active role — you&apos;ll add their name and contact details on the next screen.
+            Creates a person in your pool. Assign them to roles from this list or a position page.
           </p>
-          {positionsForAssignQ.isLoading ? (
-            <p className="text-sm">Loading roles…</p>
-          ) : newCandidatePositionOptions.length === 0 ? (
-            <p className="text-sm text-amber-800 dark:text-amber-200">
-              No active roles yet.{' '}
-              <Link to="/positions?create=1" className="font-semibold underline">
-                Create a position
-              </Link>{' '}
-              first.
-            </p>
-          ) : (
-            <label className="flex flex-col gap-1 text-sm font-medium">
-              Role
-              <select
-                value={newCandidatePositionId}
-                onChange={(e) => setNewCandidatePositionId(e.target.value)}
-                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-              >
-                <option value="">Select a role…</option>
-                {newCandidatePositionOptions.map((p) => {
-                  const co = nestedCompanyName(p.companies)
-                  return (
-                    <option key={p.id} value={p.id}>
-                      {p.title}
-                      {co ? ` — ${co}` : ''}
-                    </option>
-                  )
-                })}
-              </select>
-            </label>
-          )}
-          <div className="flex flex-wrap justify-end gap-2">
+          <label className="flex flex-col gap-1 text-sm font-medium">
+            Full name
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+              required
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-medium">
+            Current title
+            <input
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-medium">
+            Email
+            <input
+              type="email"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-medium">
+            Phone
+            <input
+              value={newPhone}
+              onChange={(e) => setNewPhone(e.target.value)}
+              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+            />
+          </label>
+          <div className="mt-2 flex flex-wrap justify-end gap-2">
             <button
               type="button"
               className="border-line rounded-full border px-4 py-2 text-sm font-medium dark:border-line-dark"
-              onClick={() => {
-                setNewCandidateOpen(false)
-                setNewCandidatePositionId('')
-              }}
+              onClick={() => setNewCandidateOpen(false)}
             >
               Cancel
             </button>
             <button
-              type="button"
+              type="submit"
+              disabled={createCandidateMutation.isPending}
               className="rounded-full bg-[#9b3e20] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-orange-600"
-              disabled={!newCandidatePositionId || newCandidatePositionOptions.length === 0}
-              onClick={() => {
-                if (!newCandidatePositionId) return
-                setNewCandidateOpen(false)
-                const pid = newCandidatePositionId
-                setNewCandidatePositionId('')
-                navigate(`/positions/${pid}?addCandidate=1`)
-              }}
             >
-              Continue
+              {createCandidateMutation.isPending ? 'Saving…' : 'Create'}
             </button>
           </div>
-        </div>
+        </form>
       </Modal>
 
       <Modal
@@ -328,21 +439,20 @@ export function CandidatesPage() {
           setAssignFor(null)
           setAssignPositionId('')
         }}
-        title="Assign candidate"
+        title="Assign to role"
         size="md"
       >
         {assignFor ? (
           <div className="flex flex-col gap-4">
             <p className="text-ink-muted text-sm dark:text-stone-400">
-              Move <span className="text-ink font-semibold dark:text-stone-200">{assignFor.full_name}</span> to another
-              active role. Their pipeline stage resets to the first stage on the new role. Open tasks for this candidate
-              are moved to the new role.
+              Add <span className="text-ink font-semibold dark:text-stone-200">{assignFor.full_name}</span> to an open
+              role. Their stage starts at the first step on that role.
             </p>
             {positionsForAssignQ.isLoading ? (
               <p className="text-sm">Loading roles…</p>
             ) : assignOptions.length === 0 ? (
               <p className="text-sm text-amber-800 dark:text-amber-200">
-                No other active roles available. Create or reopen a role under Positions first.
+                No open roles available, or they&apos;re already on every open role. Create a role under Positions first.
               </p>
             ) : (
               <label className="flex flex-col gap-1 text-sm font-medium">
@@ -379,11 +489,11 @@ export function CandidatesPage() {
               </button>
               <button
                 type="button"
-                className="bg-[#9b3e20] text-white rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-50 dark:bg-orange-600"
+                className="rounded-full bg-[#9b3e20] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-orange-600"
                 disabled={assignMutation.isPending || !assignPositionId || assignOptions.length === 0}
                 onClick={() => {
                   if (!assignFor || !assignPositionId) return
-                  assignMutation.mutate({ candidate: assignFor, newPositionId: assignPositionId })
+                  assignMutation.mutate({ candidateId: assignFor.id, newPositionId: assignPositionId })
                 }}
               >
                 {assignMutation.isPending ? 'Assigning…' : 'Assign'}
@@ -395,14 +505,17 @@ export function CandidatesPage() {
 
       <ScreenHeader
         title="Candidates"
-        subtitle="Everyone in your pipeline — open a role to edit details or import."
+        subtitle="Global pool — assign people to roles, track each assignment on the position."
         backTo="/"
         right={
           <button
             type="button"
             className={newCandidateButtonClass}
             onClick={() => {
-              setNewCandidatePositionId('')
+              setNewName('')
+              setNewEmail('')
+              setNewPhone('')
+              setNewTitle('')
               setNewCandidateOpen(true)
             }}
           >
@@ -417,7 +530,7 @@ export function CandidatesPage() {
           role="status"
         >
           <p className="text-sm font-medium text-violet-950 dark:text-violet-100">
-            Use <span className="font-extrabold">Assign</span> on a row to move that candidate to another active role.
+            Use <span className="font-extrabold">Assign</span> to add this person to another open role.
           </p>
           <button
             type="button"
@@ -431,14 +544,13 @@ export function CandidatesPage() {
 
       <div className="flex flex-col gap-4">
         <div>
-          <p className="text-ink-muted mb-2 text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Status</p>
+          <p className="text-ink-muted mb-2 text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Pool status</p>
           <div className="flex flex-wrap gap-2">
             {(
               [
                 { k: 'all' as const, label: 'All' },
-                { k: 'pending' as const, label: 'Pending' },
-                { k: 'success' as const, label: 'Success' },
-                { k: 'cancelled' as const, label: 'Cancelled' },
+                { k: 'active' as const, label: 'Active' },
+                { k: 'archived' as const, label: 'Archived' },
               ] as const
             ).map(({ k, label }) => (
               <button
@@ -505,9 +617,9 @@ export function CandidatesPage() {
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name, email, or phone…"
+          placeholder="Search by name, title, email, or phone…"
           className="border-line bg-white/80 focus:ring-accent/30 w-full rounded-2xl border py-2.5 pr-3 pl-10 text-sm shadow-sm outline-none focus:ring-2 dark:border-line-dark dark:bg-stone-900/50"
-          aria-label="Search candidates by name, email, or phone"
+          aria-label="Search candidates"
         />
       </div>
 
@@ -520,12 +632,13 @@ export function CandidatesPage() {
       ) : (
         <ul id="candidate-list" className="space-y-2">
           {filteredRows.map((c) => {
-            const pos = c.positions
-            const stage = c.position_stages?.name?.trim()
-            const company = pos?.companies?.name
-            const days = differenceInCalendarDays(new Date(), new Date(c.created_at))
-            const out = candidateStatusPill(c.status)
+            const nActive = activeAssignmentCount(c)
+            const pill = candidateGlobalPill(c.status)
             const updatedRel = formatDistanceToNow(new Date(c.updated_at), { addSuffix: true })
+            const days = differenceInCalendarDays(new Date(), new Date(c.created_at))
+            const primaryRole = nestedPcList(c.position_candidates).find((pc) => pc.status === 'in_progress')
+            const pos = primaryRole?.positions
+            const company = pos?.companies?.name
             return (
               <li
                 key={c.id}
@@ -538,14 +651,20 @@ export function CandidatesPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-ink text-lg font-bold tracking-tight dark:text-stone-100">{c.full_name}</span>
                     <span
-                      className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase ${out.className}`}
+                      className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase ${pill.className}`}
                     >
-                      {out.label}
+                      {pill.label}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm">
+                  {c.current_title ? (
+                    <p className="mt-1 text-sm font-medium text-[#302e2b] dark:text-stone-200">{c.current_title}</p>
+                  ) : null}
+                  <p className="text-ink-muted mt-1 text-sm">
+                    <span className="font-semibold text-stone-700 dark:text-stone-300">{nActive}</span> active role
+                    {nActive === 1 ? '' : 's'}
                     {pos ? (
                       <>
+                        <span className="opacity-60"> · </span>
                         <span className="text-ink font-medium dark:text-stone-200">{pos.title}</span>
                         {company ? (
                           <>
@@ -554,9 +673,7 @@ export function CandidatesPage() {
                           </>
                         ) : null}
                       </>
-                    ) : (
-                      <span>Role unavailable</span>
-                    )}
+                    ) : null}
                   </p>
                   <div className="mt-2 flex flex-col gap-1 text-xs sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1">
                     {c.email ? (
@@ -574,33 +691,52 @@ export function CandidatesPage() {
                     {!c.email && !c.phone ? <span className="text-stitch-muted">No email or phone on file</span> : null}
                   </div>
                   <p className="text-stitch-muted mt-2 text-xs">
-                    <span className="text-ink/80 dark:text-stone-400">Pipeline stage:</span>{' '}
-                    <span className="font-medium text-[#302e2b] dark:text-stone-200">{stage || '—'}</span>
-                    <span className="text-stitch-muted mx-2" aria-hidden>
-                      ·
-                    </span>
                     <span title={formatDateTime(c.updated_at)} className="font-medium text-stone-600 dark:text-stone-400">
                       Updated {updatedRel}
                     </span>
                     <span className="text-stitch-muted mx-2" aria-hidden>
                       ·
                     </span>
-                    <span className="font-medium text-stone-600 dark:text-stone-400">{days}d on role</span>
+                    <span className="font-medium text-stone-600 dark:text-stone-400">In pool {days}d</span>
                   </p>
                 </Link>
                 <div className="border-line flex shrink-0 flex-col border-l dark:border-line-dark">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAssignFor(c)
-                      setAssignPositionId('')
-                    }}
-                    className="text-ink-muted hover:bg-[#9b3e20]/10 hover:text-[#9b3e20] dark:hover:bg-orange-500/15 dark:hover:text-orange-300 flex h-full min-h-[4.5rem] flex-col items-center justify-center gap-1 px-3 text-xs font-semibold transition"
-                    aria-label={`Assign ${c.full_name} to another role`}
-                  >
-                    <UserPlus className="h-4 w-4" aria-hidden />
-                    Assign
-                  </button>
+                  {c.status === 'active' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAssignFor(c)
+                          setAssignPositionId('')
+                        }}
+                        className="text-ink-muted hover:bg-[#9b3e20]/10 hover:text-[#9b3e20] dark:hover:bg-orange-500/15 dark:hover:text-orange-300 flex min-h-[3.5rem] flex-col items-center justify-center gap-1 border-b border-stone-200/80 px-3 text-xs font-semibold transition dark:border-stone-700"
+                        aria-label={`Assign ${c.full_name}`}
+                      >
+                        <UserPlus className="h-4 w-4" aria-hidden />
+                        Assign
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!window.confirm(`Archive ${c.full_name}?`)) return
+                          const withdraw =
+                            nActive > 0 ? window.confirm(`Also withdraw from all ${nActive} active role(s)?`) : false
+                          void archiveMutation.mutateAsync({ candidateId: c.id, withdrawActive: withdraw })
+                        }}
+                        className="text-ink-muted hover:bg-stone-100 dark:hover:bg-stone-800 flex min-h-[3rem] flex-col items-center justify-center px-3 text-xs font-semibold transition"
+                      >
+                        Archive
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void unarchiveMutation.mutateAsync(c.id)}
+                      className="text-ink-muted hover:bg-stone-100 dark:hover:bg-stone-800 flex min-h-[6rem] flex-col items-center justify-center px-3 text-xs font-semibold transition"
+                    >
+                      Unarchive
+                    </button>
+                  )}
                 </div>
               </li>
             )

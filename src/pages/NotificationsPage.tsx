@@ -25,7 +25,7 @@ type NotificationCalendarEventRow = {
   candidate_id: string | null
   company_id: string | null
   positions: One<{ title: string }>
-  candidates: One<{ full_name: string; position_id: string }>
+  candidates: One<{ full_name: string }>
   companies: One<{ name: string }>
 }
 
@@ -65,10 +65,7 @@ function NotificationCalendarEventCard({
         : ev.candidate_id && candidate
           ? {
               label: candidate.full_name,
-              to:
-                candidate.position_id ?
-                  (`/positions/${candidate.position_id}` as const)
-                : undefined,
+              to: `/candidates/${ev.candidate_id}` as const,
             }
           : null
 
@@ -100,11 +97,9 @@ function NotificationCalendarEventCard({
           ) : null}
           {rel ? (
             <p className="mt-2 text-xs">
-              {rel.to ?
-                <Link to={rel.to} className="font-semibold text-[#006384] underline-offset-2 hover:underline dark:text-cyan-300">
-                  {rel.label}
-                </Link>
-              : <span className="text-stitch-muted dark:text-stone-400">{rel.label}</span>}
+              <Link to={rel.to} className="font-semibold text-[#006384] underline-offset-2 hover:underline dark:text-cyan-300">
+                {rel.label}
+              </Link>
             </p>
           ) : null}
         </div>
@@ -172,7 +167,7 @@ export function NotificationsPage() {
         .select(
           `id, title, subtitle, starts_at, ends_at, reminder_at, is_important, position_id, candidate_id, company_id,
            positions ( title ),
-           candidates ( full_name, position_id ),
+           candidates ( full_name ),
            companies ( name )`,
         )
         .eq('user_id', uid!)

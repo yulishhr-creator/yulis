@@ -2,12 +2,11 @@ import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 
 import { getSupabase } from '@/lib/supabase'
-import { formatCandidateStatus } from '@/lib/candidateStatus'
+import { formatAssignmentStatus } from '@/lib/candidateStatus'
 
 type PublicCandidateRow = {
   full_name: string
   status?: string
-  outcome?: string
   current_title: string | null
   stage_name: string
 }
@@ -19,7 +18,7 @@ type PublicPositionListPayload = {
 }
 
 function rowStatusLabel(row: PublicCandidateRow): string {
-  return formatCandidateStatus(row.status ?? row.outcome ?? 'pending')
+  return formatAssignmentStatus(row.status ?? 'in_progress')
 }
 
 export function PublicPositionCandidatesPage() {

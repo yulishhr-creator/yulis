@@ -2,7 +2,7 @@ import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 
 import { getSupabase } from '@/lib/supabase'
-import { formatCandidateStatus } from '@/lib/candidateStatus'
+import { formatCandidateGlobalStatus } from '@/lib/candidateStatus'
 
 type SharePayload = {
   candidate: {
@@ -11,7 +11,6 @@ type SharePayload = {
     email: string | null
     current_title: string | null
     status?: string
-    outcome?: string
   }
   position: { id: string; title: string; status: string }
   company: { name: string } | null
@@ -57,7 +56,7 @@ export function PublicSharePage() {
   }
 
   const { candidate, position, company } = q.data
-  const candStatus = candidate.status ?? candidate.outcome ?? 'pending'
+  const candStatus = candidate.status ?? 'active'
 
   return (
     <div className="bg-paper text-ink min-h-dvh dark:bg-paper-dark dark:text-stone-100">
@@ -76,7 +75,7 @@ export function PublicSharePage() {
             </p>
           ) : null}
           <p className="mt-2 text-xs font-medium uppercase tracking-wide text-stone-500">
-            Status: {formatCandidateStatus(candStatus)}
+            Status: {formatCandidateGlobalStatus(candStatus)}
           </p>
         </section>
         <section className="rounded-2xl border border-stone-200/80 bg-white/90 p-4 dark:border-stone-600 dark:bg-stone-900/70">

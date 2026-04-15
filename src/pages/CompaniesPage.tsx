@@ -55,12 +55,12 @@ export function CompaniesPage() {
       const cid = p.company_id as string | null
       if (!cid) continue
       const cur = m.get(cid) ?? { gained: 0, pending: 0 }
-      if (p.status === 'success') {
+      if (p.status === 'succeeded') {
         const actual = p.actual_fee_ils != null ? Number(p.actual_fee_ils) : NaN
         const planned = p.planned_fee_ils != null ? Number(p.planned_fee_ils) : NaN
         const add = Number.isFinite(actual) && actual > 0 ? actual : Number.isFinite(planned) && planned > 0 ? planned : 0
         m.set(cid, { ...cur, gained: cur.gained + add })
-      } else if (p.status === 'pending' || p.status === 'in_progress') {
+      } else if (p.status === 'active' || p.status === 'on_hold') {
         const planned = p.planned_fee_ils != null ? Number(p.planned_fee_ils) : 0
         if (Number.isFinite(planned) && planned > 0) {
           m.set(cid, { ...cur, pending: cur.pending + planned })

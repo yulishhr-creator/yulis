@@ -28,10 +28,49 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/hooks/useToast'
 import { criticalStageThreshold, logActivityEvent } from '@/lib/activityLog'
-import { formatCandidateStatus } from '@/lib/candidateStatus'
+import { formatAssignmentStatus } from '@/lib/candidateStatus'
+import { logPositionCandidateTransition } from '@/lib/positionTransitions'
 import { normalizeRequirementsText } from '@/lib/requirementValues'
 
-type StageRow = { id: string; name: string; sort_order: number }
+type StageRow = {
+  id: string
+  name: string
+  sort_order: number
+  description?: string | null
+  interviewers?: string | null
+  duration_minutes?: number | null
+  is_remote?: boolean | null
+}
+
+type CandidateProfile = {
+  id: string
+  full_name: string
+  email: string | null
+  phone: string | null
+  resume_storage_path?: string | null
+}
+
+type PositionCandidateJunction = {
+  id: string
+  candidate_id: string
+  position_stage_id: string | null
+  status: string
+  source: string
+  created_at: string
+  candidates: CandidateProfile | CandidateProfile[] | null
+  position_stages: { name: string } | { name: string }[] | null
+}
+
+function nestedCandidate(v: PositionCandidateJunction['candidates']): CandidateProfile | null {
+  if (v == null) return null
+  return Array.isArray(v) ? (v[0] ?? null) : v
+}
+
+function nestedStageName(v: PositionCandidateJunction['position_stages']): string {
+  if (v == null) return '—'
+  return Array.isArray(v) ? (v[0]?.name ?? '—') : (v.name ?? '—')
+}
+
 type ActivityRow = {
   id: string
   event_type: string
@@ -39,6 +78,19 @@ type ActivityRow = {
   subtitle: string | null
   created_at: string
   candidate_id: string | null
+  position_candidate_id: string | null
+}
+
+function taskLinkedCandidateName(t: {
+  position_candidates?: { candidates?: { full_name?: string } | { full_name?: string }[] | null } | { candidates?: { full_name?: string } | { full_name?: string }[] | null }[] | null
+}): string | null {
+  const raw = t.position_candidates
+  if (raw == null) return null
+  const pc = Array.isArray(raw) ? raw[0] : raw
+  if (!pc) return null
+  const cand = pc.candidates
+  const profile = cand == null ? null : Array.isArray(cand) ? cand[0] : cand
+  return profile?.full_name ?? null
 }
 
 export function PositionDetailPage() {
@@ -115,18 +167,54 @@ export function PositionDetailPage() {
     enabled: Boolean(supabase && user && id),
     queryFn: async () => {
       const { data, error } = await supabase!
-        .from('candidates')
-        .select('*, position_stages ( name )')
+        .from('position_candidates')
+        .select(
+          `
+          id,
+          candidate_id,
+          position_stage_id,
+          status,
+          source,
+          created_at,
+          candidates ( id, full_name, email, phone, resume_storage_path, deleted_at ),
+          position_stages ( name )
+        `,
+        )
         .eq('position_id', id!)
         .eq('user_id', user!.id)
-        .is('deleted_at', null)
-        .order('full_name')
+        .is('candidates.deleted_at', null)
+        .order('created_at', { ascending: false })
       if (error) throw error
-      return data ?? []
+      return (data ?? []) as PositionCandidateJunction[]
     },
   })
 
-  type PositionCandidate = NonNullable<typeof candidatesQ.data>[number] & { resume_storage_path?: string | null }
+  const transitionsStatsQ = useQuery({
+    queryKey: ['position-transition-stats', id, user?.id],
+    enabled: Boolean(supabase && user && id),
+    queryFn: async () => {
+      const { data: pcRows, error: e1 } = await supabase!.from('position_candidates').select('id').eq('position_id', id!).eq('user_id', user!.id)
+      if (e1) throw e1
+      const pcs = (pcRows ?? []).map((r) => r.id as string)
+      if (pcs.length === 0) return [] as { to_stage_id: string | null; c: number }[]
+      const { data, error } = await supabase!
+        .from('position_candidate_transitions')
+        .select('to_stage_id, position_candidate_id')
+        .eq('user_id', user!.id)
+        .eq('transition_type', 'stage')
+        .in('position_candidate_id', pcs)
+      if (error) throw error
+      const byStage = new Map<string, Set<string>>()
+      for (const row of data ?? []) {
+        const k = (row as { to_stage_id: string | null; position_candidate_id: string }).to_stage_id
+        const pcid = (row as { position_candidate_id: string }).position_candidate_id
+        if (!k) continue
+        if (!byStage.has(k)) byStage.set(k, new Set())
+        byStage.get(k)!.add(pcid)
+      }
+      return [...byStage.entries()].map(([to_stage_id, set]) => ({ to_stage_id, c: set.size }))
+    },
+  })
 
   const tasksQ = useQuery({
     queryKey: ['position-tasks', id, user?.id],
@@ -134,7 +222,7 @@ export function PositionDetailPage() {
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('tasks')
-        .select('*, candidates ( full_name )')
+        .select('*, position_candidates ( candidates ( full_name ) )')
         .eq('position_id', id!)
         .eq('user_id', user!.id)
         .order('due_at', { ascending: true, nullsFirst: false })
@@ -149,7 +237,7 @@ export function PositionDetailPage() {
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('activity_events')
-        .select('id, event_type, title, subtitle, created_at, candidate_id')
+        .select('id, event_type, title, subtitle, created_at, candidate_id, position_candidate_id')
         .eq('position_id', id!)
         .eq('user_id', user!.id)
         .order('created_at', { ascending: false })
@@ -160,7 +248,7 @@ export function PositionDetailPage() {
   })
 
   const positionIsOpen = useMemo(
-    () => posQ.data?.status === 'pending' || posQ.data?.status === 'in_progress',
+    () => posQ.data?.status === 'active' || posQ.data?.status === 'on_hold',
     [posQ.data?.status],
   )
 
@@ -189,8 +277,8 @@ export function PositionDetailPage() {
   const [welcome3, setWelcome3] = useState('')
   const [linkedinSearchUrl, setLinkedinSearchUrl] = useState('')
   const [positionSetupOpen, setPositionSetupOpen] = useState(false)
-  const [candStatusFilter, setCandStatusFilter] = useState<Set<string>>(() => new Set(['pending']))
-  const [status, setStatus] = useState('pending')
+  const [candStatusFilter, setCandStatusFilter] = useState<Set<string>>(() => new Set(['in_progress']))
+  const [status, setStatus] = useState('active')
   const [activityFilter, setActivityFilter] = useState<'all' | 'milestones'>('all')
   const [noteText, setNoteText] = useState('')
   const [shareOpen, setShareOpen] = useState(false)
@@ -206,7 +294,7 @@ export function PositionDetailPage() {
     setWelcome2(position.welcome_2 ?? '')
     setWelcome3(position.welcome_3 ?? '')
     setLinkedinSearchUrl((position as { linkedin_saved_search_url?: string | null }).linkedin_saved_search_url ?? '')
-    setStatus(position.status ?? 'pending')
+    setStatus(position.status ?? 'active')
   }, [position])
 
   useEffect(() => {
@@ -244,9 +332,11 @@ export function PositionDetailPage() {
   const invalidateAll = async () => {
     await qc.invalidateQueries({ queryKey: ['position', id] })
     await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
+    await qc.invalidateQueries({ queryKey: ['position-transition-stats', id] })
     await qc.invalidateQueries({ queryKey: ['position-activity', id] })
     await qc.invalidateQueries({ queryKey: ['position-public-list-token', id] })
     await qc.invalidateQueries({ queryKey: ['positions'] })
+    await qc.invalidateQueries({ queryKey: ['candidates'] })
     await qc.invalidateQueries({ queryKey: ['dashboard-tasks'] })
     await qc.invalidateQueries({ queryKey: ['notification-count'] })
   }
@@ -276,8 +366,8 @@ export function PositionDetailPage() {
   })
 
   const setPositionTerminal = useMutation({
-    mutationFn: async (next: 'success' | 'cancelled') => {
-      const prev = position?.status ?? 'pending'
+    mutationFn: async (next: 'succeeded' | 'cancelled') => {
+      const prev = position?.status ?? 'active'
       const { error } = await supabase!
         .from('positions')
         .update({ status: next })
@@ -288,11 +378,11 @@ export function PositionDetailPage() {
     },
     onSuccess: async ({ prev, next }) => {
       setStatus(next)
-      success(next === 'success' ? 'Marked fulfilled' : 'Marked withdrawn')
+      success(next === 'succeeded' ? 'Marked succeeded' : 'Marked cancelled')
       await logActivityEvent(supabase!, user!.id, {
         event_type: 'position_status_changed',
         position_id: id!,
-        title: next === 'success' ? 'Position fulfilled' : 'Position withdrawn',
+        title: next === 'succeeded' ? 'Position succeeded' : 'Position cancelled',
         subtitle: `${prev} → ${next}`,
         metadata: { from: prev, to: next },
       })
@@ -303,11 +393,11 @@ export function PositionDetailPage() {
 
   const reopenPosition = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase!.from('positions').update({ status: 'in_progress' }).eq('id', id!).eq('user_id', user!.id)
+      const { error } = await supabase!.from('positions').update({ status: 'active' }).eq('id', id!).eq('user_id', user!.id)
       if (error) throw error
     },
     onSuccess: async () => {
-      setStatus('in_progress')
+      setStatus('active')
       success('Position reopened')
       await invalidateAll()
     },
@@ -315,7 +405,7 @@ export function PositionDetailPage() {
   })
 
   const setOpenPositionStatus = useMutation({
-    mutationFn: async (next: 'pending' | 'in_progress') => {
+    mutationFn: async (next: 'active' | 'on_hold') => {
       const { error } = await supabase!.from('positions').update({ status: next }).eq('id', id!).eq('user_id', user!.id)
       if (error) throw error
     },
@@ -326,7 +416,7 @@ export function PositionDetailPage() {
         event_type: 'position_status_changed',
         position_id: id!,
         title: 'Position status updated',
-        subtitle: next,
+        subtitle: String(next),
         metadata: { to: next },
       })
       await invalidateAll()
@@ -355,6 +445,47 @@ export function PositionDetailPage() {
     onError: (e: Error) => toastError(e.message),
   })
 
+  const updateStageMeta = useMutation({
+    mutationFn: async (patch: { id: string } & Partial<Pick<StageRow, 'name' | 'description' | 'interviewers' | 'duration_minutes' | 'is_remote'>>) => {
+      const { id: stageId, ...rest } = patch
+      const { error } = await supabase!.from('position_stages').update(rest).eq('id', stageId).eq('user_id', user!.id)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['position-stages', id] })
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const deleteStageMut = useMutation({
+    mutationFn: async (stageId: string) => {
+      const using = (candidatesQ.data ?? []).filter((c) => c.position_stage_id === stageId).length
+      if (using > 0) {
+        const ok = window.confirm(
+          `${using} assignment(s) use this stage. Their stage link will be cleared and the stage deleted. Continue?`,
+        )
+        if (!ok) throw new Error('cancelled')
+        const { error: u1 } = await supabase!
+          .from('position_candidates')
+          .update({ position_stage_id: null })
+          .eq('position_stage_id', stageId)
+          .eq('user_id', user!.id)
+          .eq('position_id', id!)
+        if (u1) throw u1
+      }
+      const { error } = await supabase!.from('position_stages').delete().eq('id', stageId).eq('user_id', user!.id)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      success('Stage removed')
+      await invalidateAll()
+    },
+    onError: (e: Error) => {
+      if (e.message === 'cancelled') return
+      toastError(e.message)
+    },
+  })
+
   async function moveStage(stageId: string, dir: -1 | 1) {
     const rows = [...(stagesQ.data ?? [])]
     const i = rows.findIndex((r) => r.id === stageId)
@@ -377,36 +508,57 @@ export function PositionDetailPage() {
       const en = normalizeEmail(cEmail)
       const pn = normalizePhone(cPhone)
       if (cSource === 'app' && id) {
-        const externals = (candidatesQ.data ?? []).filter((c) => c.source === 'external')
-        const hit = externals.find((c) => {
-          if (en && c.email_normalized && c.email_normalized === en) return true
-          if (pn && c.phone_normalized && c.phone_normalized === pn) return true
+        const externals = (candidatesQ.data ?? []).filter((pc) => pc.source === 'external')
+        const hit = externals.find((pc) => {
+          const h = nestedCandidate(pc.candidates)
+          if (!h) return false
+          if (en && h.email && normalizeEmail(h.email) === en) return true
+          if (pn && h.phone && normalizePhone(h.phone) === pn) return true
           return false
         })
         if (hit) {
-          const ok = window.confirm(`This matches imported candidate “${hit.full_name}”. Create another record anyway?`)
+          const nm = nestedCandidate(hit.candidates)?.full_name ?? 'Candidate'
+          const ok = window.confirm(`This matches imported candidate “${nm}”. Create another record anyway?`)
           if (!ok) throw new Error('cancelled')
         }
       }
       const firstStage = stagesQ.data?.[0]?.id ?? null
-      const { data, error } = await supabase!
+      const { data: candIns, error: insErr } = await supabase!
         .from('candidates')
         .insert({
           user_id: user!.id,
-          position_id: id!,
-          position_stage_id: firstStage,
           full_name: cName.trim() || 'Unnamed',
           email: cEmail.trim() || null,
           phone: cPhone.trim() || null,
-          source: cSource,
-          status: 'pending',
+          status: 'active',
           email_normalized: en,
           phone_normalized: pn,
         })
         .select('id, full_name')
         .single()
-      if (error) throw error
-      return data
+      if (insErr) throw insErr
+      const { data: pcRow, error: pcErr } = await supabase!
+        .from('position_candidates')
+        .insert({
+          user_id: user!.id,
+          position_id: id!,
+          candidate_id: candIns.id,
+          position_stage_id: firstStage,
+          status: 'in_progress',
+          source: cSource,
+        })
+        .select('id')
+        .single()
+      if (pcErr) throw pcErr
+      if (firstStage && pcRow?.id) {
+        await logPositionCandidateTransition(supabase!, user!.id, {
+          position_candidate_id: pcRow.id,
+          transition_type: 'stage',
+          from_stage_id: null,
+          to_stage_id: firstStage,
+        })
+      }
+      return { ...candIns, position_candidate_id: pcRow?.id as string }
     },
     onSuccess: async (data) => {
       setCName('')
@@ -417,10 +569,10 @@ export function PositionDetailPage() {
         event_type: 'candidate_created',
         position_id: id!,
         candidate_id: data.id,
+        position_candidate_id: data.position_candidate_id,
         title: `New candidate: ${data.full_name}`,
       })
-      await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
-      await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+      await invalidateAll()
     },
     onError: (e: Error) => {
       if (e.message === 'cancelled') return
@@ -461,21 +613,47 @@ export function PositionDetailPage() {
       if (!nm) continue
       const em = String(r[emailKey] ?? '').trim()
       const ph = String(r[phoneKey] ?? '').trim()
-      const { error } = await supabase.from('candidates').insert({
+      const enNorm = normalizeEmail(em)
+      const phNorm = normalizePhone(ph)
+      let candId: string | null = null
+      if (enNorm) {
+        const { data: byEmail } = await supabase.from('candidates').select('id').eq('user_id', user.id).eq('email_normalized', enNorm).maybeSingle()
+        candId = byEmail?.id ?? null
+      }
+      if (!candId && phNorm) {
+        const { data: byPhone } = await supabase.from('candidates').select('id').eq('user_id', user.id).eq('phone_normalized', phNorm).maybeSingle()
+        candId = byPhone?.id ?? null
+      }
+      if (!candId) {
+        const { data: ins, error: insE } = await supabase
+          .from('candidates')
+          .insert({
+            user_id: user.id,
+            full_name: nm,
+            email: em || null,
+            phone: ph || null,
+            status: 'active',
+            email_normalized: enNorm,
+            phone_normalized: phNorm,
+          })
+          .select('id')
+          .single()
+        if (insE || !ins) continue
+        candId = ins.id
+      }
+      const { error: pcE } = await supabase.from('position_candidates').insert({
         user_id: user.id,
         position_id: id,
+        candidate_id: candId,
         position_stage_id: stageId,
-        full_name: nm,
-        email: em || null,
-        phone: ph || null,
+        status: 'in_progress',
         source: 'external',
-        status: 'pending',
-        email_normalized: normalizeEmail(em),
-        phone_normalized: normalizePhone(ph),
       })
-      if (!error) ok++
+      if (!pcE) ok++
     }
     await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
+    await qc.invalidateQueries({ queryKey: ['position-transition-stats', id] })
+    await qc.invalidateQueries({ queryKey: ['candidates'] })
     if (ok === 0) setImportError('Could not import rows — check column headers (name, email, phone).')
     else {
       success(`Imported ${ok} candidate(s)`)
@@ -504,28 +682,42 @@ export function PositionDetailPage() {
   })
 
   const updateCandidateStage = useMutation({
-    mutationFn: async ({ candidateId, stageId }: { candidateId: string; stageId: string | null }) => {
-      const cand = (candidatesQ.data ?? []).find((c) => c.id === candidateId)
-      const oldStageId = cand?.position_stage_id as string | null
+    mutationFn: async ({ positionCandidateId, stageId }: { positionCandidateId: string; stageId: string | null }) => {
+      const row = (candidatesQ.data ?? []).find((c) => c.id === positionCandidateId)
+      const oldStageId = row?.position_stage_id as string | null
       const stages = stagesQ.data ?? []
       const oldS = oldStageId ? stages.find((s) => s.id === oldStageId) : null
       const newS = stageId ? stages.find((s) => s.id === stageId) : null
+      const prof = nestedCandidate(row?.candidates ?? null)
       const { error } = await supabase!
-        .from('candidates')
+        .from('position_candidates')
         .update({ position_stage_id: stageId })
-        .eq('id', candidateId)
+        .eq('id', positionCandidateId)
         .eq('user_id', user!.id)
       if (error) throw error
-      return { candidateId, oldS, newS, candName: cand?.full_name ?? 'Candidate' }
+      return {
+        positionCandidateId,
+        candidateId: prof?.id ?? row?.candidate_id,
+        oldS,
+        newS,
+        candName: prof?.full_name ?? 'Candidate',
+      }
     },
-    onSuccess: async ({ candidateId, oldS, newS, candName }) => {
+    onSuccess: async ({ positionCandidateId, candidateId, oldS, newS, candName }) => {
       success('Stage updated')
       const fromName = oldS?.name ?? '—'
       const toName = newS?.name ?? '—'
+      await logPositionCandidateTransition(supabase!, user!.id, {
+        position_candidate_id: positionCandidateId,
+        transition_type: 'stage',
+        from_stage_id: oldS?.id ?? null,
+        to_stage_id: newS?.id ?? null,
+      })
       await logActivityEvent(supabase!, user!.id, {
         event_type: 'candidate_stage_changed',
         position_id: id!,
-        candidate_id: candidateId,
+        candidate_id: candidateId ?? null,
+        position_candidate_id: positionCandidateId,
         title: `${candName}: stage change`,
         subtitle: `${fromName} → ${toName}`,
         metadata: {
@@ -536,47 +728,70 @@ export function PositionDetailPage() {
         },
       })
       const N = criticalStageThreshold(position as { critical_stage_sort_order?: number | null })
-      if (newS && newS.sort_order >= N) {
+      if (newS && candidateId && newS.sort_order >= N) {
         await logActivityEvent(supabase!, user!.id, {
           event_type: 'candidate_reached_critical_stage',
           position_id: id!,
           candidate_id: candidateId,
+          position_candidate_id: positionCandidateId,
           title: `${candName} reached stage ${N}+`,
           subtitle: newS.name,
           metadata: { sort_order: newS.sort_order, threshold: N },
         })
       }
-      await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
-      await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+      await invalidateAll()
     },
     onError: (e: Error) => toastError(e.message),
   })
 
-  const patchCandidateStatus = useMutation({
+  const patchAssignmentStatus = useMutation({
     mutationFn: async ({
-      candidateId,
+      positionCandidateId,
       nextStatus,
       closeTasks,
     }: {
-      candidateId: string
-      nextStatus: 'pending' | 'success' | 'cancelled'
+      positionCandidateId: string
+      nextStatus: 'in_progress' | 'rejected' | 'withdrawn'
       closeTasks: boolean
     }) => {
-      const cand = (candidatesQ.data ?? []).find((c) => c.id === candidateId)
-      const prev = (cand?.status as string) ?? 'pending'
-      const { error } = await supabase!.from('candidates').update({ status: nextStatus }).eq('id', candidateId).eq('user_id', user!.id)
+      const row = (candidatesQ.data ?? []).find((c) => c.id === positionCandidateId)
+      const prev = (row?.status as string) ?? 'in_progress'
+      const { error } = await supabase!
+        .from('position_candidates')
+        .update({ status: nextStatus })
+        .eq('id', positionCandidateId)
+        .eq('user_id', user!.id)
       if (error) throw error
-      if (closeTasks && nextStatus !== 'pending') {
-        await supabase!.from('tasks').update({ status: 'done' }).eq('candidate_id', candidateId).eq('user_id', user!.id).neq('status', 'done')
+      if (closeTasks && nextStatus !== 'in_progress') {
+        await supabase!
+          .from('tasks')
+          .update({ status: 'done' })
+          .eq('position_candidate_id', positionCandidateId)
+          .eq('user_id', user!.id)
+          .neq('status', 'done')
       }
-      return { candidateId, prev, nextStatus, name: cand?.full_name ?? 'Candidate' }
+      const prof = nestedCandidate(row?.candidates ?? null)
+      return {
+        positionCandidateId,
+        candidateId: prof?.id ?? row?.candidate_id,
+        prev,
+        nextStatus,
+        name: prof?.full_name ?? 'Candidate',
+      }
     },
-    onSuccess: async ({ candidateId, prev, nextStatus, name }) => {
+    onSuccess: async ({ positionCandidateId, candidateId, prev, nextStatus, name }) => {
       success('Status updated')
+      await logPositionCandidateTransition(supabase!, user!.id, {
+        position_candidate_id: positionCandidateId,
+        transition_type: 'status',
+        from_status: prev,
+        to_status: nextStatus,
+      })
       await logActivityEvent(supabase!, user!.id, {
         event_type: 'candidate_status_changed',
         position_id: id!,
-        candidate_id: candidateId,
+        candidate_id: candidateId ?? null,
+        position_candidate_id: positionCandidateId,
         title: `${name}: ${nextStatus}`,
         subtitle: `${prev} → ${nextStatus}`,
         metadata: { from: prev, to: nextStatus },
@@ -586,14 +801,41 @@ export function PositionDetailPage() {
     onError: (e: Error) => toastError(e.message),
   })
 
-  const softDeleteCandidate = useMutation({
-    mutationFn: async (candidateId: string) => {
-      const { error } = await supabase!.from('candidates').update({ deleted_at: new Date().toISOString() }).eq('id', candidateId).eq('user_id', user!.id)
+  const withdrawFromRole = useMutation({
+    mutationFn: async (positionCandidateId: string) => {
+      const row = (candidatesQ.data ?? []).find((c) => c.id === positionCandidateId)
+      const prevStatus = (row?.status as string) ?? 'in_progress'
+      const prof = nestedCandidate(row?.candidates ?? null)
+      const { error } = await supabase!
+        .from('position_candidates')
+        .update({ status: 'withdrawn' })
+        .eq('id', positionCandidateId)
+        .eq('user_id', user!.id)
       if (error) throw error
+      return {
+        positionCandidateId,
+        prevStatus,
+        candidateId: prof?.id ?? row?.candidate_id ?? null,
+        name: prof?.full_name ?? 'Candidate',
+      }
     },
-    onSuccess: async () => {
-      success('Candidate archived')
-      if (highlightCandidate) setSearch({}, { replace: true })
+    onSuccess: async ({ positionCandidateId, prevStatus, candidateId, name }) => {
+      success('Withdrawn from this role')
+      await logPositionCandidateTransition(supabase!, user!.id, {
+        position_candidate_id: positionCandidateId,
+        transition_type: 'status',
+        from_status: prevStatus,
+        to_status: 'withdrawn',
+      })
+      await logActivityEvent(supabase!, user!.id, {
+        event_type: 'candidate_status_changed',
+        position_id: id!,
+        candidate_id: candidateId,
+        position_candidate_id: positionCandidateId,
+        title: `${name}: withdrawn from role`,
+        subtitle: 'Assignment closed',
+      })
+      if (highlightCandidate && candidateId === highlightCandidate) setSearch({}, { replace: true })
       await invalidateAll()
     },
     onError: (e: Error) => toastError(e.message),
@@ -602,10 +844,14 @@ export function PositionDetailPage() {
   const addNote = useMutation({
     mutationFn: async () => {
       if (!noteText.trim()) throw new Error('Enter a note')
+      const positionCandidateId = highlightCandidate
+        ? ((candidatesQ.data ?? []).find((r) => nestedCandidate(r.candidates)?.id === highlightCandidate)?.id ?? null)
+        : null
       await logActivityEvent(supabase!, user!.id, {
         event_type: 'note_added',
         position_id: id!,
         candidate_id: highlightCandidate || null,
+        position_candidate_id: positionCandidateId,
         title: 'Note',
         subtitle: noteText.trim(),
       })
@@ -680,10 +926,13 @@ export function PositionDetailPage() {
       return
     }
     success('Resume uploaded')
+    const positionCandidateId =
+      (candidatesQ.data ?? []).find((r) => nestedCandidate(r.candidates)?.id === candidateId)?.id ?? null
     await logActivityEvent(supabase, user.id, {
       event_type: 'candidate_file_uploaded',
       position_id: id!,
       candidate_id: candidateId,
+      position_candidate_id: positionCandidateId,
       title: 'Resume uploaded',
       subtitle: file.name,
       metadata: { file_kind: 'resume', path },
@@ -718,12 +967,21 @@ export function PositionDetailPage() {
     return rows
   }, [activityQ.data, activityFilter])
 
-  const terminalPosition = status === 'success' || status === 'cancelled'
+  const terminalPosition = status === 'succeeded' || status === 'cancelled'
 
   const activePipelineCandidates = useMemo(
-    () => (candidatesQ.data ?? []).filter((c) => c.status === 'pending'),
+    () => (candidatesQ.data ?? []).filter((c) => c.status === 'in_progress'),
     [candidatesQ.data],
   )
+
+  const funnelByStage = useMemo(() => {
+    const stats = transitionsStatsQ.data ?? []
+    const stages = stagesQ.data ?? []
+    return stages.map((s) => {
+      const hit = stats.find((x) => x.to_stage_id === s.id)
+      return { id: s.id, name: s.name, count: hit?.c ?? 0 }
+    })
+  }, [transitionsStatsQ.data, stagesQ.data])
 
   const filteredCandidates = useMemo(
     () => (candidatesQ.data ?? []).filter((c) => candStatusFilter.has(c.status as string)),
@@ -771,15 +1029,18 @@ export function PositionDetailPage() {
     return <p className="text-ink-muted text-sm">Loading…</p>
   }
 
-  function renderCandidateCard(c: PositionCandidate) {
-    const st = c.position_stages as unknown as { name: string } | null
-    const hl = highlightCandidate === c.id
-    const inPipeline = c.status === 'pending'
-    const resumePath = c.resume_storage_path ?? null
+  function renderCandidateCard(c: PositionCandidateJunction) {
+    const prof = nestedCandidate(c.candidates)
+    const candId = prof?.id
+    const stageName = nestedStageName(c.position_stages)
+    const hl = Boolean(candId && highlightCandidate === candId)
+    const inPipeline = c.status === 'in_progress'
+    const resumePath = prof?.resume_storage_path ?? null
+    const displayName = prof?.full_name ?? 'Unnamed'
     return (
       <li
         key={c.id}
-        id={`cand-${c.id}`}
+        id={candId ? `cand-${candId}` : `pc-${c.id}`}
         className={`border-line rounded-xl border bg-white/60 p-3 dark:border-line-dark dark:bg-stone-900/40 ${hl ? 'ring-accent ring-2' : ''}`}
       >
         <div className="flex flex-wrap items-start justify-between gap-2">
@@ -795,37 +1056,40 @@ export function PositionDetailPage() {
                 <FileText className="h-4 w-4" aria-hidden />
               </button>
             ) : null}
-            <Link to={`?candidate=${c.id}`} className="font-medium text-[#9b3e20] hover:underline dark:text-orange-300">
-              {c.full_name}
+            <Link
+              to={`?tab=candidates&candidate=${candId ?? ''}`}
+              className="font-medium text-[#9b3e20] hover:underline dark:text-orange-300"
+            >
+              {displayName}
               <ChevronRight className="ml-1 inline h-4 w-4 opacity-50" aria-hidden />
             </Link>
             {hl && inPipeline ? (
               <div className="flex items-center gap-0.5">
                 <button
                   type="button"
-                  title="Mark success"
-                  aria-label="Mark success"
+                  title="Mark rejected"
+                  aria-label="Mark rejected"
                   onClick={() => {
-                    if (!window.confirm('Mark this candidate as success (placement won)?')) return
-                    const close = window.confirm('Also mark open tasks for this candidate as done?')
-                    void patchCandidateStatus.mutateAsync({ candidateId: c.id, nextStatus: 'success', closeTasks: close })
-                  }}
-                  className="border-line flex h-7 w-7 items-center justify-center rounded-md border bg-white text-stone-800 hover:bg-stone-50 dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800"
-                >
-                  <Check className="h-3.5 w-3.5 stroke-[2.5]" aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  title="Mark cancelled"
-                  aria-label="Mark cancelled"
-                  onClick={() => {
-                    if (!window.confirm('Mark this candidate as cancelled (closed without success)?')) return
-                    const close = window.confirm('Also mark open tasks for this candidate as done?')
-                    void patchCandidateStatus.mutateAsync({ candidateId: c.id, nextStatus: 'cancelled', closeTasks: close })
+                    if (!window.confirm('Mark this assignment as rejected?')) return
+                    const close = window.confirm('Also mark open tasks for this assignment as done?')
+                    void patchAssignmentStatus.mutateAsync({ positionCandidateId: c.id, nextStatus: 'rejected', closeTasks: close })
                   }}
                   className="border-line flex h-7 w-7 items-center justify-center rounded-md border bg-white text-stone-800 hover:bg-stone-50 dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800"
                 >
                   <X className="h-3.5 w-3.5 stroke-[2.5]" aria-hidden />
+                </button>
+                <button
+                  type="button"
+                  title="Withdraw from role"
+                  aria-label="Withdraw from role"
+                  onClick={() => {
+                    if (!window.confirm('Withdraw this candidate from this role?')) return
+                    const close = window.confirm('Also mark open tasks for this assignment as done?')
+                    void patchAssignmentStatus.mutateAsync({ positionCandidateId: c.id, nextStatus: 'withdrawn', closeTasks: close })
+                  }}
+                  className="border-line flex h-7 w-7 items-center justify-center rounded-md border bg-white text-stone-800 hover:bg-stone-50 dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800"
+                >
+                  <Trash2 className="h-3.5 w-3.5 stroke-[2.5]" aria-hidden />
                 </button>
               </div>
             ) : null}
@@ -833,22 +1097,24 @@ export function PositionDetailPage() {
           <button
             type="button"
             onClick={() => {
-              if (window.confirm(`Archive ${c.full_name}?`)) void softDeleteCandidate.mutateAsync(c.id)
+              if (window.confirm(`Withdraw ${displayName} from this role?`)) void withdrawFromRole.mutateAsync(c.id)
             }}
             className="text-ink-muted hover:text-red-600 flex items-center gap-1 text-xs"
           >
             <Trash2 className="h-3.5 w-3.5" aria-hidden />
-            Archive
+            Withdraw
           </button>
         </div>
         <p className="text-ink-muted text-xs">
-          {c.source} · {st?.name ?? '—'} · {formatCandidateStatus(c.status as string)}
+          {c.source} · {stageName} · {formatAssignmentStatus(c.status as string)}
         </p>
         <label className="mt-2 block text-xs font-medium">
           Stage
           <select
             value={c.position_stage_id ?? ''}
-            onChange={(e) => void updateCandidateStage.mutateAsync({ candidateId: c.id, stageId: e.target.value || null })}
+            onChange={(e) =>
+              void updateCandidateStage.mutateAsync({ positionCandidateId: c.id, stageId: e.target.value || null })
+            }
             className="border-line mt-1 w-full rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
           >
             <option value="">—</option>
@@ -864,26 +1130,27 @@ export function PositionDetailPage() {
           <select
             key={`${c.id}-${c.status}`}
             value={c.status as string}
-            disabled={patchCandidateStatus.isPending}
+            disabled={patchAssignmentStatus.isPending}
             onChange={(e) => {
-              const v = e.target.value as 'pending' | 'success' | 'cancelled'
+              const v = e.target.value as 'in_progress' | 'rejected' | 'withdrawn'
               if (v === c.status) return
-              if (!window.confirm('Change this candidate’s status?')) return
-              const closeTasks = v !== 'pending' ? window.confirm('Also mark open tasks for this candidate as done?') : false
-              void patchCandidateStatus.mutateAsync({ candidateId: c.id, nextStatus: v, closeTasks })
+              if (!window.confirm('Change this assignment’s status?')) return
+              const closeTasks = v !== 'in_progress' ? window.confirm('Also mark open tasks for this assignment as done?') : false
+              void patchAssignmentStatus.mutateAsync({ positionCandidateId: c.id, nextStatus: v, closeTasks })
             }}
             className="border-line mt-1 w-full rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
           >
-            <option value="pending">Pending</option>
-            <option value="success">Success</option>
-            <option value="cancelled">Cancelled</option>
+            <option value="in_progress">In progress</option>
+            <option value="rejected">Rejected</option>
+            <option value="withdrawn">Withdrawn</option>
           </select>
         </label>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => {
-              setResumePickForId(c.id)
+              if (!candId) return
+              setResumePickForId(candId)
               queueMicrotask(() => resumeFileRef.current?.click())
             }}
             className="border-line inline-flex items-center gap-2 rounded-lg border bg-white/80 px-3 py-2 text-xs font-medium shadow-sm dark:border-line-dark dark:bg-stone-900/60"
@@ -892,22 +1159,28 @@ export function PositionDetailPage() {
             {resumePath ? 'Replace résumé' : 'Upload résumé'}
           </button>
           <span className="text-ink-muted text-[11px]">PDF or Word</span>
-          <button type="button" onClick={() => void createShareToken.mutateAsync(c.id)} className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs dark:border-line-dark">
-            <Link2 className="h-3.5 w-3.5" aria-hidden />
-            Share link
-          </button>
+          {candId ? (
+            <button
+              type="button"
+              onClick={() => void createShareToken.mutateAsync(candId)}
+              className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs dark:border-line-dark"
+            >
+              <Link2 className="h-3.5 w-3.5" aria-hidden />
+              Share link
+            </button>
+          ) : null}
         </div>
         {hl && !inPipeline ? (
           <p className="mt-2 text-sm font-medium text-stone-600 dark:text-stone-400">
-            Status: {formatCandidateStatus(c.status as string)}
+            Status: {formatAssignmentStatus(c.status as string)}
           </p>
         ) : null}
-        {hl ? (
+        {hl && candId ? (
           <div className="mt-3 border-t border-stone-200/80 pt-3 dark:border-stone-600">
             <h3 className="text-xs font-bold uppercase tracking-wide text-stone-500">Candidate activity</h3>
             <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-sm">
               {(activityQ.data ?? [])
-                .filter((a) => a.candidate_id === c.id)
+                .filter((a) => a.candidate_id === candId || a.position_candidate_id === c.id)
                 .map((a) => (
                   <li key={a.id} className="text-ink-muted text-xs">
                     <span className="text-ink font-medium">{a.title}</span>
@@ -975,11 +1248,11 @@ export function PositionDetailPage() {
                 </button>
                 <button
                   type="button"
-                  title="Mark role fulfilled"
-                  aria-label="Mark role fulfilled"
+                  title="Mark role succeeded"
+                  aria-label="Mark role succeeded"
                   onClick={() => {
-                    if (!window.confirm('Are you sure you want to mark this role as fulfilled?')) return
-                    void setPositionTerminal.mutateAsync('success')
+                    if (!window.confirm('Are you sure you want to mark this role as succeeded?')) return
+                    void setPositionTerminal.mutateAsync('succeeded')
                   }}
                   className="border-line flex h-9 w-9 items-center justify-center rounded-xl border border-stone-300 bg-white text-stone-800 shadow-sm transition hover:bg-stone-50 dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800"
                 >
@@ -987,10 +1260,10 @@ export function PositionDetailPage() {
                 </button>
                 <button
                   type="button"
-                  title="Mark role withdrawn"
-                  aria-label="Mark role withdrawn"
+                  title="Mark role cancelled"
+                  aria-label="Mark role cancelled"
                   onClick={() => {
-                    if (!window.confirm('Are you sure you want to mark this role as withdrawn?')) return
+                    if (!window.confirm('Are you sure you want to mark this role as cancelled?')) return
                     void setPositionTerminal.mutateAsync('cancelled')
                   }}
                   className="border-line flex h-9 w-9 items-center justify-center rounded-xl border border-stone-300 bg-white text-stone-800 shadow-sm transition hover:bg-stone-50 dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800"
@@ -1001,7 +1274,7 @@ export function PositionDetailPage() {
             ) : (
               <>
                 <span className="border-line rounded-full border bg-white/80 px-2.5 py-1 text-xs font-semibold dark:bg-stone-800">
-                  {status === 'success' ? 'Fulfilled' : 'Withdrawn'}
+                  {status === 'succeeded' ? 'Succeeded' : 'Cancelled'}
                 </span>
                 <button type="button" onClick={() => void reopenPosition.mutateAsync()} className="text-accent text-xs font-semibold underline">
                   Reopen
@@ -1058,7 +1331,7 @@ export function PositionDetailPage() {
             <span className="text-sm font-medium">Role status</span>
             {!terminalPosition ? (
               <div className="flex flex-wrap gap-2">
-                {(['pending', 'in_progress'] as const).map((s) => (
+                {(['active', 'on_hold'] as const).map((s) => (
                   <button
                     key={s}
                     type="button"
@@ -1068,34 +1341,34 @@ export function PositionDetailPage() {
                       status === s ? 'bg-accent text-white' : 'border-line border bg-white/80 hover:bg-stone-50 dark:border-line-dark dark:bg-stone-900/50 dark:hover:bg-stone-800'
                     }`}
                   >
-                    {s === 'pending' ? 'Pending' : 'In progress'}
+                    {s === 'active' ? 'Active' : 'On hold'}
                   </button>
                 ))}
                 <button
                   type="button"
                   disabled={setPositionTerminal.isPending}
                   onClick={() => {
-                    if (!window.confirm('Are you sure you want to mark this role as fulfilled?')) return
-                    void setPositionTerminal.mutateAsync('success')
+                    if (!window.confirm('Are you sure you want to mark this role as succeeded?')) return
+                    void setPositionTerminal.mutateAsync('succeeded')
                   }}
                   className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                    status === 'success' ? 'bg-emerald-700 text-white' : 'border-line border bg-white/80 hover:bg-stone-50 dark:border-line-dark dark:bg-stone-900/50 dark:hover:bg-stone-800'
+                    status === 'succeeded' ? 'bg-emerald-700 text-white' : 'border-line border bg-white/80 hover:bg-stone-50 dark:border-line-dark dark:bg-stone-900/50 dark:hover:bg-stone-800'
                   }`}
                 >
-                  Fulfilled
+                  Succeeded
                 </button>
                 <button
                   type="button"
                   disabled={setPositionTerminal.isPending}
                   onClick={() => {
-                    if (!window.confirm('Are you sure you want to mark this role as withdrawn?')) return
+                    if (!window.confirm('Are you sure you want to mark this role as cancelled?')) return
                     void setPositionTerminal.mutateAsync('cancelled')
                   }}
                   className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
                     status === 'cancelled' ? 'bg-stone-600 text-white' : 'border-line border bg-white/80 hover:bg-stone-50 dark:border-line-dark dark:bg-stone-900/50 dark:hover:bg-stone-800'
                   }`}
                 >
-                  Withdrawn
+                  Cancelled
                 </button>
               </div>
             ) : (
@@ -1191,29 +1464,57 @@ export function PositionDetailPage() {
           </button>
         </div>
         <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">
-          Still pending on this role — use Candidates for imports, filters, and full cards.
+          Assignments in progress on this role — open Candidates for imports, filters, and full cards.
         </p>
         {activePipelineCandidates.length === 0 ? (
-          <p className="text-ink-muted mt-3 text-sm">No pending candidates yet.</p>
+          <p className="text-ink-muted mt-3 text-sm">No in-progress assignments yet.</p>
         ) : (
           <ul className="mt-3 space-y-2">
             {activePipelineCandidates.map((c) => {
-              const st = c.position_stages as unknown as { name: string } | null
+              const prof = nestedCandidate(c.candidates)
+              const candId = prof?.id
               const days = differenceInCalendarDays(new Date(), new Date(c.created_at as string))
               return (
                 <li
                   key={c.id}
                   className="border-line flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-white/70 px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/50"
                 >
-                  <Link to={`?tab=candidates&candidate=${c.id}`} className="font-medium text-[#9b3e20] hover:underline dark:text-orange-300">
-                    {c.full_name}
+                  <Link
+                    to={candId ? `?tab=candidates&candidate=${candId}` : '?tab=candidates'}
+                    className="font-medium text-[#9b3e20] hover:underline dark:text-orange-300"
+                  >
+                    {prof?.full_name ?? 'Unnamed'}
                   </Link>
                   <span className="text-ink-muted text-xs">
-                    {st?.name ?? '—'} · {days}d
+                    {nestedStageName(c.position_stages)} · {days}d
                   </span>
                 </li>
               )
             })}
+          </ul>
+        )}
+      </section>
+
+      <section className="border-line bg-white/60 rounded-2xl border p-4 dark:border-line-dark dark:bg-stone-900/40">
+        <h2 className="font-semibold">Pipeline reach</h2>
+        <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">
+          Distinct candidates who reached each stage (from assignment history). Updates when stages change.
+        </p>
+        {transitionsStatsQ.isLoading ? (
+          <p className="text-ink-muted mt-3 text-sm">Loading stats…</p>
+        ) : funnelByStage.length === 0 ? (
+          <p className="text-ink-muted mt-3 text-sm">No stages defined yet.</p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {funnelByStage.map((row) => (
+              <li
+                key={row.id}
+                className="border-line flex items-center justify-between gap-2 rounded-lg border bg-white/70 px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/50"
+              >
+                <span className="font-medium">{row.name}</span>
+                <span className="text-ink-muted text-xs tabular-nums">{row.count} reached</span>
+              </li>
+            ))}
           </ul>
         )}
       </section>
@@ -1236,9 +1537,10 @@ export function PositionDetailPage() {
                 <span className="pointer-events-none select-none">
                   {t.title} · {t.status}
                   {t.due_at ? <span className="text-ink-muted"> · due {formatDue(t.due_at)}</span> : null}
-                  {(t as { candidates?: { full_name?: string } | null }).candidates?.full_name ? (
-                    <span className="text-ink-muted"> · {(t as { candidates: { full_name: string } }).candidates.full_name}</span>
-                  ) : null}
+                  {(() => {
+                    const linkedName = taskLinkedCandidateName(t)
+                    return linkedName ? <span className="text-ink-muted"> · {linkedName}</span> : null
+                  })()}
                 </span>
                 <button type="button" onClick={() => void deleteTask.mutateAsync(t.id)} className="text-red-600 text-xs font-semibold">
                   Remove
@@ -1255,14 +1557,14 @@ export function PositionDetailPage() {
       <section id="position-candidates-section" className="scroll-mt-24">
         <h2 className="font-semibold">Candidates</h2>
         <p className="text-ink-muted mt-2 text-sm">
-          Filter by candidate status (multi-select). Default shows pending pipeline only.
+          Filter by assignment status (multi-select). Default shows in-progress pipeline only.
         </p>
         <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Filter candidates by status">
           {(
             [
-              { id: 'pending', label: 'Pending' },
-              { id: 'success', label: 'Success' },
-              { id: 'cancelled', label: 'Cancelled' },
+              { id: 'in_progress', label: 'In progress' },
+              { id: 'rejected', label: 'Rejected' },
+              { id: 'withdrawn', label: 'Withdrawn' },
             ] as const
           ).map(({ id, label }) => (
             <button
@@ -1421,25 +1723,95 @@ export function PositionDetailPage() {
         <div className="max-h-[min(70vh,32rem)] space-y-8 overflow-y-auto pr-1">
           <div>
             <h3 className="font-semibold">Recruitment stages</h3>
-            <ul className="mt-3 space-y-2">
+            <ul className="mt-3 space-y-3">
               {(stagesQ.data ?? []).map((s, idx) => (
-                <li key={s.id} className="border-line bg-white/60 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/40">
-                  <span>
-                    {s.name} <span className="text-ink-muted text-xs">(order {s.sort_order})</span>
-                  </span>
-                  <span className="flex gap-1">
-                    <button type="button" className="rounded-lg border px-2 py-1 text-xs dark:border-line-dark" onClick={() => void moveStage(s.id, -1)} disabled={idx === 0}>
-                      Up
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-lg border px-2 py-1 text-xs dark:border-line-dark"
-                      onClick={() => void moveStage(s.id, 1)}
-                      disabled={idx === (stagesQ.data ?? []).length - 1}
-                    >
-                      Down
-                    </button>
-                  </span>
+                <li key={s.id} className="border-line bg-white/60 space-y-2 rounded-xl border px-3 py-3 dark:border-line-dark dark:bg-stone-900/40">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <label className="block text-xs font-medium text-stone-600 dark:text-stone-400">
+                        Stage name
+                        <input
+                          defaultValue={s.name}
+                          onBlur={(e) => {
+                            const v = e.target.value.trim()
+                            if (!v || v === s.name) return
+                            void updateStageMeta.mutateAsync({ id: s.id, name: v })
+                          }}
+                          className="border-line mt-0.5 w-full rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
+                        />
+                      </label>
+                      <label className="block text-xs font-medium text-stone-600 dark:text-stone-400">
+                        Description
+                        <textarea
+                          rows={2}
+                          defaultValue={s.description ?? ''}
+                          onBlur={(e) => void updateStageMeta.mutateAsync({ id: s.id, description: e.target.value.trim() || null })}
+                          className="border-line mt-0.5 w-full rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
+                        />
+                      </label>
+                      <label className="block text-xs font-medium text-stone-600 dark:text-stone-400">
+                        Interviewers
+                        <input
+                          defaultValue={s.interviewers ?? ''}
+                          onBlur={(e) => void updateStageMeta.mutateAsync({ id: s.id, interviewers: e.target.value.trim() || null })}
+                          className="border-line mt-0.5 w-full rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
+                        />
+                      </label>
+                      <div className="flex flex-wrap items-end gap-3">
+                        <label className="text-xs font-medium text-stone-600 dark:text-stone-400">
+                          Duration (min)
+                          <input
+                            type="number"
+                            min={0}
+                            defaultValue={s.duration_minutes ?? ''}
+                            onBlur={(e) => {
+                              const raw = e.target.value.trim()
+                              if (raw === '') {
+                                void updateStageMeta.mutateAsync({ id: s.id, duration_minutes: null })
+                                return
+                              }
+                              const n = parseInt(raw, 10)
+                              if (!Number.isFinite(n)) return
+                              void updateStageMeta.mutateAsync({ id: s.id, duration_minutes: n })
+                            }}
+                            className="border-line mt-0.5 block w-28 rounded-lg border px-2 py-1.5 text-sm dark:border-line-dark dark:bg-stone-900/50"
+                          />
+                        </label>
+                        <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-stone-600 dark:text-stone-400">
+                          <input
+                            type="checkbox"
+                            defaultChecked={Boolean(s.is_remote)}
+                            onChange={(e) => void updateStageMeta.mutateAsync({ id: s.id, is_remote: e.target.checked })}
+                          />
+                          Remote
+                        </label>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-col gap-1">
+                      <button type="button" className="rounded-lg border px-2 py-1 text-xs dark:border-line-dark" onClick={() => void moveStage(s.id, -1)} disabled={idx === 0}>
+                        Up
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg border px-2 py-1 text-xs dark:border-line-dark"
+                        onClick={() => void moveStage(s.id, 1)}
+                        disabled={idx === (stagesQ.data ?? []).length - 1}
+                      >
+                        Down
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg border border-red-200 px-2 py-1 text-xs text-red-700 dark:border-red-900/60 dark:text-red-200"
+                        onClick={() => {
+                          if (window.confirm(`Delete stage “${s.name}”?`)) void deleteStageMut.mutateAsync(s.id)
+                        }}
+                        disabled={deleteStageMut.isPending}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-ink-muted text-xs">Sort order {s.sort_order}</p>
                 </li>
               ))}
             </ul>
@@ -1496,7 +1868,7 @@ export function PositionDetailPage() {
       <Modal open={publicListOpen} onClose={() => setPublicListOpen(false)} title="Public candidate list" size="sm">
         <p className="text-ink-muted text-sm">
           Anyone with this link can see names, pipeline stage, and status for this open role. Contact details are not
-          included. The page stops working if the role is marked fulfilled or withdrawn.
+          included. The page stops working if the role is marked succeeded or cancelled.
         </p>
         {publicListUrl ? (
           <>

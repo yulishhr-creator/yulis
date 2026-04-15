@@ -16,6 +16,7 @@ export type LogActivityInput = {
   event_type: ActivityEventType
   position_id: string
   candidate_id?: string | null
+  position_candidate_id?: string | null
   title: string
   subtitle?: string | null
   metadata?: Record<string, unknown>
@@ -28,6 +29,7 @@ export async function logActivityEvent(supabase: SupabaseClient, userId: string,
     event_type: input.event_type,
     position_id: input.position_id,
     candidate_id: input.candidate_id ?? null,
+    position_candidate_id: input.position_candidate_id ?? null,
     title: input.title,
     subtitle: input.subtitle ?? null,
     metadata: (input.metadata ?? {}) as never,

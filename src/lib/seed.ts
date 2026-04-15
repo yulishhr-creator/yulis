@@ -40,7 +40,7 @@ export async function seedDemoIfEmpty(supabase: SupabaseClient, userId: string):
       industry: 'Software',
       salary_min: 35000,
       salary_max: 45000,
-      status: 'in_progress',
+      status: 'active',
       welcome_1: 'Hi — I’m reaching out about an exciting role…',
       planned_fee_ils: 25000,
     })
@@ -58,7 +58,7 @@ export async function seedDemoIfEmpty(supabase: SupabaseClient, userId: string):
         user_id: userId,
         position_id: position.id,
         sort_order: i,
-        name: stages[i],
+        name: stages[i]!,
       })
       .select('id')
       .single()
@@ -79,13 +79,10 @@ export async function seedDemoIfEmpty(supabase: SupabaseClient, userId: string):
     .from('candidates')
     .insert({
       user_id: userId,
-      position_id: position.id,
-      position_stage_id: s0,
       full_name: 'Jamie Rivera',
       email: 'jamie.rivera@example.com',
       phone: '+972501111111',
-      source: 'external',
-      status: 'pending',
+      status: 'active',
       email_normalized: 'jamie.rivera@example.com',
       phone_normalized: '972501111111',
       notes: 'Imported from client list (demo).',
@@ -93,24 +90,49 @@ export async function seedDemoIfEmpty(supabase: SupabaseClient, userId: string):
     .select('id')
     .single()
 
-  await supabase.from('candidates').insert({
+  const { data: candApp } = await supabase
+    .from('candidates')
+    .insert({
+      user_id: userId,
+      full_name: 'Sam Cohen',
+      email: 'sam.cohen@example.com',
+      phone: '+972502222222',
+      status: 'active',
+      email_normalized: 'sam.cohen@example.com',
+      phone_normalized: '972502222222',
+      notes: 'Added from the app (demo).',
+    })
+    .select('id')
+    .single()
+
+  if (!candExt?.id || !candApp?.id) return
+
+  const { data: pcExt } = await supabase
+    .from('position_candidates')
+    .insert({
+      user_id: userId,
+      position_id: position.id,
+      candidate_id: candExt.id,
+      position_stage_id: s0,
+      status: 'in_progress',
+      source: 'external',
+    })
+    .select('id')
+    .single()
+
+  await supabase.from('position_candidates').insert({
     user_id: userId,
     position_id: position.id,
+    candidate_id: candApp.id,
     position_stage_id: s1,
-    full_name: 'Sam Cohen',
-    email: 'sam.cohen@example.com',
-    phone: '+972502222222',
+    status: 'in_progress',
     source: 'app',
-    status: 'pending',
-    email_normalized: 'sam.cohen@example.com',
-    phone_normalized: '972502222222',
-    notes: 'Added from the app (demo).',
   })
 
   await supabase.from('tasks').insert({
     user_id: userId,
     position_id: position.id,
-    candidate_id: candExt?.id ?? null,
+    position_candidate_id: pcExt?.id ?? null,
     title: 'Get hiring contract signed',
     status: 'todo',
     due_at: new Date(Date.now() + 86400000).toISOString(),
