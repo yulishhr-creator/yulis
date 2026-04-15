@@ -7,7 +7,6 @@ import {
   User,
   LogOut,
   Bell,
-  CalendarDays,
   Clock,
   ChevronLeft,
   PanelLeft,
@@ -31,7 +30,7 @@ import { useToast } from '@/hooks/useToast'
 import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
 import { useSidebarOpenPositionCounts } from '@/hooks/useSidebarOpenPositionCounts'
 
-/** Section: Candidates & Positions (dashboard + client-scoped positions) */
+/** Section: Overview (dashboard + client-scoped positions) */
 const candidatesPositionsGroup = {
   activeRow:
     'from-lume-coral/30 to-lume-sky/22 ring-orange-500/20 dark:from-orange-500/25 dark:to-cyan-500/18 dark:ring-orange-400/30',
@@ -276,11 +275,11 @@ export function AppShell() {
             <Link
               to="/"
               aria-current={candidatesSectionAllActive ? 'page' : undefined}
-              title="All candidates and positions"
+              title="Overview — pipeline and calendar"
               aria-label={
                 openPositionCountsPending
-                  ? 'Candidates and positions, loading count'
-                  : `Candidates and positions, ${openPositionCounts?.total ?? 0} open or on-hold roles`
+                  ? 'Overview, loading count'
+                  : `Overview, ${openPositionCounts?.total ?? 0} open or on-hold roles`
               }
               className={`group flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs font-bold tracking-wide uppercase transition-all duration-200 ${
                 candidatesSectionAllActive
@@ -303,7 +302,7 @@ export function AppShell() {
                     candidatesSectionAllActive ? '' : 'text-ink dark:text-stone-300'
                   }`}
                 >
-                  Candidates &amp; Positions
+                  Overview
                 </span>
               </span>
               <span
@@ -462,15 +461,6 @@ export function AppShell() {
               aria-label="Working time"
             >
               <Clock className="text-ink-muted h-5 w-5 dark:text-stone-400" aria-hidden />
-            </Link>
-            <Link
-              to={location.pathname === '/calendar' ? '/' : '/calendar'}
-              className={`flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90 shadow-sm transition hover:bg-[#97daff]/30 dark:bg-stone-800/90 dark:hover:bg-cyan-900/40 ${
-                location.pathname === '/calendar' ? 'ring-2 ring-[#006384]/45 dark:ring-cyan-400/50' : ''
-              }`}
-              aria-label={location.pathname === '/calendar' ? 'Close calendar' : 'Calendar'}
-            >
-              <CalendarDays className="text-ink-muted h-5 w-5 dark:text-stone-400" aria-hidden />
             </Link>
             {timer.open ? (
               <div className="border-line flex max-w-[min(100%,14rem)] items-center gap-2 rounded-2xl border bg-white/90 px-2 py-1.5 shadow-sm dark:border-line-dark dark:bg-stone-800/90">

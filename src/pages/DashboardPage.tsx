@@ -10,6 +10,7 @@ import { getSupabase } from '@/lib/supabase'
 import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
 import { usePipelineHeadlineStats } from '@/hooks/usePipelineHeadlineStats'
 import { assignmentStatusPill, positionLifecyclePill } from '@/lib/candidateStatus'
+import { OverviewCalendarAndEvents } from '@/components/dashboard/OverviewCalendarAndEvents'
 
 function nestedOne<T>(v: T | T[] | null | undefined): T | null {
   if (v == null) return null
@@ -242,6 +243,8 @@ function DashboardHome() {
           ) : null}
         </motion.section>
       ) : null}
+
+      <OverviewCalendarAndEvents />
 
       <section aria-labelledby="candidates-overview-heading">
         <details
