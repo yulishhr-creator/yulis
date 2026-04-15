@@ -26,21 +26,23 @@ export function DashboardPage() {
   ) {
     return <Navigate to={{ pathname: '/tasks', search: searchParams.toString() }} replace />
   }
+  /** Client-scoped pipeline board (columns by position status) lives on Positions, not Overview. */
+  if (searchParams.get('company')) {
+    return <Navigate to={{ pathname: '/positions', search: searchParams.toString() }} replace />
+  }
   return <DashboardHome />
 }
 
 function DashboardHome() {
-  const [searchParams] = useSearchParams()
   const { user } = useAuth()
   const supabase = getSupabase()
   const uid = user?.id
   const reduceMotion = useReducedMotion()
   const navigate = useNavigate()
-  const companyParam = searchParams.get('company')
   const [positionsScope, setPositionsScope] = useState<'open' | 'on_hold' | 'all'>('open')
 
   const topPositionsQ = useQuery({
-    queryKey: ['dashboard-top-positions', uid, positionsScope, companyParam ?? ''],
+    queryKey: ['dashboard-top-positions', uid, positionsScope, ''],
     enabled: Boolean(supabase && uid),
     queryFn: async () => {
       let q = supabase!
@@ -67,8 +69,7 @@ function DashboardHome() {
         .eq('user_id', uid!)
         .is('deleted_at', null)
         .order('updated_at', { ascending: false })
-        .limit(companyParam ? 40 : 12)
-      if (companyParam) q = q.eq('company_id', companyParam)
+        .limit(12)
       if (positionsScope === 'open') q = q.in('status', ['active', 'on_hold'])
       else if (positionsScope === 'on_hold') q = q.eq('status', 'on_hold')
       const { data, error } = await q
@@ -77,24 +78,9 @@ function DashboardHome() {
     },
   })
 
-  const { data: pipelineStats, isLoading: pipelineHeadlineLoading } = usePipelineHeadlineStats(companyParam)
+  const { data: pipelineStats, isLoading: pipelineHeadlineLoading } = usePipelineHeadlineStats()
 
-  const companyLabelQ = useQuery({
-    queryKey: ['dashboard-company-label', uid, companyParam],
-    enabled: Boolean(supabase && uid && companyParam),
-    queryFn: async () => {
-      const { data, error } = await supabase!
-        .from('companies')
-        .select('name')
-        .eq('id', companyParam!)
-        .eq('user_id', uid!)
-        .maybeSingle()
-      if (error) throw error
-      return (data as { name: string } | null)?.name ?? null
-    },
-  })
-
-  const { data: taskKpis, isPending: taskKpisPending } = useDashboardTaskKpis(companyParam)
+  const { data: taskKpis, isPending: taskKpisPending } = useDashboardTaskKpis()
 
   const displayTopPositions = useMemo(() => topPositionsQ.data ?? [], [topPositionsQ.data])
 
@@ -126,9 +112,6 @@ function DashboardHome() {
     return { stuck, stale }
   }, [displayTopPositions])
 
-  const scopedClientName = companyLabelQ.data ?? null
-  const tasksSearch = companyParam ? `?company=${encodeURIComponent(companyParam)}` : ''
-
   return (
     <div className="flex flex-col gap-8 md:gap-10">
       <motion.section
@@ -140,34 +123,21 @@ function DashboardHome() {
         <div className="pointer-events-none absolute -right-16 -bottom-16 h-48 w-48 rounded-full bg-lume-coral/25 blur-3xl dark:bg-orange-500/22" />
         <div className="pointer-events-none absolute top-0 left-1/2 h-32 w-32 -translate-x-1/2 rounded-full bg-lume-violet/25 blur-2xl dark:bg-violet-500/18" />
         <div className="relative z-10">
-          {companyParam && companyLabelQ.isPending ? (
-            <p className="text-ink-muted text-sm font-medium dark:text-stone-400">Loading client view…</p>
-          ) : companyParam && !scopedClientName ? (
-            <p className="text-ink-muted text-sm font-medium dark:text-stone-400">Client view — company not found.</p>
-          ) : (
-            <>
-              {scopedClientName ? (
-                <p className="text-ink-muted mb-2 text-sm font-semibold dark:text-stone-400">
-                  Client view: <span className="text-ink dark:text-stone-200">{scopedClientName}</span>
-                </p>
-              ) : null}
-              <h1 className="text-page-title text-2xl font-extrabold tracking-tight md:text-3xl">
-                {pipelineHeadlineLoading ? (
-                  <>You&apos;re currently working on…</>
-                ) : (
-                  <>
-                    You&apos;re currently working on {pipelineStats?.activeCandidateCount ?? 0} candidates within{' '}
-                    {pipelineStats?.activePositionCount ?? 0}{' '}
-                    {pipelineStats?.activePositionCount === 1 ? 'position' : 'positions'}.
-                  </>
-                )}
-              </h1>
-            </>
-          )}
+          <h1 className="text-page-title text-2xl font-extrabold tracking-tight md:text-3xl">
+            {pipelineHeadlineLoading ? (
+              <>You&apos;re currently working on…</>
+            ) : (
+              <>
+                You&apos;re currently working on {pipelineStats?.activeCandidateCount ?? 0} candidates within{' '}
+                {pipelineStats?.activePositionCount ?? 0}{' '}
+                {pipelineStats?.activePositionCount === 1 ? 'position' : 'positions'}.
+              </>
+            )}
+          </h1>
         </div>
       </motion.section>
 
-      {!pipelineHeadlineLoading && pipelineStats && (!companyParam || !companyLabelQ.isPending) ? (
+      {!pipelineHeadlineLoading && pipelineStats ? (
         <motion.section
           className="border-stitch-on-surface/10 grid gap-3 rounded-3xl border bg-white/60 p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-4 dark:border-stone-700 dark:bg-stone-900/50"
           initial={reduceMotion ? false : { opacity: 0, y: 8 }}
@@ -197,7 +167,7 @@ function DashboardHome() {
             <p className="text-stitch-muted mt-0.5 text-xs dark:text-stone-500">To do + in progress</p>
           </div>
           <Link
-            to={`/tasks${tasksSearch}`}
+            to="/tasks"
             className="rounded-2xl border border-stone-200/80 bg-gradient-to-br from-teal-50/90 to-white px-4 py-3 transition hover:border-[#9b3e20]/40 hover:shadow-md dark:border-stone-600 dark:from-teal-950/40 dark:to-stone-900/70 dark:hover:border-orange-500/35"
           >
             <p className="text-ink-muted text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Task completion</p>

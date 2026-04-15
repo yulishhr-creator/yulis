@@ -323,7 +323,7 @@ export function AppShell() {
                 return (
                   <li key={co.id}>
                     <NavLink
-                      to={{ pathname: '/', search: `?company=${encodeURIComponent(co.id)}` }}
+                      to={{ pathname: '/positions', search: `?company=${encodeURIComponent(co.id)}` }}
                       aria-current={isActive ? 'page' : undefined}
                       className={`group relative flex items-center justify-between gap-2 overflow-hidden rounded-lg py-2 pr-2 pl-3 text-sm font-medium transition-all duration-200 ${
                         isActive
