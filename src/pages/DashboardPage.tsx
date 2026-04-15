@@ -7,6 +7,7 @@ import { differenceInCalendarDays } from 'date-fns'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
+import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
 import { formatAssignmentStatus, positionLifecyclePill } from '@/lib/candidateStatus'
 
 function nestedOne<T>(v: T | T[] | null | undefined): T | null {
@@ -37,7 +38,7 @@ function DashboardHome() {
   const [positionsScope, setPositionsScope] = useState<'open' | 'on_hold' | 'all'>('open')
 
   const topPositionsQ = useQuery({
-    queryKey: ['dashboard-top-positions', uid, positionsScope],
+    queryKey: ['dashboard-top-positions', uid, positionsScope, companyParam ?? ''],
     enabled: Boolean(supabase && uid),
     queryFn: async () => {
       let q = supabase!
@@ -64,7 +65,8 @@ function DashboardHome() {
         .eq('user_id', uid!)
         .is('deleted_at', null)
         .order('updated_at', { ascending: false })
-        .limit(12)
+        .limit(companyParam ? 40 : 12)
+      if (companyParam) q = q.eq('company_id', companyParam)
       if (positionsScope === 'open') q = q.in('status', ['active', 'on_hold'])
       else if (positionsScope === 'on_hold') q = q.eq('status', 'on_hold')
       const { data, error } = await q
@@ -74,15 +76,17 @@ function DashboardHome() {
   })
 
   const pipelineStatsQ = useQuery({
-    queryKey: ['dashboard-pipeline-stats', uid],
+    queryKey: ['dashboard-pipeline-stats', uid, companyParam ?? ''],
     enabled: Boolean(supabase && uid),
     queryFn: async () => {
-      const { data: positions, error: pErr } = await supabase!
+      let posQ = supabase!
         .from('positions')
         .select('id')
         .eq('user_id', uid!)
         .is('deleted_at', null)
         .in('status', ['active', 'on_hold'])
+      if (companyParam) posQ = posQ.eq('company_id', companyParam)
+      const { data: positions, error: pErr } = await posQ
       if (pErr) throw pErr
       const posIds = (positions ?? []).map((p) => p.id)
       if (posIds.length === 0) {
@@ -99,11 +103,24 @@ function DashboardHome() {
     },
   })
 
-  const displayTopPositions = useMemo(() => {
-    const rows = topPositionsQ.data ?? []
-    if (!companyParam) return rows
-    return rows.filter((p) => p.company_id === companyParam)
-  }, [topPositionsQ.data, companyParam])
+  const companyLabelQ = useQuery({
+    queryKey: ['dashboard-company-label', uid, companyParam],
+    enabled: Boolean(supabase && uid && companyParam),
+    queryFn: async () => {
+      const { data, error } = await supabase!
+        .from('companies')
+        .select('name')
+        .eq('id', companyParam!)
+        .eq('user_id', uid!)
+        .maybeSingle()
+      if (error) throw error
+      return (data as { name: string } | null)?.name ?? null
+    },
+  })
+
+  const { data: taskKpis, isPending: taskKpisPending } = useDashboardTaskKpis(companyParam)
+
+  const displayTopPositions = useMemo(() => topPositionsQ.data ?? [], [topPositionsQ.data])
 
   const pipelineHints = useMemo(() => {
     const rows = displayTopPositions
@@ -134,6 +151,8 @@ function DashboardHome() {
   }, [displayTopPositions])
 
   const pipelineStats = pipelineStatsQ.data
+  const scopedClientName = companyLabelQ.data ?? null
+  const tasksSearch = companyParam ? `?company=${encodeURIComponent(companyParam)}` : ''
 
   return (
     <div className="flex flex-col gap-8 md:gap-10">
@@ -146,18 +165,82 @@ function DashboardHome() {
         <div className="pointer-events-none absolute -right-16 -bottom-16 h-48 w-48 rounded-full bg-lume-coral/25 blur-3xl dark:bg-orange-500/22" />
         <div className="pointer-events-none absolute top-0 left-1/2 h-32 w-32 -translate-x-1/2 rounded-full bg-lume-violet/25 blur-2xl dark:bg-violet-500/18" />
         <div className="relative z-10">
-          <h1 className="text-page-title text-2xl font-extrabold tracking-tight md:text-3xl">
-            {pipelineStatsQ.isLoading ? (
-              <>You&apos;re currently working on…</>
-            ) : (
-              <>
-                You&apos;re currently working on {pipelineStats?.activeCandidateCount ?? 0} candidates within{' '}
-                {pipelineStats?.activePositionCount ?? 0} positions.
-              </>
-            )}
-          </h1>
+          {companyParam && companyLabelQ.isPending ? (
+            <p className="text-ink-muted text-sm font-medium dark:text-stone-400">Loading client view…</p>
+          ) : companyParam && !scopedClientName ? (
+            <p className="text-ink-muted text-sm font-medium dark:text-stone-400">Client view — company not found.</p>
+          ) : (
+            <>
+              {scopedClientName ? (
+                <p className="text-ink-muted mb-2 text-sm font-semibold dark:text-stone-400">
+                  Client view: <span className="text-ink dark:text-stone-200">{scopedClientName}</span>
+                </p>
+              ) : null}
+              <h1 className="text-page-title text-2xl font-extrabold tracking-tight md:text-3xl">
+                {pipelineStatsQ.isLoading ? (
+                  <>You&apos;re currently working on…</>
+                ) : (
+                  <>
+                    You&apos;re currently working on {pipelineStats?.activeCandidateCount ?? 0} candidates within{' '}
+                    {pipelineStats?.activePositionCount ?? 0}{' '}
+                    {pipelineStats?.activePositionCount === 1 ? 'position' : 'positions'}.
+                  </>
+                )}
+              </h1>
+            </>
+          )}
         </div>
       </motion.section>
+
+      {!pipelineStatsQ.isLoading && pipelineStats && (!companyParam || !companyLabelQ.isPending) ? (
+        <motion.section
+          className="border-stitch-on-surface/10 grid gap-3 rounded-3xl border bg-white/60 p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-4 dark:border-stone-700 dark:bg-stone-900/50"
+          initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: reduceMotion ? 0 : 0.05 }}
+          aria-label="Pipeline and task overview"
+        >
+          <div className="rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 dark:border-stone-600 dark:bg-stone-900/70">
+            <p className="text-ink-muted text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Candidates</p>
+            <p className="text-stitch-on-surface mt-1 text-2xl font-extrabold tabular-nums dark:text-stone-100">
+              {pipelineStats.activeCandidateCount}
+            </p>
+            <p className="text-stitch-muted mt-0.5 text-xs dark:text-stone-500">In progress on open roles</p>
+          </div>
+          <div className="rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 dark:border-stone-600 dark:bg-stone-900/70">
+            <p className="text-ink-muted text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Open positions</p>
+            <p className="text-stitch-on-surface mt-1 text-2xl font-extrabold tabular-nums dark:text-stone-100">
+              {pipelineStats.activePositionCount}
+            </p>
+            <p className="text-stitch-muted mt-0.5 text-xs dark:text-stone-500">Active + on hold</p>
+          </div>
+          <div className="rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 dark:border-stone-600 dark:bg-stone-900/70">
+            <p className="text-ink-muted text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Tasks waiting</p>
+            <p className="text-stitch-on-surface mt-1 text-2xl font-extrabold tabular-nums dark:text-stone-100">
+              {taskKpisPending ? '–' : (taskKpis?.todo ?? 0) + (taskKpis?.inProgress ?? 0)}
+            </p>
+            <p className="text-stitch-muted mt-0.5 text-xs dark:text-stone-500">To do + in progress</p>
+          </div>
+          <Link
+            to={`/tasks${tasksSearch}`}
+            className="rounded-2xl border border-stone-200/80 bg-gradient-to-br from-teal-50/90 to-white px-4 py-3 transition hover:border-[#9b3e20]/40 hover:shadow-md dark:border-stone-600 dark:from-teal-950/40 dark:to-stone-900/70 dark:hover:border-orange-500/35"
+          >
+            <p className="text-ink-muted text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Task completion</p>
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="text-stitch-on-surface text-2xl font-extrabold tabular-nums dark:text-stone-100">
+                {taskKpisPending ? '–' : taskKpis?.done ?? 0}
+              </span>
+              <span className="text-stitch-muted text-sm dark:text-stone-500">
+                done
+                {!taskKpisPending && (taskKpis?.overdue ?? 0) > 0 ? (
+                  <span className="text-rose-600 dark:text-rose-400"> · {taskKpis?.overdue} overdue</span>
+                ) : null}
+              </span>
+            </div>
+            <p className="text-accent mt-2 text-xs font-bold underline dark:text-orange-300">Open tasks →</p>
+          </Link>
+        </motion.section>
+      ) : null}
 
       {pipelineHints.stuck.length > 0 || pipelineHints.stale.length > 0 ? (
         <motion.section

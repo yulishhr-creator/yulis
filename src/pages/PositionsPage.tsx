@@ -58,11 +58,16 @@ function positionMatchesSearch(p: PositionListItem, raw: string): boolean {
 }
 
 function partitionByStatus(list: PositionListItem[]) {
-  const active = list.filter((p) => p.status === 'active')
-  const onHold = list.filter((p) => p.status === 'on_hold')
+  const live = list
+    .filter((p) => p.status === 'active' || p.status === 'on_hold')
+    .sort((a, b) => {
+      const ta = new Date(a.updated_at ?? a.created_at).getTime()
+      const tb = new Date(b.updated_at ?? b.created_at).getTime()
+      return tb - ta
+    })
   const succeeded = list.filter((p) => p.status === 'succeeded')
   const cancelled = list.filter((p) => p.status === 'cancelled')
-  return { active, onHold, succeeded, cancelled }
+  return { live, succeeded, cancelled }
 }
 
 type PositionListItem = {
@@ -71,6 +76,7 @@ type PositionListItem = {
   status: string
   company_id: string
   created_at: string
+  updated_at?: string
   companies: unknown
   candidates?: BoardAssignmentRow[] | null
 }
@@ -196,7 +202,7 @@ function PositionCard({
   )
 }
 
-type DropZone = 'active' | 'on_hold' | 'succeeded' | 'cancelled'
+type DropZone = 'live' | 'succeeded' | 'cancelled'
 
 function dropSlotKey(companyId: string, zone: DropZone): string {
   return `${companyId}:${zone}`
@@ -227,7 +233,7 @@ function CompanyBoardColumn({
   onDragOverSlot: (e: React.DragEvent, companyId: string, zone: DropZone) => void
   onDropSlot: (e: React.DragEvent, companyId: string, zone: DropZone) => void
 }) {
-  const { active, onHold, succeeded, cancelled } = partitionByStatus(colPositions)
+  const { live, succeeded, cancelled } = partitionByStatus(colPositions)
 
   function leaveSlot(e: React.DragEvent, slot: string) {
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
@@ -241,7 +247,6 @@ function CompanyBoardColumn({
     const base = 'mt-2 min-h-[2.5rem] rounded-xl transition-colors'
     if (!hot) return `${base} border border-transparent`
     if (zone === 'succeeded') return `${base} bg-emerald-500/10 ring-2 ring-emerald-500/35`
-    if (zone === 'on_hold') return `${base} bg-amber-500/10 ring-2 ring-amber-500/35`
     if (zone === 'cancelled') return `${base} bg-stone-400/10 ring-2 ring-stone-400/40`
     return `${base} bg-[#fd8863]/10 ring-2 ring-[#9b3e20]/35 dark:bg-orange-500/10 dark:ring-orange-400/40`
   }
@@ -259,9 +264,7 @@ function CompanyBoardColumn({
               ? 'rounded-xl ring-2 ring-emerald-500/30 ring-offset-1 ring-offset-white dark:ring-offset-stone-900'
               : zone === 'cancelled'
                 ? 'rounded-xl ring-2 ring-stone-400/40 ring-offset-1 ring-offset-white dark:ring-offset-stone-900'
-                : zone === 'on_hold'
-                  ? 'rounded-xl ring-2 ring-amber-400/35 ring-offset-1 ring-offset-white dark:ring-offset-stone-900'
-                  : 'rounded-xl ring-2 ring-[#9b3e20]/25 ring-offset-1 ring-offset-white dark:ring-offset-stone-900'
+                : 'rounded-xl ring-2 ring-[#9b3e20]/25 ring-offset-1 ring-offset-white dark:ring-offset-stone-900'
             : ''
         }
       >
@@ -297,8 +300,7 @@ function CompanyBoardColumn({
 
   const statusBlocks = (
     <>
-      {sectionShell('active', 'Active', 'Open roles — actively sourcing.', active)}
-      {sectionShell('on_hold', 'On hold', 'Paused roles.', onHold)}
+      {sectionShell('live', 'Active & on hold', 'Open and paused roles — drag here to reopen as Active.', live)}
       {sectionShell('succeeded', 'Succeeded', 'Fulfilled placements.', succeeded)}
       {sectionShell('cancelled', 'Cancelled', 'Closed without hire.', cancelled)}
     </>
@@ -306,15 +308,14 @@ function CompanyBoardColumn({
 
   if (layout === 'kanban') {
     const zones = [
-      { zone: 'active' as const, title: 'Active', hint: 'Open roles — actively sourcing.', list: active },
-      { zone: 'on_hold' as const, title: 'On hold', hint: 'Paused roles.', list: onHold },
+      { zone: 'live' as const, title: 'Active & on hold', hint: 'Open and paused roles — drag here to reopen as Active.', list: live },
       { zone: 'succeeded' as const, title: 'Succeeded', hint: 'Fulfilled placements.', list: succeeded },
       { zone: 'cancelled' as const, title: 'Cancelled', hint: 'Closed without hire.', list: cancelled },
     ]
     return (
       <div className="flex flex-col gap-4">
         <h2 className="text-ink text-lg font-extrabold tracking-tight dark:text-stone-100">{companyName}</h2>
-        <div className="flex gap-4 overflow-x-auto pb-2 [scrollbar-width:thin] md:grid md:min-h-0 md:grid-cols-2 md:overflow-visible md:pb-0 xl:grid-cols-4">
+        <div className="flex gap-4 overflow-x-auto pb-2 [scrollbar-width:thin] md:grid md:min-h-0 md:grid-cols-2 md:overflow-visible md:pb-0 xl:grid-cols-3">
           {zones.map(({ zone, title, hint, list }) => (
             <div
               key={zone}
@@ -456,8 +457,10 @@ export function PositionsPage() {
   function targetStatusForZone(zone: DropZone, current: string): 'active' | 'on_hold' | 'succeeded' | 'cancelled' | null {
     if (zone === 'succeeded') return current === 'succeeded' ? null : 'succeeded'
     if (zone === 'cancelled') return current === 'cancelled' ? null : 'cancelled'
-    if (zone === 'active') return current === 'active' ? null : 'active'
-    if (zone === 'on_hold') return current === 'on_hold' ? null : 'on_hold'
+    if (zone === 'live') {
+      if (current === 'active' || current === 'on_hold') return null
+      return 'active'
+    }
     return null
   }
 
@@ -526,7 +529,7 @@ export function PositionsPage() {
     <div className="flex flex-col gap-6">
       <ScreenHeader
         title="Positions"
-        subtitle="Drag roles by the grip to move between Active, On hold, Succeeded, and Cancelled."
+        subtitle="Drag roles by the grip between Active & on hold, Succeeded, and Cancelled."
         backTo="/"
         right={
           <Link

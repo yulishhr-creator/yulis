@@ -10,28 +10,52 @@ export type DashboardTaskKpis = {
   done: number
 }
 
-export function useDashboardTaskKpis() {
+/**
+ * Aggregate task counts for the user. When `companyId` is set, only tasks on positions for that client.
+ */
+export function useDashboardTaskKpis(companyId?: string | null) {
   const { user } = useAuth()
   const supabase = getSupabase()
   const uid = user?.id
 
   return useQuery({
-    queryKey: ['dashboard-task-kpis', uid],
+    queryKey: ['dashboard-task-kpis', uid, companyId ?? 'all'],
     enabled: Boolean(supabase && uid),
     queryFn: async (): Promise<DashboardTaskKpis> => {
       const now = new Date().toISOString()
-      const [open, inProgress, overdue, done] = await Promise.all([
-        supabase!.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', uid!).eq('status', 'todo'),
-        supabase!.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', uid!).eq('status', 'in_progress'),
-        supabase!
-          .from('tasks')
-          .select('*', { count: 'exact', head: true })
+
+      let positionIds: string[] | null = null
+      if (companyId) {
+        const { data: posRows, error: pe } = await supabase!
+          .from('positions')
+          .select('id')
           .eq('user_id', uid!)
-          .neq('status', 'done')
-          .not('due_at', 'is', null)
-          .lt('due_at', now),
-        supabase!.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', uid!).eq('status', 'done'),
-      ])
+          .eq('company_id', companyId)
+          .is('deleted_at', null)
+        if (pe) throw pe
+        positionIds = (posRows ?? []).map((r) => r.id as string)
+        if (positionIds.length === 0) {
+          return { todo: 0, inProgress: 0, overdue: 0, done: 0 }
+        }
+      }
+
+      const baseTodo = supabase!.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', uid!).eq('status', 'todo')
+      const baseInProgress = supabase!.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', uid!).eq('status', 'in_progress')
+      const baseOverdue = supabase!
+        .from('tasks')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', uid!)
+        .neq('status', 'done')
+        .not('due_at', 'is', null)
+        .lt('due_at', now)
+      const baseDone = supabase!.from('tasks').select('*', { count: 'exact', head: true }).eq('user_id', uid!).eq('status', 'done')
+
+      const todoQ = positionIds ? baseTodo.in('position_id', positionIds) : baseTodo
+      const inProgressQ = positionIds ? baseInProgress.in('position_id', positionIds) : baseInProgress
+      const overdueQ = positionIds ? baseOverdue.in('position_id', positionIds) : baseOverdue
+      const doneQ = positionIds ? baseDone.in('position_id', positionIds) : baseDone
+
+      const [open, inProgress, overdue, done] = await Promise.all([todoQ, inProgressQ, overdueQ, doneQ])
       return {
         todo: open.count ?? 0,
         inProgress: inProgress.count ?? 0,
