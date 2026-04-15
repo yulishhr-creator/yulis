@@ -102,10 +102,28 @@ export function CandidatesPage() {
   const [assignFor, setAssignFor] = useState<CandidateRow | null>(null)
   const [assignPositionId, setAssignPositionId] = useState('')
   const [newCandidateOpen, setNewCandidateOpen] = useState(false)
+  const [newCandidateStep, setNewCandidateStep] = useState<'form' | 'assign'>('form')
+  const [newCandidateIdForAssign, setNewCandidateIdForAssign] = useState<string | null>(null)
+  const [newCandidateAssignPositionId, setNewCandidateAssignPositionId] = useState('')
   const [newName, setNewName] = useState('')
   const [newEmail, setNewEmail] = useState('')
   const [newPhone, setNewPhone] = useState('')
   const [newTitle, setNewTitle] = useState('')
+
+  function resetNewCandidateModal() {
+    setNewCandidateStep('form')
+    setNewCandidateIdForAssign(null)
+    setNewCandidateAssignPositionId('')
+    setNewName('')
+    setNewEmail('')
+    setNewPhone('')
+    setNewTitle('')
+  }
+
+  function closeNewCandidateModal() {
+    setNewCandidateOpen(false)
+    resetNewCandidateModal()
+  }
 
   function dismissAssignHint() {
     setSearchParams(
@@ -128,10 +146,7 @@ export function CandidatesPage() {
 
   useEffect(() => {
     if (!openNewCandidateFromQuery) return
-    setNewName('')
-    setNewEmail('')
-    setNewPhone('')
-    setNewTitle('')
+    resetNewCandidateModal()
     setNewCandidateOpen(true)
     setSearchParams(
       (prev) => {
@@ -204,7 +219,15 @@ export function CandidatesPage() {
   })
 
   const assignMutation = useMutation({
-    mutationFn: async ({ candidateId, newPositionId }: { candidateId: string; newPositionId: string }) => {
+    mutationFn: async ({
+      candidateId,
+      newPositionId,
+      fromNewCandidateWizard,
+    }: {
+      candidateId: string
+      newPositionId: string
+      fromNewCandidateWizard?: boolean
+    }) => {
       if (!supabase || !uid) throw new Error('Not signed in')
       const { data: dup, error: dErr } = await supabase
         .from('position_candidates')
@@ -251,12 +274,17 @@ export function CandidatesPage() {
         title: 'Candidate assigned to role',
         subtitle: 'New position assignment',
       })
-      return { newPid: newPositionId }
+      return { newPid: newPositionId, fromNewCandidateWizard: Boolean(fromNewCandidateWizard), candidateId }
     },
-    onSuccess: async ({ newPid }) => {
+    onSuccess: async ({ newPid, fromNewCandidateWizard, candidateId }) => {
       success('Assigned to role')
-      setAssignFor(null)
-      setAssignPositionId('')
+      if (fromNewCandidateWizard) {
+        closeNewCandidateModal()
+        navigate(`/positions/${newPid}?candidate=${candidateId}`)
+      } else {
+        setAssignFor(null)
+        setAssignPositionId('')
+      }
       await qc.invalidateQueries({ queryKey: ['all-candidates'] })
       await qc.invalidateQueries({ queryKey: ['position-candidates', newPid] })
       await qc.invalidateQueries({ queryKey: ['position-transition-stats', newPid] })
@@ -267,7 +295,7 @@ export function CandidatesPage() {
   })
 
   const createCandidateMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (mode: 'create_only' | 'create_and_assign') => {
       if (!supabase || !uid) throw new Error('Not signed in')
       const nm = newName.trim()
       if (!nm) throw new Error('Name is required')
@@ -284,16 +312,18 @@ export function CandidatesPage() {
         .select('id')
         .single()
       if (error) throw error
-      return data.id as string
+      return { id: data.id as string, mode }
     },
-    onSuccess: async (id) => {
+    onSuccess: async ({ id, mode }) => {
       success('Candidate created')
-      setNewCandidateOpen(false)
-      setNewName('')
-      setNewEmail('')
-      setNewPhone('')
-      setNewTitle('')
       await qc.invalidateQueries({ queryKey: ['all-candidates'] })
+      if (mode === 'create_and_assign') {
+        setNewCandidateStep('assign')
+        setNewCandidateIdForAssign(id)
+        setNewCandidateAssignPositionId('')
+        return
+      }
+      closeNewCandidateModal()
       navigate(`/candidates/${id}`)
     },
     onError: (e: Error) => toastError(e.message),
@@ -411,68 +441,163 @@ export function CandidatesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Modal open={newCandidateOpen} onClose={() => setNewCandidateOpen(false)} title="New candidate" size="md">
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void createCandidateMutation.mutateAsync()
-          }}
-        >
-          <p className="text-ink-muted text-sm dark:text-stone-400">
-            Creates a person in your pool. Assign them to roles from this list or a position page.
-          </p>
-          <label className="flex flex-col gap-1 text-sm font-medium">
-            Full name
-            <input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-              required
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm font-medium">
-            Current title
-            <input
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm font-medium">
-            Email
-            <input
-              type="email"
-              value={newEmail}
-              onChange={(e) => setNewEmail(e.target.value)}
-              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm font-medium">
-            Phone
-            <input
-              value={newPhone}
-              onChange={(e) => setNewPhone(e.target.value)}
-              className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-            />
-          </label>
-          <div className="mt-2 flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              className="border-line rounded-full border px-4 py-2 text-sm font-medium dark:border-line-dark"
-              onClick={() => setNewCandidateOpen(false)}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={createCandidateMutation.isPending}
-              className="rounded-full bg-[#9b3e20] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-orange-600"
-            >
-              {createCandidateMutation.isPending ? 'Saving…' : 'Create'}
-            </button>
+      <Modal
+        open={newCandidateOpen}
+        onClose={() => {
+          if (createCandidateMutation.isPending || assignMutation.isPending) return
+          closeNewCandidateModal()
+        }}
+        title={newCandidateStep === 'form' ? 'New candidate' : 'Assign to role'}
+        size="md"
+      >
+        {newCandidateStep === 'form' ? (
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void createCandidateMutation.mutateAsync('create_only')
+            }}
+          >
+            <p className="text-ink-muted text-sm dark:text-stone-400">
+              Creates a person in your pool. Assign them to roles from this list or a position page.
+            </p>
+            <label className="flex flex-col gap-1 text-sm font-medium">
+              Full name
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                required
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm font-medium">
+              Current title
+              <input
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm font-medium">
+              Email
+              <input
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm font-medium">
+              Phone
+              <input
+                value={newPhone}
+                onChange={(e) => setNewPhone(e.target.value)}
+                className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+              />
+            </label>
+            <div className="mt-2 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                className="border-line rounded-full border px-4 py-2 text-sm font-medium dark:border-line-dark"
+                onClick={() => closeNewCandidateModal()}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={createCandidateMutation.isPending || !newName.trim()}
+                className="border-line rounded-full border px-4 py-2 text-sm font-semibold dark:border-line-dark dark:hover:bg-stone-800"
+                onClick={() => void createCandidateMutation.mutateAsync('create_and_assign')}
+              >
+                {createCandidateMutation.isPending ? 'Saving…' : 'Create & Assign'}
+              </button>
+              <button
+                type="submit"
+                disabled={createCandidateMutation.isPending}
+                className="rounded-full bg-[#9b3e20] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-orange-600"
+              >
+                {createCandidateMutation.isPending ? 'Saving…' : 'Create'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <p className="text-ink-muted text-sm dark:text-stone-400">
+              <span className="text-ink font-semibold dark:text-stone-200">{newName.trim() || 'Candidate'}</span> is in
+              your pool. Choose an open role to add them to the pipeline (first stage).
+            </p>
+            {positionsForAssignQ.isLoading ? (
+              <p className="text-sm">Loading roles…</p>
+            ) : (positionsForAssignQ.data ?? []).length === 0 ? (
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                No open roles yet. Create a role under Positions, then assign them from this list.
+              </p>
+            ) : (
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Role
+                <select
+                  value={newCandidateAssignPositionId}
+                  onChange={(e) => setNewCandidateAssignPositionId(e.target.value)}
+                  className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                >
+                  <option value="">Select a role…</option>
+                  {(positionsForAssignQ.data ?? []).map((p) => {
+                    const co = nestedCompanyName(p.companies)
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {p.title}
+                        {co ? ` — ${co}` : ''}
+                      </option>
+                    )
+                  })}
+                </select>
+              </label>
+            )}
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                className="border-line rounded-full border px-4 py-2 text-sm font-medium dark:border-line-dark"
+                disabled={assignMutation.isPending}
+                onClick={() => closeNewCandidateModal()}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="border-line rounded-full border px-4 py-2 text-sm font-medium dark:border-line-dark"
+                disabled={assignMutation.isPending || !newCandidateIdForAssign}
+                onClick={() => {
+                  const id = newCandidateIdForAssign
+                  if (!id) return
+                  closeNewCandidateModal()
+                  navigate(`/candidates/${id}`)
+                }}
+              >
+                Skip for now
+              </button>
+              <button
+                type="button"
+                className="rounded-full bg-[#9b3e20] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-orange-600"
+                disabled={
+                  assignMutation.isPending ||
+                  !newCandidateIdForAssign ||
+                  !newCandidateAssignPositionId ||
+                  (positionsForAssignQ.data ?? []).length === 0
+                }
+                onClick={() => {
+                  if (!newCandidateIdForAssign || !newCandidateAssignPositionId) return
+                  assignMutation.mutate({
+                    candidateId: newCandidateIdForAssign,
+                    newPositionId: newCandidateAssignPositionId,
+                    fromNewCandidateWizard: true,
+                  })
+                }}
+              >
+                {assignMutation.isPending ? 'Assigning…' : 'Assign to role'}
+              </button>
+            </div>
           </div>
-        </form>
+        )}
       </Modal>
 
       <Modal
@@ -536,7 +661,7 @@ export function CandidatesPage() {
                 disabled={assignMutation.isPending || !assignPositionId || assignOptions.length === 0}
                 onClick={() => {
                   if (!assignFor || !assignPositionId) return
-                  assignMutation.mutate({ candidateId: assignFor.id, newPositionId: assignPositionId })
+                  assignMutation.mutate({ candidateId: assignFor.id, newPositionId: assignPositionId, fromNewCandidateWizard: false })
                 }}
               >
                 {assignMutation.isPending ? 'Assigning…' : 'Assign'}
