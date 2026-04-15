@@ -511,6 +511,8 @@ export function PositionDetailPage() {
     await qc.invalidateQueries({ queryKey: ['position-activity', id] })
     await qc.invalidateQueries({ queryKey: ['position-public-list-token', id] })
     await qc.invalidateQueries({ queryKey: ['positions'] })
+    await qc.invalidateQueries({ queryKey: ['dashboard-top-positions'] })
+    await qc.invalidateQueries({ queryKey: ['pipeline-headline-stats'] })
     await qc.invalidateQueries({ queryKey: ['companies-positions-income'] })
     await qc.invalidateQueries({ queryKey: ['candidates'] })
     await qc.invalidateQueries({ queryKey: ['tasks-page'] })

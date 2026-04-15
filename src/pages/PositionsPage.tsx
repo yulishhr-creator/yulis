@@ -10,6 +10,7 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { logActivityEvent } from '@/lib/activityLog'
 import { assignmentStatusPill, positionLifecyclePill } from '@/lib/candidateStatus'
 import { useToast } from '@/hooks/useToast'
+import { usePipelineHeadlineStats } from '@/hooks/usePipelineHeadlineStats'
 import { CreatePositionWizard } from '@/pages/CreatePositionWizard'
 
 /** Tenure on role: days under a week, else rounded weeks (e.g. 5d, 2w). */
@@ -438,6 +439,7 @@ export function PositionsPage() {
       }
       await qc.invalidateQueries({ queryKey: ['positions'] })
       await qc.invalidateQueries({ queryKey: ['dashboard-top-positions'] })
+      await qc.invalidateQueries({ queryKey: ['pipeline-headline-stats'] })
     },
     onError: (e: Error) => toastError(e.message),
   })
@@ -510,6 +512,9 @@ export function PositionsPage() {
     return tabCompanies.some((c) => c.id === companyFromUrl) ? companyFromUrl : null
   }, [companyFromUrl, tabCompanies])
 
+  const scopedClientName = tabCompanies.find((c) => c.id === scopedCompanyId)?.name
+  const { data: clientHeadline, isLoading: clientHeadlineLoading } = usePipelineHeadlineStats(scopedCompanyId)
+
   /** Drop stale ?company= from URL once we know client list */
   useEffect(() => {
     if (!companyFromUrl) return
@@ -540,6 +545,33 @@ export function PositionsPage() {
           </Link>
         }
       />
+
+      {scopedCompanyId ? (
+        <section
+          className="border-stitch-on-surface/10 relative overflow-hidden rounded-3xl border bg-gradient-to-br from-lume-coral/22 via-white to-lume-violet/16 p-6 shadow-[0_24px_60px_rgba(155,62,32,0.14),0_0_0_1px_rgba(167,139,250,0.08)] md:p-8 dark:from-orange-500/18 dark:via-stone-900 dark:to-violet-900/25 dark:shadow-[0_0_0_1px_rgba(167,139,250,0.12)]"
+          aria-label="Pipeline summary for this client"
+        >
+          <div className="pointer-events-none absolute -right-16 -bottom-16 h-40 w-40 rounded-full bg-lume-coral/25 blur-3xl dark:bg-orange-500/22" />
+          <div className="relative z-10">
+            {scopedClientName ? (
+              <p className="text-ink-muted mb-2 text-sm font-semibold dark:text-stone-400">
+                Client: <span className="text-ink dark:text-stone-200">{scopedClientName}</span>
+              </p>
+            ) : null}
+            <h2 className="text-page-title text-xl font-extrabold tracking-tight md:text-2xl">
+              {clientHeadlineLoading ? (
+                <>You&apos;re currently working on…</>
+              ) : (
+                <>
+                  You&apos;re currently working on {clientHeadline?.activeCandidateCount ?? 0} candidates within{' '}
+                  {clientHeadline?.activePositionCount ?? 0}{' '}
+                  {(clientHeadline?.activePositionCount ?? 0) === 1 ? 'position' : 'positions'}.
+                </>
+              )}
+            </h2>
+          </div>
+        </section>
+      ) : null}
 
       {createOpen && companies.length === 0 ? (
         <p className="text-ink-muted rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900/50 dark:bg-amber-950/30">

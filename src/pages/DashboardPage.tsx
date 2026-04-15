@@ -8,6 +8,7 @@ import { differenceInCalendarDays } from 'date-fns'
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
+import { usePipelineHeadlineStats } from '@/hooks/usePipelineHeadlineStats'
 import { assignmentStatusPill, positionLifecyclePill } from '@/lib/candidateStatus'
 
 function nestedOne<T>(v: T | T[] | null | undefined): T | null {
@@ -75,33 +76,7 @@ function DashboardHome() {
     },
   })
 
-  const pipelineStatsQ = useQuery({
-    queryKey: ['dashboard-pipeline-stats', uid, companyParam ?? ''],
-    enabled: Boolean(supabase && uid),
-    queryFn: async () => {
-      let posQ = supabase!
-        .from('positions')
-        .select('id')
-        .eq('user_id', uid!)
-        .is('deleted_at', null)
-        .in('status', ['active', 'on_hold'])
-      if (companyParam) posQ = posQ.eq('company_id', companyParam)
-      const { data: positions, error: pErr } = await posQ
-      if (pErr) throw pErr
-      const posIds = (positions ?? []).map((p) => p.id)
-      if (posIds.length === 0) {
-        return { activeCandidateCount: 0, activePositionCount: 0 }
-      }
-      const { count, error: cErr } = await supabase!
-        .from('position_candidates')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', uid!)
-        .in('status', ['in_progress'])
-        .in('position_id', posIds)
-      if (cErr) throw cErr
-      return { activeCandidateCount: count ?? 0, activePositionCount: posIds.length }
-    },
-  })
+  const { data: pipelineStats, isLoading: pipelineHeadlineLoading } = usePipelineHeadlineStats(companyParam)
 
   const companyLabelQ = useQuery({
     queryKey: ['dashboard-company-label', uid, companyParam],
@@ -150,7 +125,6 @@ function DashboardHome() {
     return { stuck, stale }
   }, [displayTopPositions])
 
-  const pipelineStats = pipelineStatsQ.data
   const scopedClientName = companyLabelQ.data ?? null
   const tasksSearch = companyParam ? `?company=${encodeURIComponent(companyParam)}` : ''
 
@@ -177,11 +151,11 @@ function DashboardHome() {
                 </p>
               ) : null}
               <h1 className="text-page-title text-2xl font-extrabold tracking-tight md:text-3xl">
-                {pipelineStatsQ.isLoading ? (
+                {pipelineHeadlineLoading ? (
                   <>You&apos;re currently working on…</>
                 ) : (
                   <>
-                    You&apos;re currently working on {pipelineStats?.activeCandidateCount ?? 0} active candidates within{' '}
+                    You&apos;re currently working on {pipelineStats?.activeCandidateCount ?? 0} candidates within{' '}
                     {pipelineStats?.activePositionCount ?? 0}{' '}
                     {pipelineStats?.activePositionCount === 1 ? 'position' : 'positions'}.
                   </>
@@ -192,7 +166,7 @@ function DashboardHome() {
         </div>
       </motion.section>
 
-      {!pipelineStatsQ.isLoading && pipelineStats && (!companyParam || !companyLabelQ.isPending) ? (
+      {!pipelineHeadlineLoading && pipelineStats && (!companyParam || !companyLabelQ.isPending) ? (
         <motion.section
           className="border-stitch-on-surface/10 grid gap-3 rounded-3xl border bg-white/60 p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-4 dark:border-stone-700 dark:bg-stone-900/50"
           initial={reduceMotion ? false : { opacity: 0, y: 8 }}
@@ -205,14 +179,14 @@ function DashboardHome() {
             <p className="text-stitch-on-surface mt-1 text-2xl font-extrabold tabular-nums dark:text-stone-100">
               {pipelineStats.activeCandidateCount}
             </p>
-            <p className="text-stitch-muted mt-0.5 text-xs dark:text-stone-500">In progress only — not rejected or withdrawn</p>
+            <p className="text-stitch-muted mt-0.5 text-xs dark:text-stone-500">In progress — not rejected or withdrawn</p>
           </div>
           <div className="rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 dark:border-stone-600 dark:bg-stone-900/70">
-            <p className="text-ink-muted text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Open positions</p>
+            <p className="text-ink-muted text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Positions</p>
             <p className="text-stitch-on-surface mt-1 text-2xl font-extrabold tabular-nums dark:text-stone-100">
               {pipelineStats.activePositionCount}
             </p>
-            <p className="text-stitch-muted mt-0.5 text-xs dark:text-stone-500">Active + on hold</p>
+            <p className="text-stitch-muted mt-0.5 text-xs dark:text-stone-500">Open or on-hold roles with someone in the pipeline</p>
           </div>
           <div className="rounded-2xl border border-stone-200/80 bg-white/90 px-4 py-3 dark:border-stone-600 dark:bg-stone-900/70">
             <p className="text-ink-muted text-[10px] font-bold tracking-wide uppercase dark:text-stone-500">Tasks waiting</p>

@@ -103,7 +103,8 @@ export function AppShell() {
     const s = p.toString()
     return s ? `?${s}` : ''
   }
-  const positionsPathActive = location.pathname === '/positions'
+  /** Client row: dashboard or positions with ?company= */
+  const clientScopePathActive = location.pathname === '/' || location.pathname === '/positions'
   const { data: taskKpis, isPending: taskKpisPending } = useDashboardTaskKpis()
   const { data: openPositionCounts, isPending: openPositionCountsPending } = useSidebarOpenPositionCounts()
   const { data: sidebarCompanies = [] } = useQuery({
@@ -317,13 +318,13 @@ export function AppShell() {
             </Link>
             <ul className="border-line ml-2 space-y-0.5 border-l border-dashed pl-2 dark:border-line-dark" role="list">
               {sidebarCompanies.map((co) => {
-                const isActive = positionsPathActive && companyParam === co.id
+                const isActive = clientScopePathActive && companyParam === co.id
                 const coCount = openPositionCounts?.byCompany[co.id] ?? 0
                 const displayCoCount = openPositionCountsPending ? '–' : String(coCount)
                 return (
                   <li key={co.id}>
                     <NavLink
-                      to={{ pathname: '/positions', search: `?company=${encodeURIComponent(co.id)}` }}
+                      to={{ pathname: '/', search: `?company=${encodeURIComponent(co.id)}` }}
                       aria-current={isActive ? 'page' : undefined}
                       className={`group relative flex items-center justify-between gap-2 overflow-hidden rounded-lg py-2 pr-2 pl-3 text-sm font-medium transition-all duration-200 ${
                         isActive
