@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Briefcase, Building2, ChevronDown, ChevronUp, Coins, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { Briefcase, Building2, Check, ChevronDown, ChevronUp, Coins, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useEffect, useState, type ReactNode } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
@@ -132,6 +133,7 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
   const [welcome3, setWelcome3] = useState(d0.welcome3 ?? '')
   const [linkedinUrl, setLinkedinUrl] = useState(d0.linkedinUrl ?? '')
   const [pending, setPending] = useState(false)
+  const reduceMotion = useReducedMotion()
 
   useEffect(() => {
     saveDraft({
@@ -318,29 +320,67 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
       </div>
 
       <div className="p-5 sm:p-6">
-        {step === 0 ? (
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={step}
+            role="tabpanel"
+            aria-live="polite"
+            initial={reduceMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={reduceMotion ? undefined : { opacity: 0 }}
+            transition={{ duration: reduceMotion ? 0 : 0.22, ease: 'easeInOut' }}
+          >
+            {step === 0 ? (
           <div className="flex flex-col gap-5">
             <div className={wizardSectionClass()}>
               <div className="text-ink-muted mb-3 flex items-center gap-2 text-xs font-bold tracking-wide uppercase dark:text-stone-500">
                 <Building2 className="h-4 w-4 text-[#9b3e20] dark:text-orange-400" aria-hidden />
                 Client
               </div>
-              <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-                <FieldLabel required>Company</FieldLabel>
-                <select
-                  value={companyId}
-                  onChange={(e) => setCompanyId(e.target.value)}
-                  className="border-line rounded-xl border bg-white px-3 py-2.5 text-base shadow-sm dark:border-line-dark dark:bg-stone-900/80"
-                  required
-                >
-                  {companies.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                      {c.status === 'inactive' ? ' (inactive)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="flex flex-col gap-2">
+                <span id="wizard-company-label" className="text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                  <FieldLabel required>Company</FieldLabel>
+                </span>
+                {companies.length === 0 ? (
+                  <p className="text-ink-muted text-sm dark:text-stone-400">No clients yet — add a company first.</p>
+                ) : (
+                  <div
+                    role="radiogroup"
+                    aria-labelledby="wizard-company-label"
+                    className="flex flex-wrap gap-2"
+                  >
+                    {companies.map((c) => {
+                      const selected = companyId === c.id
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => setCompanyId(c.id)}
+                          className={`min-w-[7.5rem] max-w-[11rem] rounded-2xl border px-3 py-2.5 text-left text-sm font-semibold shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b3e20]/50 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-900 ${
+                            selected
+                              ? 'border-[#9b3e20] bg-gradient-to-br from-[#fd8863]/20 to-[#97daff]/12 text-[#302e2b] ring-2 ring-[#9b3e20]/40 dark:border-orange-500 dark:from-orange-500/20 dark:to-cyan-500/10 dark:text-stone-100 dark:ring-orange-400/45'
+                              : 'border-stone-200/90 bg-white/90 text-[#302e2b] hover:border-stone-300 hover:bg-white dark:border-stone-600 dark:bg-stone-900/60 dark:text-stone-200 dark:hover:border-stone-500 dark:hover:bg-stone-800/80'
+                          }`}
+                        >
+                          <span className="flex items-start justify-between gap-2">
+                            <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                            {selected ? (
+                              <Check className="text-accent mt-0.5 h-4 w-4 shrink-0 dark:text-orange-400" strokeWidth={2.5} aria-hidden />
+                            ) : null}
+                          </span>
+                          {c.status === 'inactive' ? (
+                            <span className="text-ink-muted mt-0.5 block text-[10px] font-medium uppercase tracking-wide dark:text-stone-500">
+                              Inactive
+                            </span>
+                          ) : null}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className={wizardSectionClass()}>
@@ -463,9 +503,9 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
               </div>
             </div>
           </div>
-        ) : null}
+            ) : null}
 
-        {step === 1 ? (
+            {step === 1 ? (
           <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-ink-muted text-sm dark:text-stone-400">Define your interview workflow for this role.</p>
@@ -588,9 +628,9 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
               ))}
             </ul>
           </div>
-        ) : null}
+            ) : null}
 
-        {step === 2 ? (
+            {step === 2 ? (
           <div className="flex flex-col gap-5">
             <div className={wizardSectionClass()}>
               <p className="text-ink-muted mb-3 text-xs font-bold uppercase dark:text-stone-500">Welcome approaches</p>
@@ -641,9 +681,9 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
               After the role is created, open <strong>Role setup</strong> on the position to import candidates from Excel.
             </p>
           </div>
-        ) : null}
+            ) : null}
 
-        {step === 3 ? (
+            {step === 3 ? (
           <div className="rounded-2xl border border-stone-200/90 bg-stone-50/50 p-5 dark:border-stone-600 dark:bg-stone-900/40">
             <h3 className="text-sm font-extrabold text-[#302e2b] dark:text-stone-100">Summary</h3>
             <dl className="mt-4 space-y-2 text-sm">
@@ -674,7 +714,9 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
             </dl>
             <p className="text-ink-muted mt-3 text-xs">Status will start as <strong>Active</strong>.</p>
           </div>
-        ) : null}
+            ) : null}
+          </motion.div>
+        </AnimatePresence>
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
           {step > 0 ? (
