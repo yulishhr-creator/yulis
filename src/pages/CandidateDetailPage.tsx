@@ -1,14 +1,28 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { differenceInCalendarDays, formatDistanceToNow } from 'date-fns'
-import { Briefcase, Calendar, ChevronRight, ClipboardList, History, Mail, MapPin, User } from 'lucide-react'
+import {
+  Briefcase,
+  Check,
+  ChevronRight,
+  ClipboardList,
+  History,
+  Link2,
+  Mail,
+  MapPin,
+  Pencil,
+  User,
+  X,
+} from 'lucide-react'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { formatDateTime, formatDue } from '@/lib/dates'
+import { normalizeEmail, normalizePhone } from '@/lib/normalize'
 import { assignmentStatusPill, candidateGlobalPill } from '@/lib/candidateStatus'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
+import { useToast } from '@/hooks/useToast'
 
 type TabId = 'overview' | 'positions' | 'tasks' | 'activity'
 
@@ -33,12 +47,100 @@ function companyName(co: unknown): string | null {
   return o.name ?? null
 }
 
+function parseIlsAmountInput(raw: string): number | null | 'invalid' {
+  const t = raw
+    .replace(/,/g, '')
+    .replace(/\s/g, '')
+    .replace(/₪/g, '')
+    .replace(/NIS/gi, '')
+    .replace(/ILS/gi, '')
+    .trim()
+  if (!t) return null
+  const n = Number(t)
+  return Number.isFinite(n) ? n : 'invalid'
+}
+
+function formatSalaryExpectationDisplay(raw: string | null | undefined): string {
+  const t = raw?.trim() ?? ''
+  if (!t) return '—'
+  const p = parseIlsAmountInput(t)
+  return typeof p === 'number' ? `${p.toLocaleString('en-US')}₪` : t
+}
+
+type OverviewEditKey =
+  | 'email'
+  | 'phone'
+  | 'linkedin'
+  | 'current_title'
+  | 'location'
+  | 'years_exp'
+  | 'salary'
+
+function OverviewFieldRow({
+  label,
+  isEditing,
+  view,
+  editSlot,
+  onRequestEdit,
+  colSpan2,
+}: {
+  label: string
+  isEditing: boolean
+  view: ReactNode
+  editSlot: ReactNode
+  onRequestEdit: () => void
+  colSpan2?: boolean
+}) {
+  return (
+    <div className={colSpan2 ? 'sm:col-span-2' : ''}>
+      <dt className="text-ink-muted text-xs font-semibold dark:text-stone-500">{label}</dt>
+      <dd className="group/ovfield mt-0.5 flex min-h-[1.75rem] flex-wrap items-center gap-2 text-sm">
+        {isEditing ? (
+          editSlot
+        ) : (
+          <>
+            <div className="min-w-0 flex-1">{view}</div>
+            <button
+              type="button"
+              className="text-ink-muted shrink-0 rounded-lg p-1.5 opacity-0 transition hover:bg-stone-200/80 hover:text-ink group-hover/ovfield:opacity-100 dark:hover:bg-stone-700 dark:hover:text-stone-100"
+              aria-label={`Edit ${label}`}
+              onClick={onRequestEdit}
+            >
+              <Pencil className="h-4 w-4" aria-hidden />
+            </button>
+          </>
+        )}
+      </dd>
+    </div>
+  )
+}
+
 export function CandidateDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuth()
   const supabase = getSupabase()
   const uid = user?.id
+  const qc = useQueryClient()
+  const { success, error: toastError } = useToast()
   const [tab, setTab] = useState<TabId>('overview')
+  const [overviewEdit, setOverviewEdit] = useState<null | OverviewEditKey>(null)
+  const [overviewDraft, setOverviewDraft] = useState('')
+
+  const commitCandidatePatch = useCallback(
+    async (patch: Record<string, unknown>) => {
+      if (!supabase || !uid || !id) return
+      const { error } = await supabase.from('candidates').update(patch).eq('id', id).eq('user_id', uid)
+      if (error) {
+        toastError(error.message)
+        return
+      }
+      success('Saved')
+      setOverviewEdit(null)
+      await qc.invalidateQueries({ queryKey: ['candidate-detail', id, uid] })
+      await qc.invalidateQueries({ queryKey: ['candidates'] })
+    },
+    [supabase, uid, id, qc, success, toastError],
+  )
 
   const candidateQ = useQuery({
     queryKey: ['candidate-detail', id, uid],
@@ -248,47 +350,158 @@ export function CandidateDetailPage() {
               Contact
             </h2>
             <dl className="mt-3 grid gap-3 sm:grid-cols-2">
-              <div>
-                <dt className="text-ink-muted text-xs font-semibold dark:text-stone-500">Email</dt>
-                <dd className="mt-0.5 text-sm">
-                  {c.email ? (
+              <OverviewFieldRow
+                label="Email"
+                isEditing={overviewEdit === 'email'}
+                onRequestEdit={() => {
+                  setOverviewDraft(c.email ?? '')
+                  setOverviewEdit('email')
+                }}
+                view={
+                  c.email ? (
                     <a href={`mailto:${c.email}`} className="text-[#006384] font-medium underline dark:text-cyan-300">
                       {c.email}
                     </a>
                   ) : (
                     <span className="text-ink-muted">—</span>
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-ink-muted text-xs font-semibold dark:text-stone-500">Phone</dt>
-                <dd className="mt-0.5 text-sm">
-                  {c.phone ? (
+                  )
+                }
+                editSlot={
+                  <>
+                    <input
+                      value={overviewDraft}
+                      onChange={(e) => setOverviewDraft(e.target.value)}
+                      type="email"
+                      className="border-line text-ink min-w-0 flex-1 rounded-lg border bg-white px-2 py-1 text-sm dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      className="rounded-lg bg-emerald-600 p-1.5 text-white hover:bg-emerald-700"
+                      aria-label="Save email"
+                      onClick={() => {
+                        const em = overviewDraft.trim() || null
+                        void commitCandidatePatch({
+                          email: em,
+                          email_normalized: normalizeEmail(em),
+                        })
+                      }}
+                    >
+                      <Check className="h-4 w-4" aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      className="border-line rounded-lg border bg-white p-1.5 dark:border-line-dark dark:bg-stone-800"
+                      aria-label="Cancel"
+                      onClick={() => setOverviewEdit(null)}
+                    >
+                      <X className="h-4 w-4" aria-hidden />
+                    </button>
+                  </>
+                }
+              />
+              <OverviewFieldRow
+                label="Phone"
+                isEditing={overviewEdit === 'phone'}
+                onRequestEdit={() => {
+                  setOverviewDraft(c.phone ?? '')
+                  setOverviewEdit('phone')
+                }}
+                view={
+                  c.phone ? (
                     <a href={`tel:${c.phone.replace(/\s/g, '')}`} className="text-[#006384] font-medium underline dark:text-cyan-300">
                       {c.phone}
                     </a>
                   ) : (
                     <span className="text-ink-muted">—</span>
-                  )}
-                </dd>
-              </div>
-              <div className="sm:col-span-2">
-                <dt className="text-ink-muted text-xs font-semibold dark:text-stone-500">LinkedIn</dt>
-                <dd className="mt-0.5 text-sm break-all">
-                  {c.linkedin ? (
+                  )
+                }
+                editSlot={
+                  <>
+                    <input
+                      value={overviewDraft}
+                      onChange={(e) => setOverviewDraft(e.target.value)}
+                      type="tel"
+                      className="border-line text-ink min-w-0 flex-1 rounded-lg border bg-white px-2 py-1 text-sm dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      className="rounded-lg bg-emerald-600 p-1.5 text-white hover:bg-emerald-700"
+                      aria-label="Save phone"
+                      onClick={() => {
+                        const ph = overviewDraft.trim() || null
+                        void commitCandidatePatch({
+                          phone: ph,
+                          phone_normalized: normalizePhone(ph),
+                        })
+                      }}
+                    >
+                      <Check className="h-4 w-4" aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      className="border-line rounded-lg border bg-white p-1.5 dark:border-line-dark dark:bg-stone-800"
+                      aria-label="Cancel"
+                      onClick={() => setOverviewEdit(null)}
+                    >
+                      <X className="h-4 w-4" aria-hidden />
+                    </button>
+                  </>
+                }
+              />
+              <OverviewFieldRow
+                label="LinkedIn"
+                colSpan2
+                isEditing={overviewEdit === 'linkedin'}
+                onRequestEdit={() => {
+                  setOverviewDraft(c.linkedin ?? '')
+                  setOverviewEdit('linkedin')
+                }}
+                view={
+                  c.linkedin?.trim() ? (
                     <a
                       href={c.linkedin.startsWith('http') ? c.linkedin : `https://${c.linkedin}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-[#006384] font-medium underline dark:text-cyan-300"
+                      className="break-all text-[#006384] font-medium underline dark:text-cyan-300"
                     >
                       {c.linkedin}
                     </a>
                   ) : (
                     <span className="text-ink-muted">—</span>
-                  )}
-                </dd>
-              </div>
+                  )
+                }
+                editSlot={
+                  <>
+                    <Link2 className="text-ink-muted h-4 w-4 shrink-0 opacity-70" aria-hidden />
+                    <input
+                      value={overviewDraft}
+                      onChange={(e) => setOverviewDraft(e.target.value)}
+                      type="url"
+                      placeholder="https://linkedin.com/in/…"
+                      className="border-line text-ink min-w-0 flex-1 rounded-lg border bg-white px-2 py-1 text-sm dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      className="rounded-lg bg-emerald-600 p-1.5 text-white hover:bg-emerald-700"
+                      aria-label="Save LinkedIn"
+                      onClick={() => void commitCandidatePatch({ linkedin: overviewDraft.trim() || null })}
+                    >
+                      <Check className="h-4 w-4" aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      className="border-line rounded-lg border bg-white p-1.5 dark:border-line-dark dark:bg-stone-800"
+                      aria-label="Cancel"
+                      onClick={() => setOverviewEdit(null)}
+                    >
+                      <X className="h-4 w-4" aria-hidden />
+                    </button>
+                  </>
+                }
+              />
             </dl>
           </section>
 
@@ -320,17 +533,6 @@ export function CandidateDetailPage() {
                   <dd className="mt-0.5 text-sm">{c.lead_source}</dd>
                 </div>
               ) : null}
-              <div>
-                <dt className="text-ink-muted flex items-center gap-1 text-xs font-semibold dark:text-stone-500">
-                  <Calendar className="h-3 w-3" aria-hidden />
-                  Added
-                </dt>
-                <dd className="mt-0.5 text-sm">{formatDateTime(c.created_at)}</dd>
-              </div>
-              <div>
-                <dt className="text-ink-muted text-xs font-semibold dark:text-stone-500">Last updated</dt>
-                <dd className="mt-0.5 text-sm">{formatDateTime(c.updated_at)}</dd>
-              </div>
             </dl>
           </section>
 
@@ -340,22 +542,173 @@ export function CandidateDetailPage() {
               Profile
             </h2>
             <dl className="mt-3 grid gap-3 sm:grid-cols-2">
-              <div>
-                <dt className="text-ink-muted text-xs font-semibold dark:text-stone-500">Current title</dt>
-                <dd className="mt-0.5 text-sm">{c.current_title?.trim() || '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-ink-muted text-xs font-semibold dark:text-stone-500">Location</dt>
-                <dd className="mt-0.5 text-sm">{c.location?.trim() || '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-ink-muted text-xs font-semibold dark:text-stone-500">Years experience</dt>
-                <dd className="mt-0.5 text-sm">{c.years_exp != null ? String(c.years_exp) : '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-ink-muted text-xs font-semibold dark:text-stone-500">Salary expectation</dt>
-                <dd className="mt-0.5 text-sm">{c.salary_expectation?.trim() || '—'}</dd>
-              </div>
+              <OverviewFieldRow
+                label="Current title"
+                isEditing={overviewEdit === 'current_title'}
+                onRequestEdit={() => {
+                  setOverviewDraft(c.current_title ?? '')
+                  setOverviewEdit('current_title')
+                }}
+                view={<span className="text-ink dark:text-stone-100">{c.current_title?.trim() || '—'}</span>}
+                editSlot={
+                  <>
+                    <input
+                      value={overviewDraft}
+                      onChange={(e) => setOverviewDraft(e.target.value)}
+                      className="border-line text-ink min-w-0 flex-1 rounded-lg border bg-white px-2 py-1 text-sm dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      className="rounded-lg bg-emerald-600 p-1.5 text-white hover:bg-emerald-700"
+                      aria-label="Save current title"
+                      onClick={() => void commitCandidatePatch({ current_title: overviewDraft.trim() || null })}
+                    >
+                      <Check className="h-4 w-4" aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      className="border-line rounded-lg border bg-white p-1.5 dark:border-line-dark dark:bg-stone-800"
+                      aria-label="Cancel"
+                      onClick={() => setOverviewEdit(null)}
+                    >
+                      <X className="h-4 w-4" aria-hidden />
+                    </button>
+                  </>
+                }
+              />
+              <OverviewFieldRow
+                label="Location"
+                isEditing={overviewEdit === 'location'}
+                onRequestEdit={() => {
+                  setOverviewDraft(c.location ?? '')
+                  setOverviewEdit('location')
+                }}
+                view={<span className="text-ink dark:text-stone-100">{c.location?.trim() || '—'}</span>}
+                editSlot={
+                  <>
+                    <input
+                      value={overviewDraft}
+                      onChange={(e) => setOverviewDraft(e.target.value)}
+                      className="border-line text-ink min-w-0 flex-1 rounded-lg border bg-white px-2 py-1 text-sm dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      className="rounded-lg bg-emerald-600 p-1.5 text-white hover:bg-emerald-700"
+                      aria-label="Save location"
+                      onClick={() => void commitCandidatePatch({ location: overviewDraft.trim() || null })}
+                    >
+                      <Check className="h-4 w-4" aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      className="border-line rounded-lg border bg-white p-1.5 dark:border-line-dark dark:bg-stone-800"
+                      aria-label="Cancel"
+                      onClick={() => setOverviewEdit(null)}
+                    >
+                      <X className="h-4 w-4" aria-hidden />
+                    </button>
+                  </>
+                }
+              />
+              <OverviewFieldRow
+                label="Years experience"
+                isEditing={overviewEdit === 'years_exp'}
+                onRequestEdit={() => {
+                  setOverviewDraft(c.years_exp != null ? String(c.years_exp) : '')
+                  setOverviewEdit('years_exp')
+                }}
+                view={<span className="text-ink dark:text-stone-100">{c.years_exp != null ? String(c.years_exp) : '—'}</span>}
+                editSlot={
+                  <>
+                    <input
+                      value={overviewDraft}
+                      onChange={(e) => setOverviewDraft(e.target.value)}
+                      inputMode="numeric"
+                      className="border-line text-ink min-w-0 max-w-[8rem] rounded-lg border bg-white px-2 py-1 text-sm tabular-nums dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      className="rounded-lg bg-emerald-600 p-1.5 text-white hover:bg-emerald-700"
+                      aria-label="Save years of experience"
+                      onClick={() => {
+                        const t = overviewDraft.trim()
+                        if (!t) {
+                          void commitCandidatePatch({ years_exp: null })
+                          return
+                        }
+                        if (!/^\d{1,3}$/.test(t)) {
+                          toastError('Enter years as a whole number (e.g. 5) or leave empty.')
+                          return
+                        }
+                        void commitCandidatePatch({ years_exp: parseInt(t, 10) })
+                      }}
+                    >
+                      <Check className="h-4 w-4" aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      className="border-line rounded-lg border bg-white p-1.5 dark:border-line-dark dark:bg-stone-800"
+                      aria-label="Cancel"
+                      onClick={() => setOverviewEdit(null)}
+                    >
+                      <X className="h-4 w-4" aria-hidden />
+                    </button>
+                  </>
+                }
+              />
+              <OverviewFieldRow
+                label="Salary expectation"
+                isEditing={overviewEdit === 'salary'}
+                onRequestEdit={() => {
+                  setOverviewDraft(c.salary_expectation ?? '')
+                  setOverviewEdit('salary')
+                }}
+                view={
+                  <span className="text-ink dark:text-stone-100">{formatSalaryExpectationDisplay(c.salary_expectation)}</span>
+                }
+                editSlot={
+                  <>
+                    <input
+                      value={overviewDraft}
+                      onChange={(e) => setOverviewDraft(e.target.value)}
+                      placeholder="ILS amount"
+                      className="border-line text-ink min-w-0 flex-1 rounded-lg border bg-white px-2 py-1 text-sm tabular-nums dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      className="rounded-lg bg-emerald-600 p-1.5 text-white hover:bg-emerald-700"
+                      aria-label="Save salary expectation"
+                      onClick={() => {
+                        const t = overviewDraft.trim()
+                        if (!t) {
+                          void commitCandidatePatch({ salary_expectation: null })
+                          return
+                        }
+                        const p = parseIlsAmountInput(t)
+                        if (p === 'invalid') {
+                          toastError('Enter a valid amount or leave empty.')
+                          return
+                        }
+                        void commitCandidatePatch({ salary_expectation: p !== null ? String(p) : null })
+                      }}
+                    >
+                      <Check className="h-4 w-4" aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      className="border-line rounded-lg border bg-white p-1.5 dark:border-line-dark dark:bg-stone-800"
+                      aria-label="Cancel"
+                      onClick={() => setOverviewEdit(null)}
+                    >
+                      <X className="h-4 w-4" aria-hidden />
+                    </button>
+                  </>
+                }
+              />
               <div className="sm:col-span-2">
                 <dt className="text-ink-muted text-xs font-semibold dark:text-stone-500">Résumé</dt>
                 <dd className="mt-0.5 text-sm">{c.resume_storage_path ? 'On file — manage uploads on the role page.' : '—'}</dd>
