@@ -5,7 +5,7 @@ import { SplashFuturisticLoader } from '@/components/ui/SplashFuturisticLoader'
 
 const STORAGE_KEY = 'yulis_splash_seen'
 
-const SPLASH_HEADLINES = ['Achieving True Unagi...', 'Always Aware'] as const
+const SPLASH_HEADLINES = ['Locating the best candidates ever...', 'Aligning Stars..'] as const
 
 /** ~2.6s per headline (fade in, hold, hand off); total splash ~5.2s before app. */
 const HEADLINE_MS = 2600
@@ -23,7 +23,7 @@ function hasSeenSplash(): boolean {
   }
 }
 
-/** One splash per browser session — orbital loader + cycling Unagi headlines on first load. */
+/** One splash per browser session — orbital loader + cycling headlines on first load. */
 export function AppSplash({ children }: AppSplashProps) {
   const reduceMotion = useReducedMotion()
   const [showSplash, setShowSplash] = useState(() => !hasSeenSplash())
