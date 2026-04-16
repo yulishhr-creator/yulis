@@ -20,6 +20,7 @@ import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { formatDateTime, formatDue } from '@/lib/dates'
 import { normalizeEmail, normalizePhone } from '@/lib/normalize'
+import { linkedinHref } from '@/lib/urls'
 import { assignmentStatusPill, candidateGlobalPill } from '@/lib/candidateStatus'
 import { ScreenHeader } from '@/components/layout/ScreenHeader'
 import { useToast } from '@/hooks/useToast'
@@ -131,13 +132,13 @@ export function CandidateDetailPage() {
       if (!supabase || !uid || !id) return
       const { error } = await supabase.from('candidates').update(patch).eq('id', id).eq('user_id', uid)
       if (error) {
-        toastError(error.message)
+        toastError(error)
         return
       }
       success('Saved')
       setOverviewEdit(null)
       await qc.invalidateQueries({ queryKey: ['candidate-detail', id, uid] })
-      await qc.invalidateQueries({ queryKey: ['candidates'] })
+      await qc.invalidateQueries({ queryKey: ['all-candidates'] })
     },
     [supabase, uid, id, qc, success, toastError],
   )
@@ -464,14 +465,21 @@ export function CandidateDetailPage() {
                 }}
                 view={
                   c.linkedin?.trim() ? (
-                    <a
-                      href={c.linkedin.startsWith('http') ? c.linkedin : `https://${c.linkedin}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="break-all text-[#006384] font-medium underline dark:text-cyan-300"
-                    >
-                      {c.linkedin}
-                    </a>
+                    (() => {
+                      const href = linkedinHref(c.linkedin)
+                      return href ? (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="break-all text-[#006384] font-medium underline dark:text-cyan-300"
+                        >
+                          {c.linkedin}
+                        </a>
+                      ) : (
+                        <span className="text-ink-muted break-all">{c.linkedin}</span>
+                      )
+                    })()
                   ) : (
                     <span className="text-ink-muted">—</span>
                   )

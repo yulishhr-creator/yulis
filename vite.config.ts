@@ -17,8 +17,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'lvlup-brand.svg', 'lvlup-logo.png'],
       manifest: {
-        name: 'LvlUp Talent Solutions',
-        short_name: 'LvlUp',
+        name: 'Yulis',
+        short_name: 'Yulis',
         description: 'Recruiting workspace for tasks, roles, and candidates.',
         theme_color: '#9b3e20',
         background_color: '#faf8f5',

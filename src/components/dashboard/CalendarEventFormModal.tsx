@@ -152,7 +152,7 @@ export function CalendarEventFormModal({ open, onClose, defaultStartsAt, editing
       await qc.invalidateQueries({ queryKey: ['notifications-calendar-events'] })
       onClose()
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   function handleClose() {

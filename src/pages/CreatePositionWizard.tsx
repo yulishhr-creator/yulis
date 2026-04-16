@@ -8,19 +8,9 @@ import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { logActivityEvent } from '@/lib/activityLog'
 import { useToast } from '@/hooks/useToast'
-import { isMissingRequirementsColumnError, parseRequirementTokens } from '@/lib/requirementValues'
+import { WIZARD_STEPS, type StageDraft } from '@/lib/createPositionWizard.shared'
 
 const DRAFT_KEY = 'yulis_position_wizard_draft'
-
-export const WIZARD_STEPS = ['Basics', 'Workflow', 'Candidates', 'Summary'] as const
-
-export type StageDraft = {
-  name: string
-  description: string
-  interviewers: string
-  durationMinutes: string
-  isRemote: boolean
-}
 
 type Draft = {
   step: number
@@ -217,15 +207,6 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
       const tryText = await supabase.from('positions').insert({ ...baseRow, requirements: trimmedReq }).select('id, title').single()
       if (!tryText.error) {
         data = tryText.data as { id: string; title: string }
-      } else if (isMissingRequirementsColumnError(tryText.error.message)) {
-        const tokens = parseRequirementTokens(requirements)
-        const tryArr = await supabase
-          .from('positions')
-          .insert({ ...baseRow, requirement_item_values: tokens } as never)
-          .select('id, title')
-          .single()
-        data = tryArr.data as { id: string; title: string } | null
-        err = tryArr.error
       } else {
         err = tryText.error
       }
@@ -237,7 +218,7 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
 
     if (err) {
       setPending(false)
-      toastError(err.message)
+      toastError(err)
       return
     }
     const posId = data!.id

@@ -41,7 +41,7 @@ export function EmailTemplatesPage() {
       success('Template saved')
       await qc.invalidateQueries({ queryKey: ['email-templates'] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   return (

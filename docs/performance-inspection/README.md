@@ -1,5 +1,7 @@
 # Performance & code health inspection
 
+**CI:** On pushes to `main`, GitHub Actions runs `npm ci`, `npm run lint`, `npm run test`, and `npm run build` (see `.github/workflows/ci.yml`). Add focused unit tests under `src/**/*.test.ts` (e.g. `src/lib/urls.test.ts`).
+
 This folder contains the **evidence-first inspection** outputs from the refactor plan: baseline signals, DB/query audit, frontend runtime audit, duplication map, and a **prioritized remediation backlog**.
 
 | Doc | Purpose |

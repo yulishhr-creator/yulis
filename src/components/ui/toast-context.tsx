@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 
 import { ToastContext, type ToastItem, type ToastKind } from '@/components/ui/toast-state'
+import { mapUserFacingError } from '@/lib/errors'
 
 export type { ToastItem, ToastKind } from '@/components/ui/toast-state'
 
@@ -24,7 +25,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   )
 
   const success = useCallback((message: string) => push(message, 'success'), [push])
-  const error = useCallback((message: string) => push(message, 'error'), [push])
+  const error = useCallback(
+    (message: string | unknown) => {
+      push(mapUserFacingError(message), 'error')
+    },
+    [push],
+  )
 
   const value = useMemo(() => ({ push, success, error }), [push, success, error])
 

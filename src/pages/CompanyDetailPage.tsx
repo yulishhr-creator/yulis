@@ -101,7 +101,7 @@ export function CompanyDetailPage() {
       await qc.invalidateQueries({ queryKey: ['company', savedId] })
       if (isNew) navigate(`/companies/${savedId}`, { replace: true })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const softDelete = useMutation({
@@ -115,7 +115,7 @@ export function CompanyDetailPage() {
       await qc.invalidateQueries({ queryKey: ['companies'] })
       navigate('/companies')
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   return (

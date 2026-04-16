@@ -39,7 +39,7 @@ export function ProfilePage() {
     })
     setSaving(false)
     if (error) {
-      toastError(error.message)
+      toastError(error)
       return
     }
     success('Profile updated')
@@ -65,7 +65,7 @@ export function ProfilePage() {
     })
     if (upErr) {
       setUploadingAvatar(false)
-      toastError(upErr.message)
+      toastError(upErr)
       return
     }
     const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path)
@@ -75,7 +75,7 @@ export function ProfilePage() {
     })
     setUploadingAvatar(false)
     if (metaErr) {
-      toastError(metaErr.message)
+      toastError(metaErr)
       return
     }
     success('Avatar updated')

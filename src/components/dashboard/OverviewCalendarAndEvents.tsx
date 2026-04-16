@@ -144,7 +144,7 @@ export function OverviewCalendarAndEvents() {
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
       await qc.invalidateQueries({ queryKey: ['notifications-calendar-events'] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const openEventFormCreate = useCallback((startsAtLocal: string) => {

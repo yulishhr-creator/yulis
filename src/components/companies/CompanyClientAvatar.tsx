@@ -73,7 +73,7 @@ export function CompanyClientAvatar({ companyId, companyName, avatarUrl, readOnl
       await qc.invalidateQueries({ queryKey: ['positions'] })
       await qc.invalidateQueries({ queryKey: ['company', companyId] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
     onSettled: () => setUploading(false),
   })
 

@@ -2,7 +2,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
 import { Check, ChevronDown, GripVertical, ListFilter, Pencil, Trash2, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
 import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
@@ -11,7 +11,7 @@ import { formatDue } from '@/lib/dates'
 import { CompanyClientAvatar } from '@/components/companies/CompanyClientAvatar'
 import { Modal } from '@/components/ui/Modal'
 import { PageSpinner } from '@/components/ui/PageSpinner'
-import { useWorkTimer } from '@/work/WorkTimerContext'
+import { useWorkTimer } from '@/work/useWorkTimer'
 import { useToast } from '@/hooks/useToast'
 
 function nestedOne<T>(v: T | T[] | null | undefined): T | null {
@@ -368,7 +368,9 @@ export function TasksPage() {
     })
   }, [filteredTasks])
 
-  tasksListOrderedRef.current = tasksListOrdered
+  useLayoutEffect(() => {
+    tasksListOrderedRef.current = tasksListOrdered
+  }, [tasksListOrdered])
 
   useEffect(() => {
     if (!selectedTask) return
@@ -461,7 +463,7 @@ export function TasksPage() {
       await qc.invalidateQueries({ queryKey: ['position-tasks'] })
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const reorderTasksMutation = useMutation({
@@ -482,7 +484,7 @@ export function TasksPage() {
       await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
       await qc.invalidateQueries({ queryKey: ['position-tasks'] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const patchTaskMutation = useMutation({
@@ -501,7 +503,7 @@ export function TasksPage() {
       await qc.invalidateQueries({ queryKey: ['position-tasks'] })
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   function onTaskDragStart(e: React.DragEvent, taskId: string) {
@@ -596,7 +598,7 @@ export function TasksPage() {
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
       await qc.invalidateQueries({ queryKey: ['task-templates', uid] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   function setStatusUrl(next: string | null) {

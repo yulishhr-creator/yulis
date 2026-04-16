@@ -289,7 +289,7 @@ export function CandidatesPage() {
       await qc.invalidateQueries({ queryKey: ['position-activity', newPid] })
       await qc.invalidateQueries({ queryKey: ['candidate-detail'] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const createCandidateMutation = useMutation({
@@ -319,7 +319,7 @@ export function CandidatesPage() {
       setNewCandidateIdForAssign(id)
       setNewCandidateAssignPositionId('')
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const archiveMutation = useMutation({
@@ -351,7 +351,7 @@ export function CandidatesPage() {
       await qc.invalidateQueries({ queryKey: ['positions'] })
       await qc.invalidateQueries({ queryKey: ['position-candidates'] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const unarchiveMutation = useMutation({
@@ -364,7 +364,7 @@ export function CandidatesPage() {
       success('Candidate restored')
       await qc.invalidateQueries({ queryKey: ['all-candidates'] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const rows = q.data ?? []

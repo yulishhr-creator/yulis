@@ -11,7 +11,8 @@ export type ToastItem = {
 export type ToastContextValue = {
   push: (message: string, kind?: ToastKind) => void
   success: (message: string) => void
-  error: (message: string) => void
+  /** Pass a string (shown as-is if short) or an Error / thrown value for safe mapping. */
+  error: (message: string | unknown) => void
 }
 
 export const ToastContext = createContext<ToastContextValue | null>(null)

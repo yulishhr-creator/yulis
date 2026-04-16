@@ -1,3 +1,10 @@
+/** ISO timestamp for `days` calendar days from now (UTC calendar days). */
+export function addDaysIso(days: number): string {
+  const d = new Date()
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString()
+}
+
 export function formatDue(iso: string | null): string {
   if (!iso) return 'no due date'
   try {

@@ -42,7 +42,7 @@ export function ListSettingsPage() {
       const label = valueToAdd.trim()
       if (!label) throw new Error('empty')
 
-      let base = slugifyListItemValue(label)
+      const base = slugifyListItemValue(label)
       let value = base
       let suffix = 0
       // Retry on unique (user_id, list_key, value) violation
@@ -67,7 +67,7 @@ export function ListSettingsPage() {
       await qc.invalidateQueries({ queryKey: ['list-items'] })
     },
     onError: (err) => {
-      toastError(err instanceof Error ? err.message : 'Could not add value')
+      toastError(err instanceof Error ? err : new Error('Could not add value'))
     },
   })
 

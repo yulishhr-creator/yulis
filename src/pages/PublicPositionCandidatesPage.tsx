@@ -7,6 +7,7 @@ import { format } from 'date-fns'
 import { Mail, MessageCircle, X } from 'lucide-react'
 
 import { getSupabase } from '@/lib/supabase'
+import { linkedinHref } from '@/lib/urls'
 import { assignmentStatusPill, positionLifecyclePill } from '@/lib/candidateStatus'
 import { useToast } from '@/hooks/useToast'
 
@@ -89,13 +90,6 @@ function filterStagesForTab(stages: PipelineStageGroup[], tab: PublicPipelineTab
       candidates: (Array.isArray(s.candidates) ? s.candidates : []).filter((c) => assignmentMatchesTab(c, tab)),
     }))
     .filter((s) => s.candidates.length > 0)
-}
-
-function linkedinHref(raw: string | null | undefined): string | null {
-  const t = raw?.trim()
-  if (!t) return null
-  if (t.startsWith('http://') || t.startsWith('https://')) return t
-  return `https://${t}`
 }
 
 function IconLinkedIn(props: { className?: string }) {
@@ -266,7 +260,7 @@ export function PublicPositionCandidatesPage() {
       setComposerDraft('')
       await qc.invalidateQueries({ queryKey: ['public-assignment-thread', token, threadPcId] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   if (!token || token.length < 8) {

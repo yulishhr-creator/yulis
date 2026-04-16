@@ -25,7 +25,7 @@ import { QuickActionsModal } from '@/components/layout/QuickActionsModal'
 import { WeatherVibes } from '@/components/layout/WeatherVibes'
 import { WeekProgressCard } from '@/components/layout/WeekProgressCard'
 import { PwaInstallPrompt } from '@/components/pwa/PwaInstallPrompt'
-import { useWorkTimer } from '@/work/WorkTimerContext'
+import { useWorkTimer } from '@/work/useWorkTimer'
 import { useToast } from '@/hooks/useToast'
 import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
 import { useSidebarOpenPositionCounts } from '@/hooks/useSidebarOpenPositionCounts'
@@ -196,7 +196,7 @@ export function AppShell() {
   )
 
   return (
-    <div className="bg-paper text-ink relative min-h-dvh min-w-[960px] overflow-x-auto dark:bg-paper-dark dark:text-stone-100">
+    <div className="bg-paper text-ink relative min-h-dvh w-full min-w-0 overflow-x-auto dark:bg-paper-dark dark:text-stone-100">
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         <div
           className="animate-aurora-drift absolute top-[-10%] right-[-5%] h-[min(62vh,520px)] w-[min(68vw,560px)] rounded-full bg-gradient-to-bl from-lume-coral/32 via-lume-violet/18 to-lume-sky/14 blur-3xl dark:from-orange-500/22 dark:via-violet-500/14 dark:to-cyan-500/12"
@@ -483,7 +483,7 @@ export function AppShell() {
 
         <main
           id="main"
-          className="mx-auto max-w-6xl px-8 pb-10 pt-8"
+          className="mx-auto max-w-6xl px-4 pb-10 pt-6 sm:px-8 sm:pt-8"
         >
           <AnimatedOutlet />
         </main>

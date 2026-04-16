@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx'
+import * as XLSX from '@e965/xlsx'
 
 export function downloadCsv(filename: string, rows: Record<string, unknown>[]) {
   if (!rows.length) return
@@ -11,15 +11,6 @@ export function downloadCsv(filename: string, rows: Record<string, unknown>[]) {
   const header = keys.join(',')
   const lines = rows.map((r) => keys.map((k) => esc(r[k])).join(','))
   const blob = new Blob([[header, ...lines].join('\n')], { type: 'text/csv;charset=utf-8' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(a.href)
-}
-
-export function downloadJson(filename: string, data: unknown) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
   a.download = filename

@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from 'framer-motion'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 
 type ModalProps = {
   open: boolean
@@ -15,6 +16,35 @@ type ModalProps = {
 
 export function Modal({ open, onClose, title, children, size = 'md', headerAside }: ModalProps) {
   const reduceMotion = useReducedMotion()
+  const panelRef = useRef<HTMLDivElement>(null)
+  const prevFocusRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    prevFocusRef.current = document.activeElement as HTMLElement | null
+    const t = window.setTimeout(() => {
+      const root = panelRef.current
+      const first =
+        root?.querySelector<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? null
+      first?.focus()
+    }, 0)
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      window.clearTimeout(t)
+      document.removeEventListener('keydown', onKey)
+      prevFocusRef.current?.focus?.()
+    }
+  }, [open, onClose])
+
   if (!open) return null
 
   const maxW = size === 'sm' ? 'max-w-sm' : size === 'lg' ? 'max-w-2xl' : 'max-w-md'
@@ -28,6 +58,7 @@ export function Modal({ open, onClose, title, children, size = 'md', headerAside
         onClick={onClose}
       />
       <motion.div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"

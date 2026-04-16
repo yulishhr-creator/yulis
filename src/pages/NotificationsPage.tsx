@@ -208,7 +208,7 @@ export function NotificationsPage() {
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
       success('Reminder saved')
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const removeReminder = useMutation({
@@ -221,7 +221,7 @@ export function NotificationsPage() {
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
       await qc.invalidateQueries({ queryKey: ['dashboard-reminders'] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const clearCalendarEventReminder = useMutation({
@@ -239,7 +239,7 @@ export function NotificationsPage() {
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
       await qc.invalidateQueries({ queryKey: ['notifications-calendar-events'] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const deleteCalendarEvent = useMutation({
@@ -253,7 +253,7 @@ export function NotificationsPage() {
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
       await qc.invalidateQueries({ queryKey: ['notifications-calendar-events'] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const reminders = remindersQ.data ?? []
@@ -448,7 +448,10 @@ export function NotificationsPage() {
                       <button
                         type="button"
                         onClick={() =>
-                          void removeReminder.mutateAsync(r.id).then(() => success('Reminder done'))
+                          void removeReminder
+                            .mutateAsync(r.id)
+                            .then(() => success('Reminder done'))
+                            .catch(() => {})
                         }
                         disabled={remBusy}
                         className={`${notifActionBtn} hover:text-emerald-600 dark:hover:text-emerald-400`}
@@ -459,7 +462,10 @@ export function NotificationsPage() {
                       <button
                         type="button"
                         onClick={() =>
-                          void removeReminder.mutateAsync(r.id).then(() => success('Reminder deleted'))
+                          void removeReminder
+                            .mutateAsync(r.id)
+                            .then(() => success('Reminder deleted'))
+                            .catch(() => {})
                         }
                         disabled={remBusy}
                         className={`${notifActionBtn} hover:text-red-600 dark:hover:text-red-400`}

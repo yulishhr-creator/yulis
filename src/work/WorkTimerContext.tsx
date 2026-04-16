@@ -1,5 +1,6 @@
+/* eslint-disable react-refresh/only-export-components -- WorkTimerContext is consumed only by useWorkTimer.ts */
 import type { ReactNode } from 'react'
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/auth/useAuth'
@@ -21,7 +22,7 @@ type WorkTimerContextValue = {
   stop: () => Promise<{ error?: string }>
 }
 
-const WorkTimerContext = createContext<WorkTimerContextValue | null>(null)
+export const WorkTimerContext = createContext<WorkTimerContextValue | null>(null)
 
 export function WorkTimerProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
@@ -139,10 +140,4 @@ export function WorkTimerProvider({ children }: { children: ReactNode }) {
   )
 
   return <WorkTimerContext.Provider value={value}>{children}</WorkTimerContext.Provider>
-}
-
-export function useWorkTimer(): WorkTimerContextValue {
-  const ctx = useContext(WorkTimerContext)
-  if (!ctx) throw new Error('useWorkTimer must be used within WorkTimerProvider')
-  return ctx
 }

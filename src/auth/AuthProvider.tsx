@@ -13,10 +13,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const supabase = getSupabase()
     if (!supabase) return
 
-    void supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session ?? null)
-      setLoading(false)
-    })
+    void supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        setSession(data.session ?? null)
+        setLoading(false)
+      })
+      .catch(() => {
+        setLoading(false)
+      })
 
     const {
       data: { subscription },

@@ -59,7 +59,6 @@ export default function App() {
                     <Route path="/" element={<DashboardPage />} />
                     <Route path="/tasks" element={<TasksPage />} />
                     <Route path="/time" element={<WorkingTimePage />} />
-                    <Route path="/calendar" element={<Navigate to="/" replace />} />
                     <Route path="/companies" element={<CompaniesPage />} />
                     <Route path="/companies/:id" element={<CompanyDetailPage />} />
                     <Route path="/candidates" element={<CandidatesPage />} />

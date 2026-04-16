@@ -1,4 +1,4 @@
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { differenceInCalendarDays } from 'date-fns'
 import { Mail, Plus } from 'lucide-react'
@@ -49,8 +49,6 @@ function num(v: number | string | null | undefined): number {
 export function CompaniesPage() {
   const { user } = useAuth()
   const supabase = getSupabase()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const sendEmailMode = searchParams.get('sendEmail') === '1'
 
   const q = useQuery({
     queryKey: ['companies', user?.id],
@@ -126,7 +124,7 @@ export function CompaniesPage() {
     <div className="flex flex-col gap-6">
       <ScreenHeader
         title="Companies"
-        subtitle={sendEmailMode ? 'Choose a client to open your mail app — add a contact email on their profile if missing.' : 'Clients you recruit for.'}
+        subtitle="Clients you recruit for."
         backTo="/"
         right={
           <Link
@@ -139,19 +137,6 @@ export function CompaniesPage() {
           </Link>
         }
       />
-
-      {sendEmailMode ? (
-        <div className="border-line flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-violet-200/80 bg-violet-50/80 px-4 py-3 dark:border-violet-900/40 dark:bg-violet-950/30">
-          <p className="text-sm font-medium text-violet-950 dark:text-violet-100">Send An Email — clients with an address show a mail button.</p>
-          <button
-            type="button"
-            className="shrink-0 rounded-full border border-violet-300 px-3 py-1 text-xs font-bold dark:border-violet-700"
-            onClick={() => setSearchParams({}, { replace: true })}
-          >
-            Done
-          </button>
-        </div>
-      ) : null}
 
       <section aria-label="Portfolio totals" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="border-line rounded-2xl border border-stone-200/90 bg-white/90 px-4 py-4 shadow-sm dark:border-line-dark dark:bg-stone-900/70">
@@ -209,9 +194,6 @@ export function CompaniesPage() {
                       </span>
                     </div>
                     {c.contact_email ? <span className="text-ink-muted text-sm">{c.contact_email}</span> : null}
-                    {sendEmailMode && !c.contact_email ? (
-                      <span className="text-ink-muted text-xs">No email on file — open profile to add one.</span>
-                    ) : null}
 
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className="border-stitch-on-surface/10 rounded-xl border border-stone-200/80 bg-stone-50/80 p-3 dark:border-stone-600 dark:bg-stone-800/40">
@@ -275,7 +257,7 @@ export function CompaniesPage() {
                       </div>
                     </div>
                   </Link>
-                  {sendEmailMode && c.contact_email ? (
+                  {c.contact_email ? (
                     <a
                       href={buildMailto({
                         to: c.contact_email,
@@ -283,6 +265,7 @@ export function CompaniesPage() {
                         body: 'Hi,\n\n',
                       })}
                       className="inline-flex shrink-0 items-center justify-center gap-2 self-center rounded-xl bg-violet-600 px-4 py-2 text-sm font-bold text-white dark:bg-violet-700"
+                      title="Open mail app"
                     >
                       <Mail className="h-4 w-4" aria-hidden />
                       Email

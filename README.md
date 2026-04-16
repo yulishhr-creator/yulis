@@ -1,3 +1,21 @@
+# Yulis
+
+Recruiting workspace (React + TypeScript + Vite + Supabase).
+
+## Scripts
+
+- `npm run dev` — local dev server
+- `npm run build` — typecheck + production bundle
+- `npm run lint` — ESLint
+- `npm run test` — Vitest (unit tests under `src/**/*.test.ts`)
+- `npm run db:migrate` — applies **all** `supabase/migrations/*.sql` in sorted order (requires `DATABASE_URL` in `.env`)
+
+See [docs/performance-inspection/](docs/performance-inspection/) for the prioritized performance / scale backlog.
+
+---
+
+Below is upstream Vite template reference (kept for ESLint / tooling notes).
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

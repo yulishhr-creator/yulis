@@ -150,7 +150,7 @@ export function SettingsPage() {
       URL.revokeObjectURL(url)
       success('ZIP export started')
     } catch (e) {
-      toastError(e instanceof Error ? e.message : 'Export failed')
+      toastError(e instanceof Error ? e : new Error('Export failed'))
     } finally {
       setGdprBusy(false)
     }

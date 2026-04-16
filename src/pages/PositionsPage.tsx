@@ -460,7 +460,7 @@ export function PositionsPage() {
       await qc.invalidateQueries({ queryKey: ['dashboard-top-positions'] })
       await qc.invalidateQueries({ queryKey: ['pipeline-headline-stats'] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   function parseDragPayload(e: React.DragEvent): { id: string; status: string; title: string } | null {

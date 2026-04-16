@@ -64,7 +64,7 @@ export function PositionFeesPage() {
       await qc.invalidateQueries({ queryKey: ['positions'] })
       await qc.invalidateQueries({ queryKey: ['companies-positions-income'] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   if (posQ.isLoading) {

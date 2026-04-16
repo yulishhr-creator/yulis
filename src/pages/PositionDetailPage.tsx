@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
-import * as XLSX from 'xlsx'
+import * as XLSX from '@e965/xlsx'
 import {
   Check,
   CheckCircle2,
@@ -29,15 +29,16 @@ import { differenceInCalendarDays, format } from 'date-fns'
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
 import { normalizeEmail, normalizePhone } from '@/lib/normalize'
-import { formatDue } from '@/lib/dates'
+import { addDaysIso, formatDue } from '@/lib/dates'
 import { Modal } from '@/components/ui/Modal'
 import { PageSpinner } from '@/components/ui/PageSpinner'
 import { useToast } from '@/hooks/useToast'
 import { criticalStageThreshold, logActivityEvent } from '@/lib/activityLog'
 import { assignmentStatusPill, formatAssignmentStatus } from '@/lib/candidateStatus'
 import { logPositionCandidateTransition } from '@/lib/positionTransitions'
-import { isMissingRequirementsColumnError, normalizeRequirementsText, parseRequirementTokens } from '@/lib/requirementValues'
+import { normalizeRequirementsText } from '@/lib/requirementValues'
 import { CompanyClientAvatar } from '@/components/companies/CompanyClientAvatar'
+import { linkedinHref } from '@/lib/urls'
 
 type StageRow = {
   id: string
@@ -99,6 +100,48 @@ function normalizeAssignmentSource(raw: string): AssignmentSourceValue {
   if (s === 'external') return 'import'
   if (s === 'app') return 'sourcing'
   return 'sourcing'
+}
+
+const MAX_RESUME_UPLOAD_BYTES = 15 * 1024 * 1024
+const MAX_ATTACHMENT_UPLOAD_BYTES = 15 * 1024 * 1024
+const MAX_AVATAR_UPLOAD_BYTES = 5 * 1024 * 1024
+
+const RESUME_UPLOAD_MIME = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+])
+
+const ATTACHMENT_UPLOAD_MIME = new Set([
+  ...RESUME_UPLOAD_MIME,
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+  'text/plain',
+  'application/zip',
+])
+
+function validateResumeUpload(file: File): string | null {
+  if (file.size > MAX_RESUME_UPLOAD_BYTES) return `Resume must be under ${MAX_RESUME_UPLOAD_BYTES / (1024 * 1024)} MB`
+  if (file.type && !RESUME_UPLOAD_MIME.has(file.type)) return 'Resume must be PDF or Word (.doc/.docx)'
+  return null
+}
+
+function validateAttachmentUpload(file: File): string | null {
+  if (file.size > MAX_ATTACHMENT_UPLOAD_BYTES) return `File must be under ${MAX_ATTACHMENT_UPLOAD_BYTES / (1024 * 1024)} MB`
+  if (file.type && !ATTACHMENT_UPLOAD_MIME.has(file.type))
+    return 'Allowed: PDF, Word, Excel, images, plain text, or ZIP'
+  return null
+}
+
+function validateAvatarUpload(file: File): string | null {
+  if (file.size > MAX_AVATAR_UPLOAD_BYTES) return `Photo must be under ${MAX_AVATAR_UPLOAD_BYTES / (1024 * 1024)} MB`
+  if (!file.type.startsWith('image/')) return 'Use an image file (JPEG, PNG, or WebP).'
+  if (file.type === 'image/gif') return 'GIF is not supported; use JPEG, PNG, or WebP.'
+  return null
 }
 
 /** Days on role for compact kanban badge; under a week show Nd, else rounded weeks. */
@@ -453,6 +496,26 @@ export function PositionDetailPage() {
     },
   })
 
+  const candidateDrawerPhotoStoragePath = useMemo(() => {
+    if (!highlightCandidate) return null
+    const row = (candidatesQ.data ?? []).find((r) => nestedCandidate(r.candidates)?.id === highlightCandidate)
+    const p = nestedCandidate(row?.candidates ?? null)?.profile_photo_storage_path?.trim()
+    return p || null
+  }, [candidatesQ.data, highlightCandidate])
+
+  const candidateDrawerPhotoSignedUrlQ = useQuery({
+    queryKey: ['candidate-doc-signed-photo', user?.id, candidateDrawerPhotoStoragePath],
+    enabled: Boolean(supabase && user?.id && candidateDrawerPhotoStoragePath),
+    staleTime: 50 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase!.storage
+        .from('candidate-docs')
+        .createSignedUrl(candidateDrawerPhotoStoragePath!, 3600)
+      if (error) throw error
+      return data.signedUrl
+    },
+  })
+
   const positionIsOpen = useMemo(
     () => posQ.data?.status === 'active' || posQ.data?.status === 'on_hold',
     [posQ.data?.status],
@@ -465,14 +528,22 @@ export function PositionDetailPage() {
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('position_public_list_tokens')
-        .select('token')
+        .select('token, expose_contact')
         .eq('position_id', id!)
         .is('revoked_at', null)
         .maybeSingle()
       if (error) throw error
-      return (data as { token: string } | null)?.token ?? null
+      const row = data as { token: string; expose_contact?: boolean | null } | null
+      if (!row?.token) return null
+      return { token: row.token, expose_contact: Boolean(row.expose_contact) }
     },
   })
+
+  const [publicShareExposeContact, setPublicShareExposeContact] = useState(false)
+  useEffect(() => {
+    const d = publicListTokenQ.data
+    if (d) setPublicShareExposeContact(d.expose_contact)
+  }, [publicListTokenQ.data])
 
   const position = posQ.data
   const company = position?.companies as unknown as {
@@ -548,17 +619,13 @@ export function PositionDetailPage() {
     setTitle(position.title ?? '')
     const pos = position as {
       requirements?: unknown
-      requirement_item_values?: unknown
       hiring_manager_name?: string | null
       hiring_manager_email?: string | null
       hiring_manager_phone?: string | null
       salary_budget?: number | null
       planned_fee_ils?: number | null
     }
-    let reqText = normalizeRequirementsText(pos.requirements)
-    if (!reqText && Array.isArray(pos.requirement_item_values)) {
-      reqText = (pos.requirement_item_values as string[]).filter(Boolean).join('\n')
-    }
+    const reqText = normalizeRequirementsText(pos.requirements)
     setRequirements(reqText)
     setHiringManagerName(pos.hiring_manager_name ?? '')
     setHiringManagerEmail(pos.hiring_manager_email ?? '')
@@ -611,7 +678,7 @@ export function PositionDetailPage() {
     await qc.invalidateQueries({ queryKey: ['dashboard-top-positions'] })
     await qc.invalidateQueries({ queryKey: ['pipeline-headline-stats'] })
     await qc.invalidateQueries({ queryKey: ['companies-positions-income'] })
-    await qc.invalidateQueries({ queryKey: ['candidates'] })
+    await qc.invalidateQueries({ queryKey: ['all-candidates'] })
     await qc.invalidateQueries({ queryKey: ['tasks-page'] })
     await qc.invalidateQueries({ queryKey: ['position-tasks', id] })
     await qc.invalidateQueries({ queryKey: ['notification-count'] })
@@ -643,7 +710,7 @@ export function PositionDetailPage() {
     if (patch.linkedin !== undefined) row.linkedin = patch.linkedin?.trim() || null
     if (patch.salary_expectation !== undefined) row.salary_expectation = patch.salary_expectation
     const { error } = await supabase.from('candidates').update(row).eq('id', candidateId).eq('user_id', user.id)
-    if (error) toastError(error.message)
+    if (error) toastError(error)
     else {
       success('Saved')
       setDrawerFieldEdit(null)
@@ -664,23 +731,7 @@ export function PositionDetailPage() {
       await invalidateAll()
       return
     }
-    if (isMissingRequirementsColumnError(error.message)) {
-      const tokens = parseRequirementTokens(next)
-      const { error: e2 } = await supabase!
-        .from('positions')
-        .update({ requirement_item_values: tokens } as never)
-        .eq('id', id!)
-        .eq('user_id', user!.id)
-      if (e2) {
-        toastError(e2.message)
-        return
-      }
-      setRequirements(tokens.length ? tokens.join('\n') : '')
-      success('Saved')
-      await invalidateAll()
-      return
-    }
-    toastError(error.message)
+    toastError(error)
   }
 
   function parseIlsAmountInput(raw: string): number | null | 'invalid' {
@@ -706,23 +757,14 @@ export function PositionDetailPage() {
         status,
       }
       const withRequirements = { ...base, requirements: requirements.trim() || null }
-      let { error } = await supabase!.from('positions').update(withRequirements).eq('id', id!).eq('user_id', user!.id)
-      if (error && isMissingRequirementsColumnError(error.message)) {
-        const tokens = parseRequirementTokens(requirements)
-        const { error: e2 } = await supabase!
-          .from('positions')
-          .update({ ...base, requirement_item_values: tokens } as never)
-          .eq('id', id!)
-          .eq('user_id', user!.id)
-        error = e2
-      }
+      const { error } = await supabase!.from('positions').update(withRequirements).eq('id', id!).eq('user_id', user!.id)
       if (error) throw error
     },
     onSuccess: async () => {
       success('Position saved')
       await invalidateAll()
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const setPositionTerminal = useMutation({
@@ -751,7 +793,7 @@ export function PositionDetailPage() {
       })
       await invalidateAll()
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const reopenPosition = useMutation({
@@ -768,7 +810,7 @@ export function PositionDetailPage() {
       success('Position reopened')
       await invalidateAll()
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const setOpenPositionStatus = useMutation({
@@ -788,7 +830,7 @@ export function PositionDetailPage() {
       })
       await invalidateAll()
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const [newStageName, setNewStageName] = useState('')
@@ -809,7 +851,7 @@ export function PositionDetailPage() {
       success('Stage added')
       await qc.invalidateQueries({ queryKey: ['position-stages', id] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const updateStageMeta = useMutation({
@@ -821,7 +863,7 @@ export function PositionDetailPage() {
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['position-stages', id] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const deleteStageMut = useMutation({
@@ -849,7 +891,7 @@ export function PositionDetailPage() {
     },
     onError: (e: Error) => {
       if (e.message === 'cancelled') return
-      toastError(e.message)
+      toastError(e)
     },
   })
 
@@ -860,8 +902,15 @@ export function PositionDetailPage() {
     if (i < 0 || j < 0 || j >= rows.length) return
     const a = rows[i]!
     const b = rows[j]!
-    await supabase!.from('position_stages').update({ sort_order: b.sort_order }).eq('id', a.id)
-    await supabase!.from('position_stages').update({ sort_order: a.sort_order }).eq('id', b.id)
+    const { error } = await supabase!.rpc('swap_position_stages', {
+      p_position_id: id!,
+      p_stage_id: a.id,
+      p_other_stage_id: b.id,
+    })
+    if (error) {
+      toastError(error)
+      return
+    }
     await qc.invalidateQueries({ queryKey: ['position-stages', id] })
   }
 
@@ -938,7 +987,7 @@ export function PositionDetailPage() {
     }
     await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
     await qc.invalidateQueries({ queryKey: ['position-transition-stats', id] })
-    await qc.invalidateQueries({ queryKey: ['candidates'] })
+    await qc.invalidateQueries({ queryKey: ['all-candidates'] })
     if (ok === 0) setImportError('Could not import rows — check column headers (name, email, phone).')
     else {
       success(`Imported ${ok} candidate(s)`)
@@ -965,7 +1014,7 @@ export function PositionDetailPage() {
       await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const updateCandidateStage = useMutation({
@@ -1028,7 +1077,7 @@ export function PositionDetailPage() {
       }
       await invalidateAll()
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const patchAssignmentStatus = useMutation({
@@ -1085,7 +1134,7 @@ export function PositionDetailPage() {
       })
       await invalidateAll()
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const archiveAssignmentOnRole = useMutation({
@@ -1109,7 +1158,7 @@ export function PositionDetailPage() {
       )
       await invalidateAll()
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const withdrawFromRole = useMutation({
@@ -1149,7 +1198,7 @@ export function PositionDetailPage() {
       if (highlightCandidate && candidateId === highlightCandidate) setSearch({}, { replace: true })
       await invalidateAll()
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const addDrawerComment = useMutation({
@@ -1170,7 +1219,7 @@ export function PositionDetailPage() {
       success('Comment added')
       await qc.invalidateQueries({ queryKey: ['position-activity', id] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const updateAssignmentSource = useMutation({
@@ -1186,7 +1235,7 @@ export function PositionDetailPage() {
       success('Source updated')
       await invalidateAll()
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const deleteActivityEvent = useMutation({
@@ -1197,7 +1246,7 @@ export function PositionDetailPage() {
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['position-activity', id] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const createShareToken = useMutation({
@@ -1207,7 +1256,7 @@ export function PositionDetailPage() {
         user_id: user!.id,
         candidate_id: candidateId,
         token,
-        expires_at: new Date(Date.now() + 7 * 864e5).toISOString(),
+        expires_at: addDaysIso(7),
       })
       if (error) throw error
       return token
@@ -1219,11 +1268,11 @@ export function PositionDetailPage() {
       void navigator.clipboard.writeText(url).catch(() => {})
       success('Share link copied')
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   const ensurePositionPublicListToken = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (exposeContact: boolean) => {
       if (!supabase || !user || !id) throw new Error('Not signed in')
       const now = new Date().toISOString()
       const { error: revErr } = await supabase
@@ -1238,6 +1287,7 @@ export function PositionDetailPage() {
         user_id: user.id,
         position_id: id,
         token,
+        expose_contact: exposeContact,
       })
       if (error) throw error
       return token
@@ -1245,20 +1295,25 @@ export function PositionDetailPage() {
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['position-public-list-token', id] })
     },
-    onError: (e: Error) => toastError(e.message),
+    onError: (e: Error) => toastError(e),
   })
 
   async function uploadResume(candidateId: string, file: File | null) {
     if (!file || !supabase || !user) return
-    const path = `${user.id}/${candidateId}/${Date.now()}-${file.name.replace(/[^\w.-]/g, '_')}`
+    const bad = validateResumeUpload(file)
+    if (bad) {
+      toastError(bad)
+      return
+    }
+    const path = `${user.id}/${candidateId}/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]/g, '_')}`
     const { error: upErr } = await supabase.storage.from('candidate-docs').upload(path, file)
     if (upErr) {
-      toastError(upErr.message)
+      toastError(upErr)
       return
     }
     const { error } = await supabase.from('candidates').update({ resume_storage_path: path }).eq('id', candidateId).eq('user_id', user.id)
     if (error) {
-      toastError(error.message)
+      toastError(error)
       return
     }
     success('Resume uploaded')
@@ -1280,10 +1335,15 @@ export function PositionDetailPage() {
 
   async function uploadCandidateAttachment(candidateId: string, file: File | null) {
     if (!file || !supabase || !user || !id) return
-    const path = `${user.id}/${candidateId}/${Date.now()}-${file.name.replace(/[^\w.-]/g, '_')}`
+    const bad = validateAttachmentUpload(file)
+    if (bad) {
+      toastError(bad)
+      return
+    }
+    const path = `${user.id}/${candidateId}/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]/g, '_')}`
     const { error: upErr } = await supabase.storage.from('candidate-docs').upload(path, file)
     if (upErr) {
-      toastError(upErr.message)
+      toastError(upErr)
       return
     }
     success('File uploaded')
@@ -1305,15 +1365,16 @@ export function PositionDetailPage() {
 
   async function uploadCandidatePhoto(candidateId: string, file: File | null) {
     if (!file || !supabase || !user || !id) return
-    if (!file.type.startsWith('image/')) {
-      toastError('Use an image file (JPEG, PNG, or WebP).')
+    const bad = validateAvatarUpload(file)
+    if (bad) {
+      toastError(bad)
       return
     }
     const ext = (file.name.split('.').pop() ?? 'jpg').replace(/[^\w]/g, '') || 'jpg'
-    const path = `${user.id}/${candidateId}/avatar-${Date.now()}.${ext}`
+    const path = `${user.id}/${candidateId}/avatar-${crypto.randomUUID()}.${ext}`
     const { error: upErr } = await supabase.storage.from('candidate-docs').upload(path, file)
     if (upErr) {
-      toastError(upErr.message)
+      toastError(upErr)
       return
     }
     const { error } = await supabase
@@ -1322,7 +1383,7 @@ export function PositionDetailPage() {
       .eq('id', candidateId)
       .eq('user_id', user.id)
     if (error) {
-      toastError(error.message)
+      toastError(error)
       return
     }
     success('Photo updated')
@@ -1340,13 +1401,14 @@ export function PositionDetailPage() {
     await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
     await qc.invalidateQueries({ queryKey: ['position-activity', id] })
     await qc.invalidateQueries({ queryKey: ['candidate-docs-files', user.id, candidateId] })
+    await qc.invalidateQueries({ queryKey: ['candidate-doc-signed-photo'] })
   }
 
   async function previewResume(storagePath: string) {
     if (!supabase) return
     const { data, error } = await supabase.storage.from('candidate-docs').createSignedUrl(storagePath, 120)
     if (error || !data?.signedUrl) {
-      toastError(error?.message ?? 'Could not open file')
+      toastError(error ?? new Error('Could not open file'))
       return
     }
     window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
@@ -1964,8 +2026,17 @@ export function PositionDetailPage() {
                 {shareChannelOpen ? (
                   <div
                     role="menu"
-                    className="border-line absolute top-full right-0 z-50 mt-1 min-w-[11rem] rounded-xl border bg-white py-1 shadow-xl dark:border-line-dark dark:bg-stone-900"
+                    className="border-line absolute top-full right-0 z-50 mt-1 min-w-[14rem] rounded-xl border bg-white py-1 shadow-xl dark:border-line-dark dark:bg-stone-900"
                   >
+                    <label className="flex cursor-pointer items-start gap-2 border-b border-stone-100 px-3 py-2.5 text-left text-xs text-stone-600 dark:border-stone-800 dark:text-stone-300">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 shrink-0 rounded border-stone-300"
+                        checked={publicShareExposeContact}
+                        onChange={(e) => setPublicShareExposeContact(e.target.checked)}
+                      />
+                      <span>Show email &amp; LinkedIn on the public pipeline page</span>
+                    </label>
                     <button
                       type="button"
                       role="menuitem"
@@ -1983,13 +2054,21 @@ export function PositionDetailPage() {
                       onClick={async () => {
                         setShareChannelOpen(false)
                         if (!id) return
-                        let tok = publicListTokenQ.data ?? null
-                        if (tok == null) {
+                        const existing = publicListTokenQ.data
+                        const needsNew =
+                          existing == null || existing.expose_contact !== publicShareExposeContact
+                        let tok: string | null = existing?.token ?? null
+                        if (needsNew) {
                           try {
-                            tok = await ensurePositionPublicListToken.mutateAsync()
-                          } catch {
+                            tok = await ensurePositionPublicListToken.mutateAsync(publicShareExposeContact)
+                          } catch (e) {
+                            toastError(e instanceof Error ? e : new Error('Could not create public link'))
                             return
                           }
+                        }
+                        if (!tok) {
+                          toastError('Could not create public link')
+                          return
                         }
                         const url = `${window.location.origin}/pub/pos/${tok}`
                         void navigator.clipboard.writeText(url).then(
@@ -2052,7 +2131,7 @@ export function PositionDetailPage() {
                   .update({ title: v })
                   .eq('id', id!)
                   .eq('user_id', user!.id)
-                if (error) toastError(error.message)
+                if (error) toastError(error)
                 else {
                   setTitle(v)
                   success('Saved')
@@ -2083,7 +2162,7 @@ export function PositionDetailPage() {
                   .update({ salary_budget: parsed })
                   .eq('id', id!)
                   .eq('user_id', user!.id)
-                if (error) toastError(error.message)
+                if (error) toastError(error)
                 else {
                   setSalaryBudgetStr(parsed != null ? String(parsed) : '')
                   success('Saved')
@@ -2106,7 +2185,7 @@ export function PositionDetailPage() {
                   .update({ closure_date: v })
                   .eq('id', id!)
                   .eq('user_id', user!.id)
-                if (error) toastError(error.message)
+                if (error) toastError(error)
                 else {
                   setClosureDateStr(v ?? '')
                   success('Saved')
@@ -2131,7 +2210,7 @@ export function PositionDetailPage() {
                   .update({ hiring_manager_name: v })
                   .eq('id', id!)
                   .eq('user_id', user!.id)
-                if (error) toastError(error.message)
+                if (error) toastError(error)
                 else {
                   setHiringManagerName(v ?? '')
                   success('Saved')
@@ -2149,7 +2228,7 @@ export function PositionDetailPage() {
                   .update({ hiring_manager_email: v })
                   .eq('id', id!)
                   .eq('user_id', user!.id)
-                if (error) toastError(error.message)
+                if (error) toastError(error)
                 else {
                   setHiringManagerEmail(v ?? '')
                   success('Saved')
@@ -2167,7 +2246,7 @@ export function PositionDetailPage() {
                   .update({ hiring_manager_phone: v })
                   .eq('id', id!)
                   .eq('user_id', user!.id)
-                if (error) toastError(error.message)
+                if (error) toastError(error)
                 else {
                   setHiringManagerPhone(v ?? '')
                   success('Saved')
@@ -2197,7 +2276,7 @@ export function PositionDetailPage() {
                   .update({ planned_fee_ils: parsed })
                   .eq('id', id!)
                   .eq('user_id', user!.id)
-                if (error) toastError(error.message)
+                if (error) toastError(error)
                 else {
                   setRecruitmentFeeStr(parsed != null ? String(parsed) : '')
                   success('Saved')
@@ -2335,20 +2414,11 @@ export function PositionDetailPage() {
                     const candId = prof?.id
                     const displayName = prof?.full_name ?? 'Unnamed'
                     const resumePath = prof?.resume_storage_path ?? null
-                    const photoPath = prof?.profile_photo_storage_path ?? null
-                    const photoPublic =
-                      photoPath && supabase
-                        ? supabase.storage.from('candidate-docs').getPublicUrl(photoPath).data.publicUrl
-                        : null
+                    const photoSignedUrl = candidateDrawerPhotoSignedUrlQ.data ?? null
                     const email = prof?.email?.trim() || null
                     const phone = prof?.phone?.trim() || null
                     const linkedinRaw = prof?.linkedin?.trim() || null
-                    const linkedinHref =
-                      linkedinRaw != null && linkedinRaw !== ''
-                        ? linkedinRaw.startsWith('http')
-                          ? linkedinRaw
-                          : `https://${linkedinRaw}`
-                        : null
+                    const linkedinUrl = linkedinHref(prof?.linkedin ?? null)
                     const salaryRaw = prof?.salary_expectation?.trim() ?? ''
                     const actRows = (activityQ.data ?? []).filter(
                       (a) => a.candidate_id === candId || a.position_candidate_id === c.id,
@@ -2392,7 +2462,7 @@ export function PositionDetailPage() {
                         <input
                           ref={candidatePhotoInputRef}
                           type="file"
-                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          accept="image/jpeg,image/png,image/webp"
                           className="sr-only"
                           tabIndex={-1}
                           onChange={(e) => {
@@ -2437,9 +2507,9 @@ export function PositionDetailPage() {
                             <div className="flex w-[7rem] shrink-0 flex-col items-stretch gap-2 sm:w-[7.5rem]">
                               <div className="group/avatar relative mx-auto h-[4.5rem] w-[4.5rem] shrink-0">
                                 <div className="flex h-[4.5rem] w-[4.5rem] items-center justify-center overflow-hidden rounded-full border border-stone-200 bg-stone-100 text-base font-bold text-stone-600 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300">
-                                  {photoPublic && !drawerAvatarBroken ? (
+                                  {photoSignedUrl && !drawerAvatarBroken ? (
                                     <img
-                                      src={photoPublic}
+                                      src={photoSignedUrl}
                                       alt=""
                                       className="h-full w-full object-cover"
                                       onError={() => setDrawerAvatarBroken(true)}
@@ -2813,9 +2883,9 @@ export function PositionDetailPage() {
                                     </>
                                   ) : (
                                     <>
-                                      {linkedinHref ? (
+                                      {linkedinUrl ? (
                                         <a
-                                          href={linkedinHref}
+                                          href={linkedinUrl}
                                           target="_blank"
                                           rel="noopener noreferrer"
                                           title={linkedinRaw ?? undefined}
