@@ -165,7 +165,7 @@ export function CalendarEventFormModal({ open, onClose, defaultStartsAt, editing
   const companies = relationsQ.data?.companies ?? []
 
   return (
-    <Modal open={open} onClose={handleClose} title={editingId ? 'Edit event' : 'New event'} size="md">
+    <Modal open={open} onClose={handleClose} title={editingId ? 'Edit event' : 'New event'} size="lg">
       <form
         className="flex flex-col gap-3"
         onSubmit={(e) => {
