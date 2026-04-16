@@ -2323,7 +2323,7 @@ export function PositionDetailPage() {
                         />
                         <div className="border-b border-stone-200/90 px-5 pb-4 pt-2 dark:border-stone-700">
                           <div className="flex gap-4">
-                            <div className="flex w-[4.95rem] shrink-0 flex-col items-stretch gap-2">
+                            <div className="flex w-[7rem] shrink-0 flex-col items-stretch gap-2 sm:w-[7.5rem]">
                               <div className="group/avatar relative mx-auto h-[4.5rem] w-[4.5rem] shrink-0">
                                 <div className="flex h-[4.5rem] w-[4.5rem] items-center justify-center overflow-hidden rounded-full border border-stone-200 bg-stone-100 text-base font-bold text-stone-600 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300">
                                   {photoPublic && !drawerAvatarBroken ? (
@@ -2348,7 +2348,7 @@ export function PositionDetailPage() {
                                 </button>
                               </div>
                               <select
-                                className="w-full cursor-pointer rounded-md border border-stone-200/70 bg-stone-50/90 py-1 pl-1.5 pr-6 text-[10px] font-medium text-stone-700 shadow-sm dark:border-stone-600 dark:bg-stone-900/70 dark:text-stone-200"
+                                className="w-full min-w-0 cursor-pointer rounded-md border border-stone-200/70 bg-stone-50/90 py-1 pl-1.5 pr-7 text-[11px] font-medium text-stone-700 shadow-sm dark:border-stone-600 dark:bg-stone-900/70 dark:text-stone-200"
                                 value={normalizeAssignmentSource(c.source)}
                                 disabled={updateAssignmentSource.isPending}
                                 onChange={(e) => {
@@ -2369,9 +2369,9 @@ export function PositionDetailPage() {
                               </select>
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:flex-nowrap">
+                              <div className="flex min-w-0 flex-nowrap items-center gap-x-2">
                                 <div className="group/name flex min-w-0 flex-1 flex-col gap-1">
-                                  <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                                  <div className="flex min-w-0 flex-nowrap items-center gap-x-1.5">
                                     {drawerFieldEdit === 'name' && candId ? (
                                       <>
                                         <input
@@ -2440,25 +2440,23 @@ export function PositionDetailPage() {
                                       </>
                                     ) : (
                                       <>
-                                        <h2 className="text-stitch-on-surface flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-xl font-bold tracking-tight dark:text-stone-100">
-                                          <span className="min-w-0 truncate">{displayName}</span>
+                                        <div className="text-stitch-on-surface flex min-w-0 flex-1 flex-nowrap items-baseline gap-x-1.5 overflow-hidden text-xl font-bold tracking-tight dark:text-stone-100">
+                                          <h2 className="min-w-0 truncate">{displayName}</h2>
                                           {salaryTitleSuffix ? (
-                                            <span className="inline-flex shrink-0 items-baseline gap-0.5 font-bold tabular-nums text-stone-600 dark:text-stone-400">
-                                              <span>{salaryTitleSuffix}</span>
-                                              <button
-                                                type="button"
-                                                className="text-ink-muted rounded p-0.5 opacity-0 transition hover:bg-stone-200/90 hover:text-ink group-hover/name:opacity-100 dark:hover:bg-stone-600 dark:hover:text-stone-100"
-                                                aria-label="Edit expected salary"
-                                                onClick={() => {
-                                                  setDrawerFieldDraft(salaryRaw)
-                                                  setDrawerFieldEdit('salary')
-                                                }}
-                                              >
-                                                <Pencil className="h-3.5 w-3.5" aria-hidden />
-                                              </button>
-                                            </span>
+                                            <button
+                                              type="button"
+                                              className="shrink-0 rounded px-0.5 font-bold tabular-nums text-stone-600 transition hover:bg-stone-200/80 hover:text-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 dark:hover:text-stone-200"
+                                              aria-label="Edit expected salary"
+                                              title="Edit expected salary"
+                                              onClick={() => {
+                                                setDrawerFieldDraft(salaryRaw)
+                                                setDrawerFieldEdit('salary')
+                                              }}
+                                            >
+                                              {salaryTitleSuffix}
+                                            </button>
                                           ) : null}
-                                        </h2>
+                                        </div>
                                         <button
                                           type="button"
                                           className="text-ink-muted shrink-0 rounded-lg p-1.5 opacity-0 transition hover:bg-stone-200/90 hover:text-ink group-hover/name:opacity-100 dark:hover:bg-stone-600 dark:hover:text-stone-100"
@@ -2479,7 +2477,7 @@ export function PositionDetailPage() {
                                     type="button"
                                     onClick={() => setDrawerAssignStatusOpen((o) => !o)}
                                     disabled={patchAssignmentStatus.isPending}
-                                    className={`border-line flex h-10 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-sm font-bold shadow-sm transition dark:border-line-dark ${
+                                    className={`border-line flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-xs font-bold shadow-sm transition dark:border-line-dark ${
                                       drawerCandidate!.status === 'in_progress'
                                         ? 'border-emerald-200/90 bg-gradient-to-br from-emerald-50 to-white text-emerald-900 dark:border-emerald-800/80 dark:from-emerald-950/60 dark:to-stone-900 dark:text-emerald-200'
                                         : drawerCandidate!.status === 'rejected'
@@ -2492,16 +2490,16 @@ export function PositionDetailPage() {
                                     title="Assignment status"
                                   >
                                     {drawerCandidate!.status === 'in_progress' ? (
-                                      <Play className="h-4 w-4 shrink-0 fill-current text-emerald-600 dark:text-emerald-400" aria-hidden />
+                                      <Play className="h-3.5 w-3.5 shrink-0 fill-current text-emerald-600 dark:text-emerald-400" aria-hidden />
                                     ) : drawerCandidate!.status === 'rejected' ? (
-                                      <Ban className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-300" aria-hidden />
+                                      <Ban className="h-3.5 w-3.5 shrink-0 text-rose-600 dark:text-rose-300" aria-hidden />
                                     ) : (
-                                      <Pause className="h-4 w-4 shrink-0 text-stone-600 dark:text-stone-400" aria-hidden />
+                                      <Pause className="h-3.5 w-3.5 shrink-0 text-stone-600 dark:text-stone-400" aria-hidden />
                                     )}
-                                    <span className="min-w-0 truncate text-xs sm:text-sm">
+                                    <span className="min-w-0 max-w-[7.5rem] truncate sm:max-w-[9rem]">
                                       {formatAssignmentStatus(drawerCandidate!.status)}
                                     </span>
-                                    <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden />
+                                    <ChevronDown className="h-3 w-3 shrink-0 opacity-60" aria-hidden />
                                   </button>
                                   {drawerAssignStatusOpen ? (
                                     <div
@@ -2835,23 +2833,23 @@ export function PositionDetailPage() {
                                 </p>
                               </div>
                               <dl className="divide-y divide-stone-100 px-4 py-1 text-xs dark:divide-stone-700/80">
-                                <div className="flex items-center justify-between gap-3 py-2">
-                                  <dt className="text-ink-muted shrink-0 font-medium dark:text-stone-500">Opened</dt>
-                                  <dd className="text-stitch-on-surface text-right font-semibold tabular-nums dark:text-stone-200">
+                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-2">
+                                  <dt className="text-ink-muted font-medium dark:text-stone-500">Opened</dt>
+                                  <dd className="text-stitch-on-surface font-semibold tabular-nums dark:text-stone-200">
                                     {positionOpenedShort}
                                   </dd>
                                 </div>
-                                <div className="flex items-center justify-between gap-3 py-2">
-                                  <dt className="text-ink-muted shrink-0 font-medium dark:text-stone-500">Created on</dt>
-                                  <dd className="text-stitch-on-surface text-right font-semibold tabular-nums dark:text-stone-200">
+                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-2">
+                                  <dt className="text-ink-muted font-medium dark:text-stone-500">Created on</dt>
+                                  <dd className="text-stitch-on-surface font-semibold tabular-nums dark:text-stone-200">
                                     {c.created_at
                                       ? format(new Date(c.created_at as string), 'MMM d, yyyy')
                                       : '—'}
                                   </dd>
                                 </div>
-                                <div className="flex items-center justify-between gap-3 py-2">
-                                  <dt className="text-ink-muted shrink-0 font-medium dark:text-stone-500">Role budget</dt>
-                                  <dd className="text-stitch-on-surface text-right text-sm font-bold tabular-nums dark:text-stone-100">
+                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-2">
+                                  <dt className="text-ink-muted font-medium dark:text-stone-500">Role budget</dt>
+                                  <dd className="text-stitch-on-surface text-sm font-bold tabular-nums dark:text-stone-100">
                                     {budgetDisplay}
                                   </dd>
                                 </div>
