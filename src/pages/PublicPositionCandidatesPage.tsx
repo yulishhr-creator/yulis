@@ -221,7 +221,6 @@ export function PublicPositionCandidatesPage() {
   const sortedStages = sortStages(stageList)
   const posPill = positionLifecyclePill(position.status ?? 'active')
   const openedLabel = formatOpenedAt(position.opened_at)
-  const maxStageCount = sortedStages.reduce((m, s) => Math.max(m, (Array.isArray(s.candidates) ? s.candidates : []).length), 0)
 
   return (
     <div className="bg-paper text-ink relative min-h-dvh dark:bg-paper-dark dark:text-stone-100">
@@ -285,54 +284,8 @@ export function PublicPositionCandidatesPage() {
             <p className="text-ink-muted mt-1 text-sm">Check back later — new applicants will appear here.</p>
           </div>
         ) : (
-          <>
-            {maxStageCount > 0 ? (
-              <section aria-label="Pipeline overview" className="animate-fade-up mb-12">
-                <h2 className="text-ink-muted mb-4 text-xs font-bold uppercase tracking-[0.16em]">Pipeline overview</h2>
-                <div className="border-line/80 overflow-x-auto rounded-2xl border bg-white/80 p-4 shadow-sm backdrop-blur-sm dark:border-line-dark dark:bg-stone-900/70">
-                  <ol className="flex min-w-min items-stretch gap-0">
-                    {sortedStages.map((stage, idx) => {
-                      const n = Array.isArray(stage.candidates) ? stage.candidates.length : 0
-                      const widthPct = maxStageCount > 0 ? Math.max(12, Math.round((n / maxStageCount) * 100)) : 12
-                      const accent = STAGE_ACCENT[idx % STAGE_ACCENT.length]!
-                      const isLast = idx === sortedStages.length - 1
-                      return (
-                        <li key={`overview-${stage.name}-${idx}`} className="flex min-w-[5.5rem] flex-1">
-                          <div className="flex w-full flex-col items-center px-1 sm:px-2">
-                            <div
-                              className="flex h-24 w-full max-w-[4.5rem] flex-col justify-end sm:h-28 sm:max-w-[5.5rem]"
-                              title={`${stage.name}: ${n}`}
-                            >
-                              <div
-                                className={`w-full rounded-t-lg bg-gradient-to-t ${accent} shadow-inner transition-all duration-500`}
-                                style={{ height: `${widthPct}%`, minHeight: n > 0 ? '18%' : '4px' }}
-                              />
-                            </div>
-                            <p className="text-stitch-on-surface mt-2 line-clamp-2 text-center text-[10px] font-semibold leading-tight sm:text-xs dark:text-stone-200">
-                              {stage.name}
-                            </p>
-                            <p className="text-ink-muted text-[10px] font-medium tabular-nums sm:text-xs">{n}</p>
-                          </div>
-                          {!isLast ? (
-                            <div
-                              className="text-line dark:text-line-dark flex w-3 shrink-0 items-center justify-center self-start pt-14 sm:w-4 sm:pt-16"
-                              aria-hidden
-                            >
-                              <svg viewBox="0 0 16 24" className="h-6 w-3 opacity-40" fill="currentColor">
-                                <path d="M0 12 L12 6 L12 18 Z" />
-                              </svg>
-                            </div>
-                          ) : null}
-                        </li>
-                      )
-                    })}
-                  </ol>
-                </div>
-              </section>
-            ) : null}
-
-            <div className="flex flex-col gap-12">
-              {sortedStages.map((stage, idx) => {
+          <div className="flex flex-col gap-12">
+            {sortedStages.map((stage, idx) => {
                 const rows = Array.isArray(stage.candidates) ? stage.candidates : []
                 const n = rows.length
                 const accentBar = STAGE_ACCENT[idx % STAGE_ACCENT.length]!
@@ -414,9 +367,8 @@ export function PublicPositionCandidatesPage() {
                     </div>
                   </section>
                 )
-              })}
-            </div>
-          </>
+            })}
+          </div>
         )}
       </main>
 
