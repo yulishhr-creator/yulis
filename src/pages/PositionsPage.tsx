@@ -406,6 +406,26 @@ export function PositionsPage() {
         .eq('user_id', user!.id)
         .is('deleted_at', null)
         .order('updated_at', { ascending: false })
+      // #region agent log
+      fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0e315a' },
+        body: JSON.stringify({
+          sessionId: '0e315a',
+          runId: 'pre-fix',
+          hypothesisId: 'H1',
+          location: 'PositionsPage.tsx:positionsQ.queryFn',
+          message: 'positions supabase select finished',
+          data: {
+            hasError: Boolean(error),
+            errorCode: error?.code ?? null,
+            errorMessage: error?.message ?? null,
+            rowCount: Array.isArray(data) ? data.length : null,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+      // #endregion
       if (error) throw error
       return (data ?? []) as unknown as PositionListItem[]
     },
@@ -560,6 +580,60 @@ export function PositionsPage() {
       { replace: true },
     )
   }, [companyFromUrl, tabCompanies, positionsQ.isLoading, setSearchParams])
+
+  useEffect(() => {
+    const err = positionsQ.error
+    const errMsg = err instanceof Error ? err.message : err != null ? String(err) : null
+    const rows = positionsQ.data
+    const posLen = rows?.length ?? 0
+    const sampleCompanyIds = (rows ?? []).slice(0, 8).map((p) => p.company_id)
+    const scopedMatch =
+      scopedCompanyId != null ? (rows ?? []).filter((p) => p.company_id === scopedCompanyId).length : null
+    // #region agent log
+    fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0e315a' },
+      body: JSON.stringify({
+        sessionId: '0e315a',
+        runId: 'pre-fix',
+        hypothesisId: 'H2-H5',
+        location: 'PositionsPage.tsx:agentDebugEffect',
+        message: 'positions page derived state',
+        data: {
+          positionsStatus: positionsQ.status,
+          positionsFetchStatus: positionsQ.fetchStatus,
+          positionsIsLoading: positionsQ.isLoading,
+          positionsIsError: positionsQ.isError,
+          positionsErrorMessage: errMsg,
+          positionsLen: posLen,
+          filteredLen: filteredPositions.length,
+          companiesLen: companies.length,
+          companyFromUrl,
+          scopedCompanyId,
+          urlInTabCompanies: companyFromUrl != null ? tabCompanies.some((c) => c.id === companyFromUrl) : null,
+          tabCompaniesCount: tabCompanies.length,
+          searchTextLen: searchText.trim().length,
+          scopedMatchCount: scopedMatch,
+          samplePositionCompanyIds: sampleCompanyIds,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+    // #endregion
+  }, [
+    positionsQ.status,
+    positionsQ.fetchStatus,
+    positionsQ.isLoading,
+    positionsQ.isError,
+    positionsQ.error,
+    positionsQ.data,
+    filteredPositions,
+    companies.length,
+    companyFromUrl,
+    scopedCompanyId,
+    tabCompanies,
+    searchText,
+  ])
 
   return (
     <div className="flex flex-col gap-6">
