@@ -251,7 +251,7 @@ export function CandidatesPage() {
           candidate_id: candidateId,
           position_stage_id: firstStageId,
           status: 'in_progress',
-          source: 'app',
+          source: 'sourcing',
         })
         .select('id')
         .single()

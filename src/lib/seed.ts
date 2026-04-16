@@ -115,7 +115,7 @@ export async function seedDemoIfEmpty(supabase: SupabaseClient, userId: string):
       candidate_id: candExt.id,
       position_stage_id: s0,
       status: 'in_progress',
-      source: 'external',
+      source: 'import',
     })
     .select('id')
     .single()
@@ -126,7 +126,7 @@ export async function seedDemoIfEmpty(supabase: SupabaseClient, userId: string):
     candidate_id: candApp.id,
     position_stage_id: s1,
     status: 'in_progress',
-    source: 'app',
+    source: 'sourcing',
   })
 
   await supabase.from('tasks').insert({

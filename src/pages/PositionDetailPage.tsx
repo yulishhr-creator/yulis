@@ -86,6 +86,24 @@ function nestedStageName(v: PositionCandidateJunction['position_stages']): strin
   return Array.isArray(v) ? (v[0]?.name ?? '—') : (v.name ?? '—')
 }
 
+const ASSIGNMENT_SOURCE_VALUES = ['import', 'sourcing', 'cv', 'referral'] as const
+type AssignmentSourceValue = (typeof ASSIGNMENT_SOURCE_VALUES)[number]
+
+const ASSIGNMENT_SOURCE_LABELS: Record<AssignmentSourceValue, string> = {
+  import: 'Import',
+  sourcing: 'Sourcing',
+  cv: 'CV',
+  referral: 'Referral',
+}
+
+function normalizeAssignmentSource(raw: string): AssignmentSourceValue {
+  const s = raw.trim()
+  if (s === 'import' || s === 'sourcing' || s === 'cv' || s === 'referral') return s
+  if (s === 'external') return 'import'
+  if (s === 'app') return 'sourcing'
+  return 'sourcing'
+}
+
 /** Days on role for compact kanban badge; under a week show Nd, else rounded weeks. */
 function formatTenureOnRoleShort(createdAt: string): string {
   const days = differenceInCalendarDays(new Date(), new Date(createdAt))
@@ -914,7 +932,7 @@ export function PositionDetailPage() {
         candidate_id: candId,
         position_stage_id: stageId,
         status: 'in_progress',
-        source: 'external',
+        source: 'import',
       })
       if (!pcE) ok++
     }
@@ -1154,22 +1172,18 @@ export function PositionDetailPage() {
     onError: (e: Error) => toastError(e.message),
   })
 
-  const addCandidateTag = useMutation({
-    mutationFn: async (payload: { label: string; candidateId: string; positionCandidateId: string }) => {
-      const label = payload.label.trim()
-      if (!label) throw new Error('Enter a tag')
-      await logActivityEvent(supabase!, user!.id, {
-        event_type: 'candidate_tag',
-        position_id: id!,
-        candidate_id: payload.candidateId,
-        position_candidate_id: payload.positionCandidateId,
-        title: label,
-        subtitle: null,
-      })
+  const updateAssignmentSource = useMutation({
+    mutationFn: async (payload: { positionCandidateId: string; source: AssignmentSourceValue }) => {
+      const { error } = await supabase!
+        .from('position_candidates')
+        .update({ source: payload.source })
+        .eq('id', payload.positionCandidateId)
+        .eq('user_id', user!.id)
+      if (error) throw error
     },
     onSuccess: async () => {
-      success('Tag added')
-      await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+      success('Source updated')
+      await invalidateAll()
     },
     onError: (e: Error) => toastError(e.message),
   })
@@ -1679,7 +1693,8 @@ export function PositionDetailPage() {
           </button>
         </div>
         <p className="text-ink-muted mt-1 text-xs">
-          {c.source} · {stageName} · {formatAssignmentStatus(c.status as string)}
+          {ASSIGNMENT_SOURCE_LABELS[normalizeAssignmentSource(c.source)]} · {stageName} ·{' '}
+          {formatAssignmentStatus(c.status as string)}
         </p>
       </li>
     )
@@ -2443,25 +2458,29 @@ export function PositionDetailPage() {
                                     </>
                                   )}
                                 </div>
-                                <button
-                                  type="button"
-                                  className="text-[#006384] hover:text-[#004d63] inline-flex items-center gap-1 text-sm font-medium dark:text-cyan-300 dark:hover:text-cyan-200"
-                                  onClick={() => {
-                                    if (!candId) return
-                                    const label = window.prompt('Tag label')
-                                    if (label == null || !label.trim()) return
-                                    void addCandidateTag.mutateAsync({
-                                      label: label.trim(),
-                                      candidateId: candId,
-                                      positionCandidateId: c.id,
-                                    })
-                                  }}
-                                >
-                                  <span aria-hidden className="text-base leading-none">
-                                    +
-                                  </span>
-                                  Add tag
-                                </button>
+                                <label className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-500 dark:text-stone-400">
+                                  <span className="whitespace-nowrap">Source</span>
+                                  <select
+                                    className="cursor-pointer rounded-md border border-stone-200/70 bg-stone-50/90 py-1 pl-2 pr-7 text-xs font-medium text-stone-700 shadow-sm dark:border-stone-600 dark:bg-stone-900/70 dark:text-stone-200"
+                                    value={normalizeAssignmentSource(c.source)}
+                                    disabled={updateAssignmentSource.isPending}
+                                    onChange={(e) => {
+                                      const v = e.target.value as AssignmentSourceValue
+                                      if (v === normalizeAssignmentSource(c.source)) return
+                                      void updateAssignmentSource.mutateAsync({
+                                        positionCandidateId: c.id,
+                                        source: v,
+                                      })
+                                    }}
+                                    aria-label="Source for this assignment"
+                                  >
+                                    {ASSIGNMENT_SOURCE_VALUES.map((val) => (
+                                      <option key={val} value={val}>
+                                        {ASSIGNMENT_SOURCE_LABELS[val]}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
                               </div>
                               {tagRows.length > 0 ? (
                                 <div className="mt-2 flex flex-wrap gap-1.5">
