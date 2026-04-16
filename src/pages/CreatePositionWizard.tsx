@@ -38,7 +38,7 @@ type Draft = {
   welcome1: string
   welcome2: string
   welcome3: string
-  linkedinUrl: string
+  closureDate: string
 }
 
 function loadDraft(): Partial<Draft> {
@@ -131,7 +131,7 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
   const [welcome1, setWelcome1] = useState(d0.welcome1 ?? '')
   const [welcome2, setWelcome2] = useState(d0.welcome2 ?? '')
   const [welcome3, setWelcome3] = useState(d0.welcome3 ?? '')
-  const [linkedinUrl, setLinkedinUrl] = useState(d0.linkedinUrl ?? '')
+  const [closureDate, setClosureDate] = useState(d0.closureDate ?? '')
   const [pending, setPending] = useState(false)
   const reduceMotion = useReducedMotion()
 
@@ -152,7 +152,7 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
       welcome1,
       welcome2,
       welcome3,
-      linkedinUrl,
+      closureDate,
     })
   }, [
     step,
@@ -170,7 +170,7 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
     welcome1,
     welcome2,
     welcome3,
-    linkedinUrl,
+    closureDate,
   ])
 
   const feeIls = parseOptionalNumber(plannedFee)
@@ -207,7 +207,7 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
       welcome_1: welcome1.trim() || null,
       welcome_2: welcome2.trim() || null,
       welcome_3: welcome3.trim() || null,
-      linkedin_saved_search_url: linkedinUrl.trim() || null,
+      closure_date: closureDate.trim() || null,
     }
 
     let data: { id: string; title: string } | null = null
@@ -293,7 +293,7 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
       : step === 1
         ? 'Add at least one stage. Reorder with the arrows.'
         : step === 2
-          ? 'Welcome approaches and LinkedIn filter. Import candidates from Excel on the role page after creation.'
+          ? 'Welcome approaches. Import candidates from Excel on the role page after creation.'
           : 'Review everything, then confirm.'
 
   return (
@@ -395,6 +395,15 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
                     type="date"
                     value={openedAt}
                     onChange={(e) => setOpenedAt(e.target.value)}
+                    className={dateInputClass}
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
+                  <FieldLabel optionalHint="(optional)">Closure date</FieldLabel>
+                  <input
+                    type="date"
+                    value={closureDate}
+                    onChange={(e) => setClosureDate(e.target.value)}
                     className={dateInputClass}
                   />
                 </label>
@@ -667,16 +676,6 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
                 </label>
               </div>
             </div>
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-[#302e2b] dark:text-stone-200">
-              <FieldLabel optionalHint="(optional)">LinkedIn saved filter URL</FieldLabel>
-              <input
-                value={linkedinUrl}
-                onChange={(e) => setLinkedinUrl(e.target.value)}
-                className="border-line rounded-xl border bg-white px-3 py-2 dark:border-line-dark dark:bg-stone-900/80"
-                placeholder="https://…"
-                autoComplete="off"
-              />
-            </label>
             <p className="text-ink-muted text-xs dark:text-stone-500">
               After the role is created, open <strong>Role setup</strong> on the position to import candidates from Excel.
             </p>
@@ -694,6 +693,10 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
               <div className="flex justify-between gap-2 border-b border-stone-200/70 pb-2 dark:border-stone-600/80">
                 <dt className="text-ink-muted">Opened</dt>
                 <dd className="font-semibold">{openedAt}</dd>
+              </div>
+              <div className="flex justify-between gap-2 border-b border-stone-200/70 pb-2 dark:border-stone-600/80">
+                <dt className="text-ink-muted">Closure date</dt>
+                <dd className="font-semibold">{closureDate.trim() || '—'}</dd>
               </div>
               <div className="flex justify-between gap-2 border-b border-stone-200/70 pb-2 dark:border-stone-600/80">
                 <dt className="text-ink-muted">Title</dt>

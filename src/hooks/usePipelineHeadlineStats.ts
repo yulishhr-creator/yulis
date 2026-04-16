@@ -39,6 +39,7 @@ export function usePipelineHeadlineStats(companyId?: string | null) {
         .select('position_id')
         .eq('user_id', uid!)
         .in('status', ['in_progress'])
+        .is('archived_at', null)
         .in('position_id', posIds)
       if (cErr) throw cErr
       const list = rows ?? []

@@ -157,6 +157,7 @@ export function CandidateDetailPage() {
             status,
             source,
             created_at,
+            archived_at,
             position_stage_id,
             position_stages ( name ),
             positions ( id, title, status, companies ( name ) )
@@ -220,6 +221,7 @@ export function CandidateDetailPage() {
           status: string
           source: string
           created_at: string
+          archived_at?: string | null
           position_stages: { name: string } | { name: string }[] | null
           positions: { id: string; title: string; status: string; companies: unknown } | null
         }>
@@ -228,13 +230,15 @@ export function CandidateDetailPage() {
           status: string
           source: string
           created_at: string
+          archived_at?: string | null
           position_stages: { name: string } | { name: string }[] | null
           positions: { id: string; title: string; status: string; companies: unknown } | null
         }
       | null
       | undefined
     if (!raw) return []
-    return Array.isArray(raw) ? raw : [raw]
+    const list = Array.isArray(raw) ? raw : [raw]
+    return list.filter((pc) => !pc.archived_at)
   }, [c?.position_candidates])
 
   const primaryAssignment = useMemo(

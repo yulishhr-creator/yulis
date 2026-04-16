@@ -293,6 +293,7 @@ export function TasksPage() {
         .eq('user_id', uid!)
         .eq('position_id', newTaskPositionId.trim())
         .eq('status', 'in_progress')
+        .is('archived_at', null)
         .order('created_at', { ascending: false })
       if (error) throw error
       return data ?? []
@@ -551,7 +552,7 @@ export function TasksPage() {
   }
 
   const addTaskMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (opts?: { saveTemplate?: boolean }) => {
       if (taskReminderEnabled) {
         if (!taskReminderAt.trim()) throw new Error('Choose a date and time for the reminder')
         const t = new Date(taskReminderAt).getTime()
@@ -576,15 +577,24 @@ export function TasksPage() {
       }
       const { error } = await supabase!.from('tasks').insert(row)
       if (error) throw error
+      if (opts?.saveTemplate) {
+        const { error: te } = await supabase!.from('task_templates').insert({
+          user_id: uid!,
+          title: newTaskTitle.trim() || 'Task',
+          description: newTaskDescription.trim() || null,
+        })
+        if (te) throw te
+      }
     },
-    onSuccess: async () => {
-      success('Task added')
+    onSuccess: async (_d, opts) => {
+      success(opts?.saveTemplate ? 'Task created and template saved' : 'Task added')
       setTaskModalOpen(false)
       resetNewTaskForm()
       await qc.invalidateQueries({ queryKey: ['tasks-page'] })
       await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
       await qc.invalidateQueries({ queryKey: ['position-tasks'] })
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
+      await qc.invalidateQueries({ queryKey: ['task-templates', uid] })
     },
     onError: (e: Error) => toastError(e.message),
   })
@@ -1255,7 +1265,6 @@ export function TasksPage() {
             className="flex flex-col gap-3"
             onSubmit={(e) => {
               e.preventDefault()
-              void addTaskMutation.mutateAsync()
             }}
           >
             <label className="flex flex-col gap-1 text-sm font-medium">
@@ -1357,13 +1366,24 @@ export function TasksPage() {
                 />
               </label>
             ) : null}
-            <button
-              type="submit"
-              disabled={addTaskMutation.isPending}
-              className="rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] py-2.5 text-sm font-bold text-white disabled:opacity-50"
-            >
-              {addTaskMutation.isPending ? 'Saving…' : 'Save task'}
-            </button>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+              <button
+                type="button"
+                disabled={addTaskMutation.isPending}
+                className="rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+                onClick={() => void addTaskMutation.mutateAsync(undefined)}
+              >
+                {addTaskMutation.isPending ? 'Saving…' : 'Create'}
+              </button>
+              <button
+                type="button"
+                disabled={addTaskMutation.isPending}
+                className="border-line rounded-full border px-5 py-2.5 text-sm font-bold dark:border-line-dark dark:text-stone-100 disabled:opacity-50"
+                onClick={() => void addTaskMutation.mutateAsync({ saveTemplate: true })}
+              >
+                {addTaskMutation.isPending ? 'Saving…' : 'Create & save template'}
+              </button>
+            </div>
           </form>
         )}
       </Modal>

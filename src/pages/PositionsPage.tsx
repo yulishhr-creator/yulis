@@ -29,6 +29,7 @@ type BoardAssignmentRow = {
   id: string
   status: string
   created_at: string
+  archived_at?: string | null
   candidates: { id: string; full_name: string; deleted_at: string | null } | { id: string; full_name: string; deleted_at: string | null }[] | null
   position_stages: { name: string } | { name: string }[] | null
 }
@@ -53,6 +54,7 @@ function positionMatchesSearch(p: PositionListItem, raw: string): boolean {
   const co = (p.companies as { name?: string } | null)?.name ?? ''
   if (co.toLowerCase().includes(q)) return true
   for (const pc of p.position_candidates ?? []) {
+    if (pc.archived_at) continue
     if (pc.status === 'rejected') continue
     const c = boardCandidateOne(pc.candidates)
     if (!c || c.deleted_at) continue
@@ -105,6 +107,7 @@ function PositionCard({
   const daysSinceOpened = differenceInCalendarDays(new Date(), new Date(openedRef))
   const daysSinceCreated = differenceInCalendarDays(new Date(), new Date(p.created_at))
   const cands = (p.position_candidates ?? []).filter((pc) => {
+    if (pc.archived_at) return false
     if (pc.status === 'rejected') return false
     const c = boardCandidateOne(pc.candidates)
     return Boolean(c && !c.deleted_at)
@@ -394,6 +397,7 @@ export function PositionsPage() {
             id,
             status,
             created_at,
+            archived_at,
             position_stages ( name ),
             candidates ( id, full_name, deleted_at )
           )

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
-import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import * as XLSX from 'xlsx'
 import {
   Check,
@@ -13,7 +13,6 @@ import {
   ChevronDown,
   Upload,
   Copy,
-  ExternalLink,
   GitBranch,
   Mail,
   Phone,
@@ -69,6 +68,7 @@ type PositionCandidateJunction = {
   status: string
   source: string
   created_at: string
+  archived_at?: string | null
   candidates: CandidateProfile | CandidateProfile[] | null
   position_stages: { name: string } | { name: string }[] | null
 }
@@ -306,7 +306,8 @@ export function PositionDetailPage() {
     setSearch(
       (prev) => {
         const next = new URLSearchParams(prev)
-        next.set('tab', tid)
+        const urlTab = tid === 'openings' ? 'approaches' : tid
+        next.set('tab', urlTab)
         if (tid !== 'candidates') next.delete('candidate')
         return next
       },
@@ -376,12 +377,14 @@ export function PositionDetailPage() {
           status,
           source,
           created_at,
+          archived_at,
           candidates ( id, full_name, email, phone, linkedin, salary_expectation, resume_storage_path, profile_photo_storage_path, deleted_at ),
           position_stages ( name )
         `,
         )
         .eq('position_id', id!)
         .eq('user_id', user!.id)
+        .is('archived_at', null)
         .order('created_at', { ascending: false })
       if (error) throw error
       const rows = (data ?? []) as PositionCandidateJunction[]
@@ -494,7 +497,9 @@ export function PositionDetailPage() {
   const [welcome1, setWelcome1] = useState('')
   const [welcome2, setWelcome2] = useState('')
   const [welcome3, setWelcome3] = useState('')
-  const [linkedinSearchUrl, setLinkedinSearchUrl] = useState('')
+  const [closureDateStr, setClosureDateStr] = useState('')
+  const [terminalFinish, setTerminalFinish] = useState<null | 'succeeded' | 'cancelled'>(null)
+  const [terminalClosureDate, setTerminalClosureDate] = useState('')
   const [positionSetupOpen, setPositionSetupOpen] = useState(false)
   const [status, setStatus] = useState('active')
   const [shareOpen, setShareOpen] = useState(false)
@@ -515,6 +520,8 @@ export function PositionDetailPage() {
   const [drawerCommentText, setDrawerCommentText] = useState('')
   const [drawerAssignStatusOpen, setDrawerAssignStatusOpen] = useState(false)
   const drawerAssignStatusRef = useRef<HTMLDivElement>(null)
+  const drawerNameMeasureRef = useRef<HTMLSpanElement>(null)
+  const [candidateDrawerWidthPx, setCandidateDrawerWidthPx] = useState<number | null>(null)
   useEffect(() => {
     if (tab !== 'tasks') setSelectedPositionTask(null)
   }, [tab])
@@ -561,7 +568,7 @@ export function PositionDetailPage() {
     setWelcome1(position.welcome_1 ?? '')
     setWelcome2(position.welcome_2 ?? '')
     setWelcome3(position.welcome_3 ?? '')
-    setLinkedinSearchUrl((position as { linkedin_saved_search_url?: string | null }).linkedin_saved_search_url ?? '')
+    setClosureDateStr((position as { closure_date?: string | null }).closure_date ?? '')
     setStatus(position.status ?? 'active')
   }, [position])
 
@@ -696,7 +703,6 @@ export function PositionDetailPage() {
         welcome_1: welcome1.trim() || null,
         welcome_2: welcome2.trim() || null,
         welcome_3: welcome3.trim() || null,
-        linkedin_saved_search_url: linkedinSearchUrl.trim() || null,
         status,
       }
       const withRequirements = { ...base, requirements: requirements.trim() || null }
@@ -720,17 +726,20 @@ export function PositionDetailPage() {
   })
 
   const setPositionTerminal = useMutation({
-    mutationFn: async (next: 'succeeded' | 'cancelled') => {
+    mutationFn: async (payload: { next: 'succeeded' | 'cancelled'; closureDate: string | null }) => {
+      const { next, closureDate } = payload
       const prev = position?.status ?? 'active'
       const { error } = await supabase!
         .from('positions')
-        .update({ status: next })
+        .update({ status: next, closure_date: closureDate })
         .eq('id', id!)
         .eq('user_id', user!.id)
       if (error) throw error
       return { prev, next }
     },
     onSuccess: async ({ prev, next }) => {
+      setTerminalFinish(null)
+      setTerminalClosureDate('')
       setStatus(next)
       success(next === 'succeeded' ? 'Marked succeeded' : 'Marked cancelled')
       await logActivityEvent(supabase!, user!.id, {
@@ -747,7 +756,11 @@ export function PositionDetailPage() {
 
   const reopenPosition = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase!.from('positions').update({ status: 'active' }).eq('id', id!).eq('user_id', user!.id)
+      const { error } = await supabase!
+        .from('positions')
+        .update({ status: 'active', closure_date: null })
+        .eq('id', id!)
+        .eq('user_id', user!.id)
       if (error) throw error
     },
     onSuccess: async () => {
@@ -1070,6 +1083,30 @@ export function PositionDetailPage() {
         subtitle: `${prev} → ${nextStatus}`,
         metadata: { from: prev, to: nextStatus },
       })
+      await invalidateAll()
+    },
+    onError: (e: Error) => toastError(e.message),
+  })
+
+  const archiveAssignmentOnRole = useMutation({
+    mutationFn: async (positionCandidateId: string) => {
+      const { error } = await supabase!
+        .from('position_candidates')
+        .update({ archived_at: new Date().toISOString() })
+        .eq('id', positionCandidateId)
+        .eq('user_id', user!.id)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      success('Candidate removed from this role')
+      setSearch(
+        (prev) => {
+          const n = new URLSearchParams(prev)
+          n.delete('candidate')
+          return n
+        },
+        { replace: true },
+      )
       await invalidateAll()
     },
     onError: (e: Error) => toastError(e.message),
@@ -1409,6 +1446,26 @@ export function PositionDetailPage() {
     return (candidatesQ.data ?? []).find((r) => nestedCandidate(r.candidates)?.id === highlightCandidate) ?? null
   }, [candidatesQ.data, highlightCandidate])
 
+  const drawerNameForMeasure = useMemo(() => {
+    if (!drawerCandidate) return ''
+    const nm = nestedCandidate(drawerCandidate.candidates)?.full_name ?? 'Unnamed'
+    if (drawerFieldEdit === 'name') return drawerFieldDraft || nm
+    return nm
+  }, [drawerCandidate, drawerFieldEdit, drawerFieldDraft])
+
+  useLayoutEffect(() => {
+    if (!highlightCandidate || !drawerCandidate) {
+      setCandidateDrawerWidthPx(null)
+      return
+    }
+    const el = drawerNameMeasureRef.current
+    if (!el) return
+    const nameW = el.scrollWidth
+    const minW = 320
+    const cap = typeof window !== 'undefined' ? Math.min(window.innerWidth - 24, 560) : 560
+    setCandidateDrawerWidthPx(Math.min(cap, Math.max(minW, nameW + 200)))
+  }, [highlightCandidate, drawerCandidate, drawerNameForMeasure])
+
   function copyWelcomeSnippet(text: string, label: string) {
     if (!text.trim()) {
       toastError('Nothing to copy')
@@ -1418,21 +1475,6 @@ export function PositionDetailPage() {
       () => success(`${label} copied`),
       () => toastError('Could not copy'),
     )
-  }
-
-  function openSavedLinkedin() {
-    const raw = linkedinSearchUrl.trim()
-    if (!raw) {
-      toastError('Enter a URL first')
-      return
-    }
-    try {
-      const href = raw.startsWith('http://') || raw.startsWith('https://') ? raw : `https://${raw}`
-      const u = new URL(href)
-      window.open(u.href, '_blank', 'noopener,noreferrer')
-    } catch {
-      toastError('Invalid URL')
-    }
   }
 
   function openCandidateDrawer(candId: string) {
@@ -1859,7 +1901,8 @@ export function PositionDetailPage() {
                         className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-stone-700 dark:text-stone-200"
                         onClick={() => {
                           setHeaderStatusOpen(false)
-                          if (window.confirm('Mark this role as succeeded?')) void setPositionTerminal.mutateAsync('succeeded')
+                          setTerminalClosureDate('')
+                          setTerminalFinish('succeeded')
                         }}
                       >
                         <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
@@ -1871,7 +1914,8 @@ export function PositionDetailPage() {
                         className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-stone-600 dark:text-stone-300"
                         onClick={() => {
                           setHeaderStatusOpen(false)
-                          if (window.confirm('Mark this role as cancelled?')) void setPositionTerminal.mutateAsync('cancelled')
+                          setTerminalClosureDate('')
+                          setTerminalFinish('cancelled')
                         }}
                       >
                         <Ban className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
@@ -1972,7 +2016,7 @@ export function PositionDetailPage() {
             [
               ['details', 'Details', null],
               ['candidates', 'Candidates', candidateTabCount],
-              ['openings', 'Openings', null],
+              ['openings', 'Approaches', null],
               ['tasks', 'Tasks', (tasksQ.data ?? []).length],
               ['activity', 'Activity', (activityQ.data ?? []).length],
             ] as const
@@ -2042,6 +2086,29 @@ export function PositionDetailPage() {
                 if (error) toastError(error.message)
                 else {
                   setSalaryBudgetStr(parsed != null ? String(parsed) : '')
+                  success('Saved')
+                  await invalidateAll()
+                }
+              }}
+            />
+            <DetailHoverField
+              label="Closure date (optional)"
+              value={closureDateStr}
+              onSave={async (next) => {
+                const t = next.trim()
+                const v = t === '' ? null : t
+                if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+                  toastError('Use YYYY-MM-DD or leave empty.')
+                  return
+                }
+                const { error } = await supabase!
+                  .from('positions')
+                  .update({ closure_date: v })
+                  .eq('id', id!)
+                  .eq('user_id', user!.id)
+                if (error) toastError(error.message)
+                else {
+                  setClosureDateStr(v ?? '')
                   success('Saved')
                   await invalidateAll()
                 }
@@ -2199,7 +2266,21 @@ export function PositionDetailPage() {
                       onDragLeave={(e) => onCandidateDragLeaveStage(e, st.id)}
                       onDrop={(e) => onCandidateDropStage(e, st.id)}
                     >
-                      <h3 className={pipelineStageHeadingClass}>{st.name}</h3>
+                      <div className="relative">
+                        <h3 className={pipelineStageHeadingClass}>{st.name}</h3>
+                        <button
+                          type="button"
+                          className="text-ink-muted hover:text-rose-600 absolute top-0 right-0 rounded-lg p-1 transition hover:bg-rose-50 dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
+                          title={`Delete stage “${st.name}”`}
+                          aria-label={`Delete stage ${st.name}`}
+                          disabled={deleteStageMut.isPending}
+                          onClick={() => {
+                            if (window.confirm(`Delete stage “${st.name}”?`)) void deleteStageMut.mutateAsync(st.id)
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                        </button>
+                      </div>
                       <div className="flex flex-1 flex-col gap-2 overflow-y-auto pt-1">
                         {cards.length === 0 ? (
                           <p className="text-ink-muted px-1 py-3 text-xs">None — drop a candidate here.</p>
@@ -2237,9 +2318,14 @@ export function PositionDetailPage() {
                 onClick={closeCandidateDrawer}
               />
               <aside
-                className={`border-line fixed top-0 right-0 z-50 flex h-full w-full max-w-2xl flex-col border-l bg-white shadow-2xl transition-transform duration-300 ease-out dark:border-line-dark dark:bg-stone-900 sm:max-w-[34rem] ${
-                  drawerPanelEntered ? 'translate-x-0' : 'translate-x-full'
-                }`}
+                className={`border-line fixed top-0 right-0 z-50 flex h-full flex-col border-l bg-white shadow-2xl transition-transform duration-300 ease-out dark:border-line-dark dark:bg-stone-900 ${
+                  candidateDrawerWidthPx == null ? 'w-full max-w-2xl sm:max-w-[34rem]' : ''
+                } ${drawerPanelEntered ? 'translate-x-0' : 'translate-x-full'}`}
+                style={
+                  candidateDrawerWidthPx != null
+                    ? { width: candidateDrawerWidthPx, maxWidth: 'min(100vw - 8px, 100%)' }
+                    : undefined
+                }
                 aria-label="Candidate details"
               >
                 <div className="min-h-0 flex-1 overflow-y-auto">
@@ -2282,13 +2368,13 @@ export function PositionDetailPage() {
                       const t = salaryRaw.trim()
                       if (!t) return null as string | null
                       const p = parseIlsAmountInput(t)
-                      if (typeof p === 'number') return `(${p.toLocaleString('en-US')}₪)`
-                      return null
+                      if (typeof p === 'number') return `₪${p.toLocaleString('he-IL')}`
+                      return `(${t})`
                     })()
                     const posBudget = (position as { salary_budget?: number | null }).salary_budget
                     const budgetDisplay =
                       posBudget != null && Number.isFinite(Number(posBudget))
-                        ? `${Number(posBudget).toLocaleString('en-US')}₪`
+                        ? `₪${Number(posBudget).toLocaleString('he-IL')}`
                         : '—'
                     const positionOpenedShort =
                       createdAt != null && createdAt !== ''
@@ -2296,6 +2382,13 @@ export function PositionDetailPage() {
                         : '—'
                     return (
                       <>
+                        <span
+                          ref={drawerNameMeasureRef}
+                          className="text-stitch-on-surface pointer-events-none fixed top-0 left-0 z-[-1] whitespace-nowrap text-xl font-bold tracking-tight opacity-0 dark:text-stone-100"
+                          aria-hidden
+                        >
+                          {drawerNameForMeasure}
+                        </span>
                         <input
                           ref={candidatePhotoInputRef}
                           type="file"
@@ -2321,7 +2414,25 @@ export function PositionDetailPage() {
                             for (let i = 0; i < fs.length; i++) void uploadCandidateAttachment(candId, fs[i]!)
                           }}
                         />
-                        <div className="border-b border-stone-200/90 px-5 pb-4 pt-2 dark:border-stone-700">
+                        <div className="border-b border-stone-200/90 relative px-5 pb-4 pt-2 dark:border-stone-700">
+                          <button
+                            type="button"
+                            className="text-ink-muted hover:text-rose-600 absolute top-2 right-3 rounded-lg p-2 transition hover:bg-rose-50 dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
+                            title="Remove from this role"
+                            aria-label="Remove candidate from this role"
+                            disabled={archiveAssignmentOnRole.isPending}
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  'Remove this candidate from this role? They stay in your pool but will no longer appear here.',
+                                )
+                              ) {
+                                void archiveAssignmentOnRole.mutateAsync(c.id)
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden />
+                          </button>
                           <div className="flex gap-4">
                             <div className="flex w-[7rem] shrink-0 flex-col items-stretch gap-2 sm:w-[7.5rem]">
                               <div className="group/avatar relative mx-auto h-[4.5rem] w-[4.5rem] shrink-0">
@@ -2406,7 +2517,7 @@ export function PositionDetailPage() {
                                           value={drawerFieldDraft}
                                           onChange={(e) => setDrawerFieldDraft(e.target.value)}
                                           className="border-line text-stitch-on-surface min-w-0 max-w-[10rem] rounded-lg border bg-white px-2 py-1 text-sm font-semibold tabular-nums dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
-                                          placeholder="ILS amount"
+                                          placeholder="₪ amount"
                                           autoFocus
                                         />
                                         <button
@@ -3055,8 +3166,8 @@ export function PositionDetailPage() {
 
       {tab === 'openings' ? (
         <section className="border-line rounded-2xl border border-stone-200/80 bg-white/70 p-5 dark:border-line-dark dark:bg-stone-900/45">
-          <h2 className="text-stitch-on-surface text-lg font-bold dark:text-stone-100">Openings</h2>
-          <p className="text-ink-muted mt-1 text-sm dark:text-stone-400">LinkedIn search and welcome messages for outreach.</p>
+          <h2 className="text-stitch-on-surface text-lg font-bold dark:text-stone-100">Approaches</h2>
+          <p className="text-ink-muted mt-1 text-sm dark:text-stone-400">Welcome messages for outreach — copy when you need them.</p>
           <form
             className="mt-4 flex flex-col gap-4"
             onSubmit={(e) => {
@@ -3064,28 +3175,6 @@ export function PositionDetailPage() {
               void savePos.mutateAsync()
             }}
           >
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium">LinkedIn saved search</span>
-                <button
-                  type="button"
-                  onClick={() => openSavedLinkedin()}
-                  disabled={!linkedinSearchUrl.trim()}
-                  className="border-line flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-white/90 text-[#006384] shadow-sm hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-line-dark dark:bg-stone-800 dark:text-cyan-300 dark:hover:bg-stone-700"
-                  title="Open saved LinkedIn URL in a new tab"
-                  aria-label="Open LinkedIn saved search in new tab"
-                >
-                  <ExternalLink className="h-4 w-4" aria-hidden />
-                </button>
-              </div>
-              <input
-                value={linkedinSearchUrl}
-                onChange={(e) => setLinkedinSearchUrl(e.target.value)}
-                placeholder="https://www.linkedin.com/search/results/people/?..."
-                className="border-line mt-1 w-full rounded-xl border px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/50"
-              />
-              <p className="text-ink-muted text-xs">Save, then open with the link icon.</p>
-            </div>
             <div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-medium">Welcome approach (1)</span>
@@ -3129,7 +3218,7 @@ export function PositionDetailPage() {
               <textarea value={welcome3} onChange={(e) => setWelcome3(e.target.value)} rows={4} className="border-line mt-1 w-full rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50" />
             </div>
             <button type="submit" className="bg-accent text-stone-50 w-fit rounded-full px-5 py-2 text-sm font-semibold" disabled={savePos.isPending}>
-              Save openings
+              Save approaches
             </button>
           </form>
         </section>
@@ -3354,6 +3443,56 @@ export function PositionDetailPage() {
           </div>
         </section>
       ) : null}
+
+      <Modal
+        open={terminalFinish != null}
+        onClose={() => {
+          setTerminalFinish(null)
+          setTerminalClosureDate('')
+        }}
+        title={terminalFinish === 'succeeded' ? 'Mark role as succeeded' : 'Mark role as cancelled'}
+      >
+        <p className="text-ink-muted text-sm dark:text-stone-400">
+          Optionally set a closure date for your records (backfilled roles, reporting). You can skip this and add it later
+          from Details.
+        </p>
+        <label className="mt-4 flex flex-col gap-1 text-sm font-medium">
+          Closure date (optional)
+          <input
+            type="date"
+            value={terminalClosureDate}
+            onChange={(e) => setTerminalClosureDate(e.target.value)}
+            className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+          />
+        </label>
+        <div className="mt-6 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            className="border-line rounded-full border px-4 py-2 text-sm font-semibold dark:border-line-dark"
+            onClick={() => {
+              setTerminalFinish(null)
+              setTerminalClosureDate('')
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={setPositionTerminal.isPending || !terminalFinish}
+            className="bg-accent text-stone-50 rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-50"
+            onClick={() => {
+              if (!terminalFinish) return
+              const d = terminalClosureDate.trim()
+              void setPositionTerminal.mutateAsync({
+                next: terminalFinish,
+                closureDate: d === '' ? null : d,
+              })
+            }}
+          >
+            {setPositionTerminal.isPending ? 'Saving…' : 'Confirm'}
+          </button>
+        </div>
+      </Modal>
 
       <Modal open={positionSetupOpen} onClose={() => setPositionSetupOpen(false)} title="Role setup" size="lg">
         <div className="max-h-[min(70vh,32rem)] space-y-8 overflow-y-auto pr-1">
