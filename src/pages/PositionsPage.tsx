@@ -53,6 +53,7 @@ function positionMatchesSearch(p: PositionListItem, raw: string): boolean {
   const co = (p.companies as { name?: string } | null)?.name ?? ''
   if (co.toLowerCase().includes(q)) return true
   for (const pc of p.position_candidates ?? []) {
+    if (pc.status === 'rejected') continue
     const c = boardCandidateOne(pc.candidates)
     if (!c || c.deleted_at) continue
     if ((c.full_name ?? '').toLowerCase().includes(q)) return true
@@ -104,8 +105,9 @@ function PositionCard({
   const daysSinceOpened = differenceInCalendarDays(new Date(), new Date(openedRef))
   const daysSinceCreated = differenceInCalendarDays(new Date(), new Date(p.created_at))
   const cands = (p.position_candidates ?? []).filter((pc) => {
+    if (pc.status === 'rejected') return false
     const c = boardCandidateOne(pc.candidates)
-    return c && !c.deleted_at
+    return Boolean(c && !c.deleted_at)
   })
   const [expanded, setExpanded] = useState(false)
 
