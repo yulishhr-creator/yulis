@@ -108,6 +108,18 @@ export function CompaniesPage() {
     return m
   }, [positionsIncomeQ.data])
 
+  const portfolioTotals = useMemo(() => {
+    let pending = 0
+    let missed = 0
+    let successEarned = 0
+    for (const st of statsByCompany.values()) {
+      pending += st.pending
+      missed += st.missed
+      successEarned += st.earned
+    }
+    return { pending, missed, successEarned }
+  }, [statsByCompany])
+
   const loadingIncome = positionsIncomeQ.isLoading
 
   return (
@@ -140,6 +152,30 @@ export function CompaniesPage() {
           </button>
         </div>
       ) : null}
+
+      <section aria-label="Portfolio totals" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="border-line rounded-2xl border border-stone-200/90 bg-white/90 px-4 py-4 shadow-sm dark:border-line-dark dark:bg-stone-900/70">
+          <p className="text-ink-muted text-[10px] font-bold tracking-[0.14em] uppercase dark:text-stone-400">Pending</p>
+          <p className="text-stitch-on-surface mt-2 text-2xl font-extrabold tabular-nums dark:text-stone-100">
+            {loadingIncome ? '…' : formatIls(portfolioTotals.pending)}
+          </p>
+          <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">Planned fees on open &amp; on-hold roles (all clients)</p>
+        </div>
+        <div className="border-line rounded-2xl border border-stone-200/90 bg-white/90 px-4 py-4 shadow-sm dark:border-line-dark dark:bg-stone-900/70">
+          <p className="text-ink-muted text-[10px] font-bold tracking-[0.14em] uppercase dark:text-stone-400">Missed</p>
+          <p className="text-stitch-on-surface mt-2 text-2xl font-extrabold tabular-nums dark:text-stone-100">
+            {loadingIncome ? '…' : formatIls(portfolioTotals.missed)}
+          </p>
+          <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">Planned fees on cancelled roles (all clients)</p>
+        </div>
+        <div className="border-line rounded-2xl border border-emerald-200/70 bg-gradient-to-br from-emerald-50/90 to-white px-4 py-4 shadow-sm dark:border-emerald-900/40 dark:from-emerald-950/35 dark:to-stone-900/80">
+          <p className="text-ink-muted text-[10px] font-bold tracking-[0.14em] uppercase dark:text-emerald-200/90">Success</p>
+          <p className="text-stitch-on-surface mt-2 text-2xl font-extrabold tabular-nums dark:text-emerald-50">
+            {loadingIncome ? '…' : formatIls(portfolioTotals.successEarned)}
+          </p>
+          <p className="text-ink-muted mt-1 text-xs dark:text-emerald-100/80">Earned on succeeded roles (actual or planned fee)</p>
+        </div>
+      </section>
 
       {q.isLoading ? (
         <p className="text-ink-muted text-sm">Loading…</p>
