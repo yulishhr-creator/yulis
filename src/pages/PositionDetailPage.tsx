@@ -59,7 +59,9 @@ type CandidateProfile = {
   email: string | null
   phone: string | null
   linkedin?: string | null
+  salary_expectation?: string | null
   resume_storage_path?: string | null
+  profile_photo_storage_path?: string | null
   deleted_at?: string | null
 }
 
@@ -147,14 +149,6 @@ function taskLinkedCandidate(t: PositionTaskRow): { id: string; full_name: strin
 }
 
 /** Two-letter style initials from a person or free-text label (e.g. "Dor Farjun" → "DF"). */
-function LinkedInGlyph(props: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden className={props.className}>
-      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22 22h-20v-20h20v20z" />
-    </svg>
-  )
-}
-
 function personInitials(label: string): string {
   const parts = label.trim().split(/\s+/).filter(Boolean)
   if (parts.length === 0) return '?'
@@ -321,6 +315,8 @@ export function PositionDetailPage() {
   }
 
   const resumeFileRef = useRef<HTMLInputElement>(null)
+  const candidatePhotoInputRef = useRef<HTMLInputElement>(null)
+  const drawerBulkFilesRef = useRef<HTMLInputElement>(null)
   const excelImportRef = useRef<HTMLInputElement>(null)
   const [resumePickForId, setResumePickForId] = useState<string | null>(null)
 
@@ -380,7 +376,7 @@ export function PositionDetailPage() {
           status,
           source,
           created_at,
-          candidates ( id, full_name, email, phone, linkedin, resume_storage_path, deleted_at ),
+          candidates ( id, full_name, email, phone, linkedin, salary_expectation, resume_storage_path, profile_photo_storage_path, deleted_at ),
           position_stages ( name )
         `,
         )
@@ -443,6 +439,17 @@ export function PositionDetailPage() {
     },
   })
 
+  const candidateDrawerFilesQ = useQuery({
+    queryKey: ['candidate-docs-files', user?.id, highlightCandidate],
+    enabled: Boolean(supabase && user?.id && highlightCandidate),
+    queryFn: async () => {
+      const folder = `${user!.id}/${highlightCandidate}`
+      const { data, error } = await supabase!.storage.from('candidate-docs').list(folder, { limit: 200 })
+      if (error) throw error
+      return data ?? []
+    },
+  })
+
   const positionIsOpen = useMemo(
     () => posQ.data?.status === 'active' || posQ.data?.status === 'on_hold',
     [posQ.data?.status],
@@ -502,8 +509,12 @@ export function PositionDetailPage() {
   const shareChannelRef = useRef<HTMLDivElement>(null)
   const [candidateDragId, setCandidateDragId] = useState<string | null>(null)
   const [candidateDropStage, setCandidateDropStage] = useState<string | null>(null)
-  const [drawerHeaderExpanded, setDrawerHeaderExpanded] = useState(false)
+  const [candidateDrawerPanel, setCandidateDrawerPanel] = useState<'details' | 'activity' | 'files' | 'comments'>('details')
   const [drawerPanelEntered, setDrawerPanelEntered] = useState(false)
+  const [drawerFieldEdit, setDrawerFieldEdit] = useState<null | 'name' | 'email' | 'phone'>(null)
+  const [drawerFieldDraft, setDrawerFieldDraft] = useState('')
+  const [drawerAvatarBroken, setDrawerAvatarBroken] = useState(false)
+  const [drawerFilesDragging, setDrawerFilesDragging] = useState(false)
   const [drawerCommentText, setDrawerCommentText] = useState('')
   const [drawerAssignStatusOpen, setDrawerAssignStatusOpen] = useState(false)
   const drawerAssignStatusRef = useRef<HTMLDivElement>(null)
@@ -513,12 +524,19 @@ export function PositionDetailPage() {
 
   useEffect(() => {
     if (highlightCandidate) {
-      setDrawerHeaderExpanded(false)
+      setCandidateDrawerPanel('details')
+      setDrawerFieldEdit(null)
+      setDrawerAvatarBroken(false)
+      setDrawerFilesDragging(false)
       setDrawerAssignStatusOpen(false)
       const id = requestAnimationFrame(() => setDrawerPanelEntered(true))
       return () => cancelAnimationFrame(id)
     }
     setDrawerPanelEntered(false)
+    setCandidateDrawerPanel('details')
+    setDrawerFieldEdit(null)
+    setDrawerAvatarBroken(false)
+    setDrawerFilesDragging(false)
   }, [highlightCandidate])
 
   useEffect(() => {
@@ -593,6 +611,32 @@ export function PositionDetailPage() {
     await qc.invalidateQueries({ queryKey: ['tasks-page'] })
     await qc.invalidateQueries({ queryKey: ['position-tasks', id] })
     await qc.invalidateQueries({ queryKey: ['notification-count'] })
+  }
+
+  async function saveCandidateFromDrawer(
+    candidateId: string,
+    patch: { full_name?: string; email?: string | null; phone?: string | null },
+  ) {
+    if (!supabase || !user) return
+    const row: Record<string, unknown> = {}
+    if (patch.full_name !== undefined) row.full_name = patch.full_name.trim() || 'Unnamed'
+    if (patch.email !== undefined) {
+      const em = patch.email?.trim() || null
+      row.email = em
+      row.email_normalized = normalizeEmail(em)
+    }
+    if (patch.phone !== undefined) {
+      const ph = patch.phone?.trim() || null
+      row.phone = ph
+      row.phone_normalized = normalizePhone(ph)
+    }
+    const { error } = await supabase.from('candidates').update(row).eq('id', candidateId).eq('user_id', user.id)
+    if (error) toastError(error.message)
+    else {
+      success('Saved')
+      setDrawerFieldEdit(null)
+      await invalidateAll()
+    }
   }
 
   async function saveJobDescription(next: string) {
@@ -1216,6 +1260,71 @@ export function PositionDetailPage() {
     })
     await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
     await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+    await qc.invalidateQueries({ queryKey: ['candidate-docs-files', user.id, candidateId] })
+  }
+
+  async function uploadCandidateAttachment(candidateId: string, file: File | null) {
+    if (!file || !supabase || !user || !id) return
+    const path = `${user.id}/${candidateId}/${Date.now()}-${file.name.replace(/[^\w.-]/g, '_')}`
+    const { error: upErr } = await supabase.storage.from('candidate-docs').upload(path, file)
+    if (upErr) {
+      toastError(upErr.message)
+      return
+    }
+    success('File uploaded')
+    const positionCandidateId =
+      (candidatesQ.data ?? []).find((r) => nestedCandidate(r.candidates)?.id === candidateId)?.id ?? null
+    await logActivityEvent(supabase, user.id, {
+      event_type: 'candidate_file_uploaded',
+      position_id: id,
+      candidate_id: candidateId,
+      position_candidate_id: positionCandidateId,
+      title: 'File uploaded',
+      subtitle: file.name,
+      metadata: { file_kind: 'attachment', path },
+    })
+    await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
+    await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+    await qc.invalidateQueries({ queryKey: ['candidate-docs-files', user.id, candidateId] })
+  }
+
+  async function uploadCandidatePhoto(candidateId: string, file: File | null) {
+    if (!file || !supabase || !user || !id) return
+    if (!file.type.startsWith('image/')) {
+      toastError('Use an image file (JPEG, PNG, or WebP).')
+      return
+    }
+    const ext = (file.name.split('.').pop() ?? 'jpg').replace(/[^\w]/g, '') || 'jpg'
+    const path = `${user.id}/${candidateId}/avatar-${Date.now()}.${ext}`
+    const { error: upErr } = await supabase.storage.from('candidate-docs').upload(path, file)
+    if (upErr) {
+      toastError(upErr.message)
+      return
+    }
+    const { error } = await supabase
+      .from('candidates')
+      .update({ profile_photo_storage_path: path })
+      .eq('id', candidateId)
+      .eq('user_id', user.id)
+    if (error) {
+      toastError(error.message)
+      return
+    }
+    success('Photo updated')
+    const positionCandidateId =
+      (candidatesQ.data ?? []).find((r) => nestedCandidate(r.candidates)?.id === candidateId)?.id ?? null
+    await logActivityEvent(supabase, user.id, {
+      event_type: 'candidate_file_uploaded',
+      position_id: id,
+      candidate_id: candidateId,
+      position_candidate_id: positionCandidateId,
+      title: 'Profile photo updated',
+      subtitle: file.name,
+      metadata: { file_kind: 'avatar', path },
+    })
+    await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
+    await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+    await qc.invalidateQueries({ queryKey: ['candidate-docs-files', user.id, candidateId] })
   }
 
   async function previewResume(storagePath: string) {
@@ -2127,7 +2236,69 @@ export function PositionDetailPage() {
                 }`}
                 aria-label="Candidate details"
               >
-                <div className="flex items-center justify-end border-b border-stone-200/90 px-3 py-2 dark:border-stone-700">
+                <div className="flex items-center justify-between gap-3 border-b border-stone-200/90 px-3 py-2 dark:border-stone-700">
+                  <div className="relative flex items-center" ref={drawerAssignStatusRef}>
+                    <button
+                      type="button"
+                      onClick={() => setDrawerAssignStatusOpen((o) => !o)}
+                      disabled={patchAssignmentStatus.isPending}
+                      className={`border-line flex h-10 items-center gap-1 rounded-xl border px-2.5 text-sm font-bold shadow-sm transition dark:border-line-dark ${
+                        drawerCandidate!.status === 'in_progress'
+                          ? 'border-emerald-200/90 bg-gradient-to-br from-emerald-50 to-white text-emerald-900 dark:border-emerald-800/80 dark:from-emerald-950/60 dark:to-stone-900 dark:text-emerald-200'
+                          : drawerCandidate!.status === 'rejected'
+                            ? 'border-rose-200/90 bg-gradient-to-br from-rose-50 to-white text-rose-900 dark:border-rose-800/80 dark:from-rose-950/50 dark:to-stone-900 dark:text-rose-100'
+                            : 'border-stone-200/90 bg-gradient-to-br from-stone-100 to-white text-stone-800 dark:border-stone-600 dark:from-stone-800/80 dark:to-stone-900 dark:text-stone-200'
+                      }`}
+                      aria-expanded={drawerAssignStatusOpen}
+                      aria-haspopup="listbox"
+                      aria-label="Assignment status"
+                      title="Assignment status"
+                    >
+                      {drawerCandidate!.status === 'in_progress' ? (
+                        <Play className="h-4 w-4 shrink-0 fill-current text-emerald-600 dark:text-emerald-400" aria-hidden />
+                      ) : drawerCandidate!.status === 'rejected' ? (
+                        <Ban className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-300" aria-hidden />
+                      ) : (
+                        <Pause className="h-4 w-4 shrink-0 text-stone-600 dark:text-stone-400" aria-hidden />
+                      )}
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden />
+                    </button>
+                    {drawerAssignStatusOpen ? (
+                      <div
+                        role="listbox"
+                        className="border-line absolute top-full left-0 z-[60] mt-1 min-w-[12rem] rounded-xl border bg-white py-1 shadow-xl dark:border-line-dark dark:bg-stone-900"
+                      >
+                        {(
+                          [
+                            { v: 'in_progress' as const, label: 'In progress', icon: Play, cls: 'text-emerald-800 dark:text-emerald-300' },
+                            { v: 'rejected' as const, label: 'Rejected', icon: Ban, cls: 'text-rose-800 dark:text-rose-200' },
+                            { v: 'withdrawn' as const, label: 'Withdrawn', icon: Pause, cls: 'text-stone-700 dark:text-stone-300' },
+                          ] as const
+                        ).map(({ v, label, icon: Icon, cls }) => (
+                          <button
+                            key={v}
+                            type="button"
+                            role="option"
+                            className={`hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold ${cls}`}
+                            onClick={() => {
+                              setDrawerAssignStatusOpen(false)
+                              if (v === drawerCandidate!.status) return
+                              if (!window.confirm('Change this assignment’s status?')) return
+                              const closeTasks = v !== 'in_progress' ? window.confirm('Also mark open tasks for this assignment as done?') : false
+                              void patchAssignmentStatus.mutateAsync({
+                                positionCandidateId: drawerCandidate!.id,
+                                nextStatus: v,
+                                closeTasks,
+                              })
+                            }}
+                          >
+                            <Icon className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   <button
                     type="button"
                     className="rounded-lg p-2 hover:bg-stone-100 dark:hover:bg-stone-800"
@@ -2143,9 +2314,12 @@ export function PositionDetailPage() {
                     const prof = nestedCandidate(c.candidates)
                     const candId = prof?.id
                     const displayName = prof?.full_name ?? 'Unnamed'
-                    const stageName = nestedStageName(c.position_stages)
-                    const inPipeline = c.status === 'in_progress'
                     const resumePath = prof?.resume_storage_path ?? null
+                    const photoPath = prof?.profile_photo_storage_path ?? null
+                    const photoPublic =
+                      photoPath && supabase
+                        ? supabase.storage.from('candidate-docs').getPublicUrl(photoPath).data.publicUrl
+                        : null
                     const email = prof?.email?.trim() || null
                     const phone = prof?.phone?.trim() || null
                     const linkedinRaw = prof?.linkedin?.trim() || null
@@ -2155,6 +2329,7 @@ export function PositionDetailPage() {
                           ? linkedinRaw
                           : `https://${linkedinRaw}`
                         : null
+                    const salaryRaw = prof?.salary_expectation?.trim() ?? ''
                     const actRows = (activityQ.data ?? []).filter(
                       (a) => a.candidate_id === candId || a.position_candidate_id === c.id,
                     )
@@ -2165,22 +2340,109 @@ export function PositionDetailPage() {
                     const timelineRows = actRows
                       .filter((a) => a.event_type !== 'note_added' && a.event_type !== 'candidate_tag')
                       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                    const assignPill = assignmentStatusPill(c.status as string)
+                    const storageFiles = (candidateDrawerFilesQ.data ?? []).filter(
+                      (f) => Boolean(f.name) && !f.name.startsWith('.'),
+                    )
+                    const fileCount = storageFiles.length
                     return (
                       <>
+                        <input
+                          ref={candidatePhotoInputRef}
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          className="sr-only"
+                          tabIndex={-1}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0] ?? null
+                            e.target.value = ''
+                            if (f && candId) void uploadCandidatePhoto(candId, f)
+                          }}
+                        />
+                        <input
+                          ref={drawerBulkFilesRef}
+                          type="file"
+                          multiple
+                          className="sr-only"
+                          tabIndex={-1}
+                          onChange={(e) => {
+                            const fs = e.target.files
+                            e.target.value = ''
+                            if (!candId || !fs?.length) return
+                            for (let i = 0; i < fs.length; i++) void uploadCandidateAttachment(candId, fs[i]!)
+                          }}
+                        />
                         <div className="border-b border-stone-200/90 px-5 pb-4 pt-2 dark:border-stone-700">
                           <div className="flex gap-4">
-                            <div
-                              className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-stone-200 bg-stone-100 text-lg font-bold text-stone-600 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300"
-                              aria-hidden
-                            >
-                              {personInitials(displayName)}
+                            <div className="group/avatar relative h-20 w-20 shrink-0">
+                              <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-stone-200 bg-stone-100 text-lg font-bold text-stone-600 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300">
+                                {photoPublic && !drawerAvatarBroken ? (
+                                  <img
+                                    src={photoPublic}
+                                    alt=""
+                                    className="h-full w-full object-cover"
+                                    onError={() => setDrawerAvatarBroken(true)}
+                                  />
+                                ) : (
+                                  personInitials(displayName)
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                className="border-line absolute -bottom-0.5 -right-0.5 flex h-8 w-8 items-center justify-center rounded-full border bg-white text-stone-600 opacity-0 shadow-md transition hover:bg-stone-50 group-hover/avatar:opacity-100 dark:border-line-dark dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
+                                aria-label="Change profile photo"
+                                title="Change photo"
+                                onClick={() => candidatePhotoInputRef.current?.click()}
+                              >
+                                <Pencil className="h-3.5 w-3.5" aria-hidden />
+                              </button>
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
-                                <h2 className="text-stitch-on-surface text-xl font-bold tracking-tight dark:text-stone-100">
-                                  {displayName}
-                                </h2>
+                                <div className="group/name flex min-w-0 max-w-full items-center gap-1.5">
+                                  {drawerFieldEdit === 'name' && candId ? (
+                                    <>
+                                      <input
+                                        value={drawerFieldDraft}
+                                        onChange={(e) => setDrawerFieldDraft(e.target.value)}
+                                        className="border-line text-stitch-on-surface min-w-0 max-w-[16rem] rounded-lg border bg-white px-2 py-1 text-xl font-bold tracking-tight dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
+                                        autoFocus
+                                      />
+                                      <button
+                                        type="button"
+                                        className="rounded-lg bg-emerald-600 p-1.5 text-white hover:bg-emerald-700"
+                                        aria-label="Save name"
+                                        onClick={() => void saveCandidateFromDrawer(candId, { full_name: drawerFieldDraft })}
+                                      >
+                                        <Check className="h-4 w-4" aria-hidden />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="border-line rounded-lg border bg-white p-1.5 dark:border-line-dark dark:bg-stone-800"
+                                        aria-label="Cancel"
+                                        onClick={() => setDrawerFieldEdit(null)}
+                                      >
+                                        <X className="h-4 w-4" aria-hidden />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <h2 className="text-stitch-on-surface min-w-0 truncate text-xl font-bold tracking-tight dark:text-stone-100">
+                                        {displayName}
+                                      </h2>
+                                      <button
+                                        type="button"
+                                        className="text-ink-muted shrink-0 rounded-lg p-1.5 opacity-0 transition hover:bg-stone-200/90 hover:text-ink group-hover/name:opacity-100 dark:hover:bg-stone-600 dark:hover:text-stone-100"
+                                        aria-label="Edit name"
+                                        onClick={() => {
+                                          setDrawerFieldDraft(displayName)
+                                          setDrawerFieldEdit('name')
+                                        }}
+                                      >
+                                        <Pencil className="h-4 w-4" aria-hidden />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
                                 <button
                                   type="button"
                                   className="text-[#006384] hover:text-[#004d63] inline-flex items-center gap-1 text-sm font-medium dark:text-cyan-300 dark:hover:text-cyan-200"
@@ -2200,84 +2462,6 @@ export function PositionDetailPage() {
                                   </span>
                                   Add tag
                                 </button>
-                                <div className="relative flex shrink-0 items-center gap-1.5" ref={drawerAssignStatusRef}>
-                                  <button
-                                    type="button"
-                                    onClick={() => setDrawerAssignStatusOpen((o) => !o)}
-                                    disabled={patchAssignmentStatus.isPending}
-                                    className={`border-line flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold shadow-sm transition dark:border-line-dark ${
-                                      c.status === 'in_progress'
-                                        ? 'border-emerald-200/90 bg-gradient-to-br from-emerald-50 to-white text-emerald-900 dark:border-emerald-800/80 dark:from-emerald-950/60 dark:to-stone-900 dark:text-emerald-200'
-                                        : c.status === 'rejected'
-                                          ? 'border-rose-200/90 bg-gradient-to-br from-rose-50 to-white text-rose-900 dark:border-rose-800/80 dark:from-rose-950/50 dark:to-stone-900 dark:text-rose-100'
-                                          : 'border-stone-200/90 bg-gradient-to-br from-stone-100 to-white text-stone-800 dark:border-stone-600 dark:from-stone-800/80 dark:to-stone-900 dark:text-stone-200'
-                                    }`}
-                                    aria-expanded={drawerAssignStatusOpen}
-                                    aria-haspopup="listbox"
-                                  >
-                                    {c.status === 'in_progress' ? (
-                                      <Play className="h-4 w-4 shrink-0 fill-current text-emerald-600 dark:text-emerald-400" aria-hidden />
-                                    ) : c.status === 'rejected' ? (
-                                      <Ban className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-300" aria-hidden />
-                                    ) : (
-                                      <Pause className="h-4 w-4 shrink-0 text-stone-600 dark:text-stone-400" aria-hidden />
-                                    )}
-                                    <span>{formatAssignmentStatus(c.status as string)}</span>
-                                    <ChevronDown className="h-4 w-4 shrink-0 opacity-60" aria-hidden />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="border-line flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border bg-white text-[#006384] shadow-sm hover:bg-stone-50 dark:border-line-dark dark:bg-stone-800 dark:text-cyan-300 dark:hover:bg-stone-700"
-                                    title="Pipeline board"
-                                    aria-label="Open pipeline board"
-                                    onClick={() => {
-                                      closeCandidateDrawer()
-                                      requestAnimationFrame(() =>
-                                        document.getElementById('position-candidates-section')?.scrollIntoView({
-                                          behavior: 'smooth',
-                                          block: 'start',
-                                        }),
-                                      )
-                                    }}
-                                  >
-                                    <GitBranch className="h-4 w-4" aria-hidden />
-                                  </button>
-                                  {drawerAssignStatusOpen ? (
-                                    <div
-                                      role="listbox"
-                                      className="border-line absolute top-full right-0 z-[60] mt-1 min-w-[12rem] rounded-xl border bg-white py-1 shadow-xl dark:border-line-dark dark:bg-stone-900"
-                                    >
-                                      {(
-                                        [
-                                          { v: 'in_progress' as const, label: 'In progress', icon: Play, cls: 'text-emerald-800 dark:text-emerald-300' },
-                                          { v: 'rejected' as const, label: 'Rejected', icon: Ban, cls: 'text-rose-800 dark:text-rose-200' },
-                                          { v: 'withdrawn' as const, label: 'Withdrawn', icon: Pause, cls: 'text-stone-700 dark:text-stone-300' },
-                                        ] as const
-                                      ).map(({ v, label, icon: Icon, cls }) => (
-                                        <button
-                                          key={v}
-                                          type="button"
-                                          role="option"
-                                          className={`hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold ${cls}`}
-                                          onClick={() => {
-                                            setDrawerAssignStatusOpen(false)
-                                            if (v === c.status) return
-                                            if (!window.confirm('Change this assignment’s status?')) return
-                                            const closeTasks = v !== 'in_progress' ? window.confirm('Also mark open tasks for this assignment as done?') : false
-                                            void patchAssignmentStatus.mutateAsync({
-                                              positionCandidateId: c.id,
-                                              nextStatus: v,
-                                              closeTasks,
-                                            })
-                                          }}
-                                        >
-                                          <Icon className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
-                                          {label}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  ) : null}
-                                </div>
                               </div>
                               {tagRows.length > 0 ? (
                                 <div className="mt-2 flex flex-wrap gap-1.5">
@@ -2301,241 +2485,407 @@ export function PositionDetailPage() {
                                   ))}
                                 </div>
                               ) : null}
-                              <div className="text-ink-muted mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm dark:text-stone-400">
-                                {email ? (
-                                  <a
-                                    href={`mailto:${email}`}
-                                    className="inline-flex min-w-0 items-center gap-1.5 text-[#4a5568] hover:text-[#006384] dark:text-stone-400 dark:hover:text-cyan-300"
-                                  >
-                                    <Mail className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
-                                    <span className="truncate">{email}</span>
-                                  </a>
-                                ) : null}
-                                {phone ? (
-                                  <a
-                                    href={`tel:${phone}`}
-                                    className="inline-flex items-center gap-1.5 text-[#4a5568] hover:text-[#006384] dark:text-stone-400 dark:hover:text-cyan-300"
-                                  >
-                                    <Phone className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
-                                    <span>{phone}</span>
-                                  </a>
-                                ) : null}
-                                {linkedinHref ? (
-                                  <a
-                                    href={linkedinHref}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1.5 text-[#4a5568] hover:text-[#006384] dark:text-stone-400 dark:hover:text-cyan-300"
-                                  >
-                                    <LinkedInGlyph className="h-4 w-4 shrink-0 opacity-80" />
-                                    <span className="sr-only">LinkedIn</span>
-                                  </a>
-                                ) : null}
-                              </div>
-                              <button
-                                type="button"
-                                className="text-[#006384] hover:text-[#004d63] mt-2 text-sm font-medium dark:text-cyan-300 dark:hover:text-cyan-200"
-                                onClick={() => setDrawerHeaderExpanded((v) => !v)}
-                              >
-                                {drawerHeaderExpanded ? 'See less' : 'See more'}
-                              </button>
-                              {drawerHeaderExpanded ? (
-                                <div className="mt-3 space-y-3 border-t border-stone-100 pt-3 text-sm dark:border-stone-700">
-                                  <p className="text-ink-muted">
-                                    <span className="font-medium text-stone-700 dark:text-stone-300">Stage</span>{' '}
-                                    <span className="text-stone-900 dark:text-stone-100">{stageName}</span> (change by
-                                    dragging the card on the board)
-                                  </p>
-                                  <p className="text-ink-muted">
-                                    <span className="font-medium text-stone-700 dark:text-stone-300">Source</span>{' '}
-                                    {c.source}
-                                  </p>
-                                  <div className="flex flex-wrap gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (!candId) return
-                                        if (resumePath) void previewResume(resumePath)
-                                        else {
-                                          setResumePickForId(candId)
-                                          queueMicrotask(() => resumeFileRef.current?.click())
-                                        }
-                                      }}
-                                      className="rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-medium hover:bg-stone-50 dark:border-stone-600 dark:hover:bg-stone-800"
-                                    >
-                                      {resumePath ? 'Open résumé' : 'Upload résumé'}
-                                    </button>
-                                    {candId ? (
+                              <div className="mt-4 flex flex-col gap-2.5 text-sm">
+                                <div className="group/email flex min-w-0 items-center gap-2">
+                                  <Mail className="text-ink-muted h-4 w-4 shrink-0 opacity-80 dark:text-stone-500" aria-hidden />
+                                  {drawerFieldEdit === 'email' && candId ? (
+                                    <>
+                                      <input
+                                        value={drawerFieldDraft}
+                                        onChange={(e) => setDrawerFieldDraft(e.target.value)}
+                                        className="border-line text-stitch-on-surface min-w-0 flex-1 rounded-lg border bg-white px-2 py-1 dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
+                                        type="email"
+                                        autoFocus
+                                      />
                                       <button
                                         type="button"
-                                        onClick={() => void createShareToken.mutateAsync(candId)}
-                                        className="rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-medium hover:bg-stone-50 dark:border-stone-600 dark:hover:bg-stone-800"
+                                        className="rounded-lg bg-emerald-600 p-1.5 text-white hover:bg-emerald-700"
+                                        aria-label="Save email"
+                                        onClick={() => void saveCandidateFromDrawer(candId, { email: drawerFieldDraft.trim() || null })}
                                       >
-                                        Candidate share link
+                                        <Check className="h-4 w-4" aria-hidden />
                                       </button>
-                                    ) : null}
-                                  </div>
+                                      <button
+                                        type="button"
+                                        className="border-line rounded-lg border bg-white p-1.5 dark:border-line-dark dark:bg-stone-800"
+                                        aria-label="Cancel"
+                                        onClick={() => setDrawerFieldEdit(null)}
+                                      >
+                                        <X className="h-4 w-4" aria-hidden />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      {email ? (
+                                        <a
+                                          href={`mailto:${email}`}
+                                          className="text-stitch-on-surface min-w-0 flex-1 truncate hover:text-[#006384] dark:text-stone-100 dark:hover:text-cyan-300"
+                                        >
+                                          {email}
+                                        </a>
+                                      ) : (
+                                        <span className="text-ink-muted flex-1 dark:text-stone-500">—</span>
+                                      )}
+                                      <button
+                                        type="button"
+                                        className="text-ink-muted shrink-0 rounded-lg p-1.5 opacity-0 transition hover:bg-stone-200/90 hover:text-ink group-hover/email:opacity-100 dark:hover:bg-stone-600 dark:hover:text-stone-100"
+                                        aria-label="Edit email"
+                                        onClick={() => {
+                                          setDrawerFieldDraft(email ?? '')
+                                          setDrawerFieldEdit('email')
+                                        }}
+                                      >
+                                        <Pencil className="h-4 w-4" aria-hidden />
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
-                              ) : null}
+                                <div className="group/phone flex min-w-0 items-center gap-2">
+                                  <Phone className="text-ink-muted h-4 w-4 shrink-0 opacity-80 dark:text-stone-500" aria-hidden />
+                                  {drawerFieldEdit === 'phone' && candId ? (
+                                    <>
+                                      <input
+                                        value={drawerFieldDraft}
+                                        onChange={(e) => setDrawerFieldDraft(e.target.value)}
+                                        className="border-line text-stitch-on-surface min-w-0 flex-1 rounded-lg border bg-white px-2 py-1 dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
+                                        type="tel"
+                                        autoFocus
+                                      />
+                                      <button
+                                        type="button"
+                                        className="rounded-lg bg-emerald-600 p-1.5 text-white hover:bg-emerald-700"
+                                        aria-label="Save phone"
+                                        onClick={() => void saveCandidateFromDrawer(candId, { phone: drawerFieldDraft.trim() || null })}
+                                      >
+                                        <Check className="h-4 w-4" aria-hidden />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="border-line rounded-lg border bg-white p-1.5 dark:border-line-dark dark:bg-stone-800"
+                                        aria-label="Cancel"
+                                        onClick={() => setDrawerFieldEdit(null)}
+                                      >
+                                        <X className="h-4 w-4" aria-hidden />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      {phone ? (
+                                        <a
+                                          href={`tel:${phone}`}
+                                          className="text-stitch-on-surface min-w-0 flex-1 truncate hover:text-[#006384] dark:text-stone-100 dark:hover:text-cyan-300"
+                                        >
+                                          {phone}
+                                        </a>
+                                      ) : (
+                                        <span className="text-ink-muted flex-1 dark:text-stone-500">—</span>
+                                      )}
+                                      <button
+                                        type="button"
+                                        className="text-ink-muted shrink-0 rounded-lg p-1.5 opacity-0 transition hover:bg-stone-200/90 hover:text-ink group-hover/phone:opacity-100 dark:hover:bg-stone-600 dark:hover:text-stone-100"
+                                        aria-label="Edit phone"
+                                        onClick={() => {
+                                          setDrawerFieldDraft(phone ?? '')
+                                          setDrawerFieldEdit('phone')
+                                        }}
+                                      >
+                                        <Pencil className="h-4 w-4" aria-hidden />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between gap-3 border-b border-stone-100 px-5 py-3 dark:border-stone-700">
-                          <div className="flex items-center gap-2">
-                            {inPipeline ? (
-                              <span
-                                className="border-accent/40 bg-accent/15 text-accent inline-flex h-10 w-10 items-center justify-center rounded-xl border shadow-inner dark:border-orange-400/40 dark:bg-orange-950/35 dark:text-orange-200"
-                                title="Active on this role"
-                                aria-label="Active on this role"
-                              >
-                                <Check className="h-5 w-5 stroke-[2.5]" aria-hidden />
-                              </span>
+                        <div className="flex flex-wrap gap-1 border-b border-stone-100 px-3 py-2 dark:border-stone-700">
+                          {(
+                            [
+                              { id: 'details' as const, label: 'Details' },
+                              { id: 'activity' as const, label: 'Activity' },
+                              { id: 'files' as const, label: `Files (${fileCount})` },
+                              { id: 'comments' as const, label: `Comments (${commentRows.length})` },
+                            ] as const
+                          ).map(({ id: tid, label }) => (
+                            <button
+                              key={tid}
+                              type="button"
+                              onClick={() => setCandidateDrawerPanel(tid)}
+                              className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                                candidateDrawerPanel === tid
+                                  ? 'bg-stone-900 text-white shadow-sm dark:bg-stone-100 dark:text-stone-900'
+                                  : 'text-stone-600 hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-800'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+
+                        {candidateDrawerPanel === 'details' ? (
+                          <div className="space-y-4 px-5 py-4">
+                            <div className="flex items-start gap-2">
+                              <div className="min-w-0 flex-1">
+                                <DetailHoverField
+                                  label="LinkedIn profile"
+                                  value={linkedinRaw ?? ''}
+                                  disabled={!candId}
+                                  onSave={async (next) => {
+                                    if (!candId) return
+                                    const { error } = await supabase!
+                                      .from('candidates')
+                                      .update({ linkedin: next.trim() || null })
+                                      .eq('id', candId)
+                                      .eq('user_id', user!.id)
+                                    if (error) toastError(error.message)
+                                    else {
+                                      success('Saved')
+                                      await invalidateAll()
+                                    }
+                                  }}
+                                />
+                              </div>
+                              {linkedinHref ? (
+                                <a
+                                  href={linkedinHref}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="border-line text-[#006384] hover:bg-stone-50 dark:text-cyan-300 mt-6 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border bg-white shadow-sm dark:border-line-dark dark:bg-stone-800 dark:hover:bg-stone-700"
+                                  title="Open LinkedIn in new tab"
+                                  aria-label="Open LinkedIn in new tab"
+                                >
+                                  <ExternalLink className="h-4 w-4" aria-hidden />
+                                </a>
+                              ) : null}
+                            </div>
+                            <DetailHoverField
+                              label="Expected salary (ILS)"
+                              value={salaryRaw}
+                              disabled={!candId}
+                              readOnlyFormat={(v) => {
+                                const t = v.trim()
+                                if (!t) return '—'
+                                const p = parseIlsAmountInput(t)
+                                return typeof p === 'number' ? `₪${p.toLocaleString('en-US')} (ILS)` : t
+                              }}
+                              onSave={async (next) => {
+                                if (!candId) return
+                                const t = next.trim()
+                                let toSave: string | null = t
+                                if (t) {
+                                  const p = parseIlsAmountInput(t)
+                                  if (p === 'invalid') {
+                                    toastError('Enter a valid amount or leave empty.')
+                                    return
+                                  }
+                                  if (p !== null) toSave = String(p)
+                                } else toSave = null
+                                const { error } = await supabase!
+                                  .from('candidates')
+                                  .update({ salary_expectation: toSave })
+                                  .eq('id', candId)
+                                  .eq('user_id', user!.id)
+                                if (error) toastError(error.message)
+                                else {
+                                  success('Saved')
+                                  await invalidateAll()
+                                }
+                              }}
+                            />
+                          </div>
+                        ) : null}
+
+                        {candidateDrawerPanel === 'activity' ? (
+                          <div className="px-5 py-4">
+                            {timelineRows.length === 0 ? (
+                              <p className="text-ink-muted text-sm">No pipeline events for this candidate yet.</p>
                             ) : (
+                              <ul className="mt-1 space-y-0">
+                                {timelineRows.map((a) => {
+                                  const deco = timelineKindStyles(a.event_type)
+                                  const primary =
+                                    a.event_type === 'candidate_status_changed'
+                                      ? formatActivityArrowPath(a.subtitle)
+                                      : a.event_type === 'candidate_stage_changed'
+                                        ? formatActivityArrowPath(a.subtitle)
+                                        : a.title
+                                  const statusTail =
+                                    a.event_type === 'candidate_status_changed'
+                                      ? assignmentStatusPill(tailStatusFromSubtitle(a.subtitle))
+                                      : null
+                                  const pillLabel =
+                                    a.event_type === 'candidate_status_changed' && statusTail
+                                      ? statusTail.label
+                                      : deco.pillLabel
+                                  const pillClass =
+                                    a.event_type === 'candidate_status_changed' && statusTail
+                                      ? statusTail.className
+                                      : deco.pill
+                                  return (
+                                    <li key={a.id} className="relative flex gap-3 pb-6 last:pb-0">
+                                      <div className="flex flex-col items-center">
+                                        <span className={`z-[1] h-3.5 w-3.5 rounded-full ${deco.dot}`} />
+                                        <span className={`mt-0.5 w-0.5 flex-1 min-h-[1.25rem] rounded-full ${deco.rail}`} />
+                                      </div>
+                                      <div className="min-w-0 flex-1 pt-0.5">
+                                        <p className="text-stitch-on-surface text-sm font-semibold leading-snug dark:text-stone-100">
+                                          {primary}
+                                        </p>
+                                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                                          <span
+                                            className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${pillClass}`}
+                                          >
+                                            {pillLabel}
+                                          </span>
+                                          <time
+                                            className="text-ink-muted text-xs tabular-nums"
+                                            dateTime={a.created_at}
+                                          >
+                                            {format(new Date(a.created_at), 'MMM d, yyyy · h:mm a')}
+                                          </time>
+                                        </div>
+                                      </div>
+                                    </li>
+                                  )
+                                })}
+                              </ul>
+                            )}
+                          </div>
+                        ) : null}
+
+                        {candidateDrawerPanel === 'files' ? (
+                          <div className="space-y-4 px-5 py-4">
+                            {candId ? (
                               <button
                                 type="button"
-                                title="Mark assignment in progress again"
-                                aria-label="Mark assignment in progress again"
+                                onClick={() => void createShareToken.mutateAsync(candId)}
+                                className="border-line w-full rounded-xl border bg-white px-4 py-3 text-left text-sm font-semibold shadow-sm transition hover:bg-stone-50 dark:border-line-dark dark:bg-stone-800 dark:hover:bg-stone-700"
+                              >
+                                Candidate share link
+                                <span className="text-ink-muted mt-0.5 block text-xs font-normal">Creates a link and copies it to your clipboard.</span>
+                              </button>
+                            ) : null}
+                            <div
+                              className={`rounded-2xl border-2 border-dashed px-4 py-8 text-center transition dark:border-stone-600 ${
+                                drawerFilesDragging
+                                  ? 'border-[#9b3e20] bg-orange-50/50 dark:border-orange-400/60 dark:bg-orange-950/25'
+                                  : 'border-stone-200 bg-stone-50/40 dark:bg-stone-900/40'
+                              }`}
+                              onDragOver={(e) => {
+                                e.preventDefault()
+                                setDrawerFilesDragging(true)
+                              }}
+                              onDragLeave={() => setDrawerFilesDragging(false)}
+                              onDrop={(e) => {
+                                e.preventDefault()
+                                setDrawerFilesDragging(false)
+                                if (!candId) return
+                                const fs = e.dataTransfer.files
+                                for (let i = 0; i < fs.length; i++) void uploadCandidateAttachment(candId, fs[i]!)
+                              }}
+                            >
+                              <Upload className="text-ink-muted mx-auto h-8 w-8 opacity-60" aria-hidden />
+                              <p className="text-stitch-on-surface mt-2 text-sm font-semibold dark:text-stone-100">Drag files here to upload</p>
+                              <button
+                                type="button"
+                                className="text-[#006384] hover:text-[#004d63] mt-3 text-sm font-semibold dark:text-cyan-300 dark:hover:text-cyan-200"
+                                onClick={() => drawerBulkFilesRef.current?.click()}
+                              >
+                                Or browse…
+                              </button>
+                            </div>
+                            <div>
+                              <p className="text-ink-muted text-xs font-bold uppercase tracking-wide">Files on record</p>
+                              {candidateDrawerFilesQ.isLoading ? (
+                                <p className="text-ink-muted mt-2 text-sm">Loading…</p>
+                              ) : storageFiles.length === 0 ? (
+                                <p className="text-ink-muted mt-2 text-sm">No files in storage for this candidate yet.</p>
+                              ) : (
+                                <ul className="mt-2 space-y-2">
+                                  {storageFiles.map((f) => {
+                                    const fullPath = `${user!.id}/${candId}/${f.name}`
+                                    return (
+                                      <li
+                                        key={f.name}
+                                        className="border-line flex items-center justify-between gap-2 rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
+                                      >
+                                        <span className="min-w-0 flex-1 truncate font-medium text-stone-800 dark:text-stone-100">
+                                          {f.name}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          className="text-[#006384] hover:text-[#004d63] shrink-0 text-xs font-semibold dark:text-cyan-300"
+                                          onClick={() => void previewResume(fullPath)}
+                                        >
+                                          Open
+                                        </button>
+                                      </li>
+                                    )
+                                  })}
+                                </ul>
+                              )}
+                            </div>
+                            {resumePath ? (
+                              <p className="text-ink-muted text-xs dark:text-stone-500">
+                                Linked résumé path is set on the candidate. Matching files in the list above open the same document.
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+
+                        {candidateDrawerPanel === 'comments' ? (
+                          <div className="bg-stone-50/60 px-5 py-4 dark:bg-stone-900/50">
+                            <div className="flex gap-2">
+                              <input
+                                value={drawerCommentText}
+                                onChange={(e) => setDrawerCommentText(e.target.value)}
+                                placeholder="Write a comment…"
+                                className="border-line min-w-0 flex-1 rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900"
+                              />
+                              <button
+                                type="button"
+                                disabled={!drawerCommentText.trim() || addDrawerComment.isPending || !candId}
                                 onClick={() => {
-                                  if (!window.confirm('Set this assignment back to in progress?')) return
-                                  void patchAssignmentStatus.mutateAsync({
+                                  if (!candId) return
+                                  void addDrawerComment.mutateAsync({
+                                    text: drawerCommentText,
+                                    candidateId: candId,
                                     positionCandidateId: c.id,
-                                    nextStatus: 'in_progress',
-                                    closeTasks: false,
                                   })
                                 }}
-                                className="border-line text-ink-muted hover:border-accent/40 hover:text-accent inline-flex h-10 w-10 items-center justify-center rounded-xl border bg-white dark:border-line-dark dark:bg-stone-900"
+                                className="bg-accent text-white shrink-0 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40 dark:bg-orange-600"
                               >
-                                <Check className="h-5 w-5 stroke-[2]" aria-hidden />
+                                Add
                               </button>
-                            )}
-                            <button
-                              type="button"
-                              title="Withdraw from this role"
-                              aria-label="Withdraw from this role"
-                              onClick={() => {
-                                if (window.confirm(`Withdraw ${displayName} from this role?`)) void withdrawFromRole.mutateAsync(c.id)
-                              }}
-                              className="border-line text-ink-muted hover:border-rose-300 hover:text-rose-600 inline-flex h-10 w-10 items-center justify-center rounded-xl border bg-white dark:border-line-dark dark:bg-stone-900 dark:hover:text-rose-400"
-                            >
-                              <Trash2 className="h-5 w-5" aria-hidden />
-                            </button>
-                          </div>
-                          <span
-                            className={`hidden max-w-[12rem] truncate rounded-full border px-2.5 py-0.5 text-xs font-semibold sm:inline-flex ${assignPill.className}`}
-                          >
-                            {assignPill.label}
-                          </span>
-                        </div>
-
-                        <div className="px-5 py-4">
-                          <h3 className="text-ink-muted text-xs font-bold uppercase tracking-wide">Activity</h3>
-                          {timelineRows.length === 0 ? (
-                            <p className="text-ink-muted mt-2 text-sm">No pipeline events for this candidate yet.</p>
-                          ) : (
-                            <ul className="mt-3 space-y-0">
-                              {timelineRows.map((a) => {
-                                const deco = timelineKindStyles(a.event_type)
-                                const primary =
-                                  a.event_type === 'candidate_status_changed'
-                                    ? formatActivityArrowPath(a.subtitle)
-                                    : a.event_type === 'candidate_stage_changed'
-                                      ? formatActivityArrowPath(a.subtitle)
-                                      : a.title
-                                const statusTail =
-                                  a.event_type === 'candidate_status_changed'
-                                    ? assignmentStatusPill(tailStatusFromSubtitle(a.subtitle))
-                                    : null
-                                const pillLabel =
-                                  a.event_type === 'candidate_status_changed' && statusTail
-                                    ? statusTail.label
-                                    : deco.pillLabel
-                                const pillClass =
-                                  a.event_type === 'candidate_status_changed' && statusTail
-                                    ? statusTail.className
-                                    : deco.pill
-                                return (
-                                  <li key={a.id} className="relative flex gap-3 pb-6 last:pb-0">
-                                    <div className="flex flex-col items-center">
-                                      <span className={`z-[1] h-3.5 w-3.5 rounded-full ${deco.dot}`} />
-                                      <span className={`mt-0.5 w-0.5 flex-1 min-h-[1.25rem] rounded-full ${deco.rail}`} />
-                                    </div>
-                                    <div className="min-w-0 flex-1 pt-0.5">
-                                      <p className="text-stitch-on-surface text-sm font-semibold leading-snug dark:text-stone-100">
-                                        {primary}
-                                      </p>
-                                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                                        <span
-                                          className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${pillClass}`}
-                                        >
-                                          {pillLabel}
-                                        </span>
-                                        <time
-                                          className="text-ink-muted text-xs tabular-nums"
-                                          dateTime={a.created_at}
-                                        >
-                                          {format(new Date(a.created_at), 'MMM d, yyyy · h:mm a')}
-                                        </time>
-                                      </div>
-                                    </div>
-                                  </li>
-                                )
-                              })}
-                            </ul>
-                          )}
-                        </div>
-
-                        <div className="border-t border-stone-100 bg-stone-50/60 px-5 py-4 dark:border-stone-700 dark:bg-stone-900/50">
-                          <h3 className="text-ink-muted text-xs font-bold uppercase tracking-wide">Comments</h3>
-                          <div className="mt-2 flex gap-2">
-                            <input
-                              value={drawerCommentText}
-                              onChange={(e) => setDrawerCommentText(e.target.value)}
-                              placeholder="Write a comment…"
-                              className="border-line min-w-0 flex-1 rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900"
-                            />
-                            <button
-                              type="button"
-                              disabled={!drawerCommentText.trim() || addDrawerComment.isPending || !candId}
-                              onClick={() => {
-                                if (!candId) return
-                                void addDrawerComment.mutateAsync({
-                                  text: drawerCommentText,
-                                  candidateId: candId,
-                                  positionCandidateId: c.id,
-                                })
-                              }}
-                              className="bg-accent text-white shrink-0 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40 dark:bg-orange-600"
-                            >
-                              Add
-                            </button>
-                          </div>
-                          <ul className="mt-3 space-y-2">
-                            {commentRows.map((cm) => (
-                              <li
-                                key={cm.id}
-                                className="flex items-start justify-between gap-2 rounded-xl border border-stone-200/90 bg-white px-3 py-2 text-sm dark:border-stone-600 dark:bg-stone-900/80"
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-stone-800 dark:text-stone-100">{cm.subtitle}</p>
-                                  <p className="text-ink-muted mt-1 text-xs tabular-nums">
-                                    {format(new Date(cm.created_at), 'MMM d, yyyy · h:mm a')}
-                                  </p>
-                                </div>
-                                <button
-                                  type="button"
-                                  className="text-ink-muted hover:text-rose-600 shrink-0 rounded p-1 dark:hover:text-rose-400"
-                                  aria-label="Delete comment"
-                                  onClick={() => {
-                                    if (window.confirm('Delete this comment?')) void deleteActivityEvent.mutateAsync(cm.id)
-                                  }}
+                            </div>
+                            <ul className="mt-3 space-y-2">
+                              {commentRows.map((cm) => (
+                                <li
+                                  key={cm.id}
+                                  className="flex items-start justify-between gap-2 rounded-xl border border-stone-200/90 bg-white px-3 py-2 text-sm dark:border-stone-600 dark:bg-stone-900/80"
                                 >
-                                  <Trash2 className="h-4 w-4" aria-hidden />
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-stone-800 dark:text-stone-100">{cm.subtitle}</p>
+                                    <p className="text-ink-muted mt-1 text-xs tabular-nums">
+                                      {format(new Date(cm.created_at), 'MMM d, yyyy · h:mm a')}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="text-ink-muted hover:text-rose-600 shrink-0 rounded p-1 dark:hover:text-rose-400"
+                                    aria-label="Delete comment"
+                                    onClick={() => {
+                                      if (window.confirm('Delete this comment?')) void deleteActivityEvent.mutateAsync(cm.id)
+                                    }}
+                                  >
+                                    <Trash2 className="h-4 w-4" aria-hidden />
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
                       </>
                     )
                   })()}
