@@ -59,7 +59,7 @@ export function buildQuickFabActions(opts: {
   const createCandidate = (): QuickFabAction => ({
     id: 'create-candidate',
     title: 'Create Candidate',
-    subtitle: 'Add to your pool, then assign to roles',
+    subtitle: 'Details, then pick an open role',
     icon: UserPlus,
     iconBgClass: iconAssign,
     onSelect: done(() => navigate('/candidates?new=1')),

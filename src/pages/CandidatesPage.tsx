@@ -293,7 +293,7 @@ export function CandidatesPage() {
   })
 
   const createCandidateMutation = useMutation({
-    mutationFn: async (mode: 'create_only' | 'create_and_assign') => {
+    mutationFn: async () => {
       if (!supabase || !uid) throw new Error('Not signed in')
       const nm = newName.trim()
       if (!nm) throw new Error('Name is required')
@@ -310,19 +310,14 @@ export function CandidatesPage() {
         .select('id')
         .single()
       if (error) throw error
-      return { id: data.id as string, mode }
+      return { id: data.id as string }
     },
-    onSuccess: async ({ id, mode }) => {
+    onSuccess: async ({ id }) => {
       success('Candidate created')
       await qc.invalidateQueries({ queryKey: ['all-candidates'] })
-      if (mode === 'create_and_assign') {
-        setNewCandidateStep('assign')
-        setNewCandidateIdForAssign(id)
-        setNewCandidateAssignPositionId('')
-        return
-      }
-      closeNewCandidateModal()
-      navigate(`/candidates/${id}`)
+      setNewCandidateStep('assign')
+      setNewCandidateIdForAssign(id)
+      setNewCandidateAssignPositionId('')
     },
     onError: (e: Error) => toastError(e.message),
   })
@@ -445,7 +440,7 @@ export function CandidatesPage() {
           if (createCandidateMutation.isPending || assignMutation.isPending) return
           closeNewCandidateModal()
         }}
-        title={newCandidateStep === 'form' ? 'New candidate' : 'Assign to role'}
+        title={newCandidateStep === 'form' ? 'New candidate' : 'Assign this role'}
         size="md"
       >
         {newCandidateStep === 'form' ? (
@@ -453,11 +448,11 @@ export function CandidatesPage() {
             className="flex flex-col gap-3"
             onSubmit={(e) => {
               e.preventDefault()
-              void createCandidateMutation.mutateAsync('create_only')
+              void createCandidateMutation.mutateAsync()
             }}
           >
             <p className="text-ink-muted text-sm dark:text-stone-400">
-              Creates a person in your pool. Assign them to roles from this list or a position page.
+              Enter their details, then choose which open role to add them to (first pipeline stage).
             </p>
             <label className="flex flex-col gap-1 text-sm font-medium">
               Full name
@@ -502,27 +497,19 @@ export function CandidatesPage() {
                 Cancel
               </button>
               <button
-                type="button"
-                disabled={createCandidateMutation.isPending || !newName.trim()}
-                className="border-line rounded-full border px-4 py-2 text-sm font-semibold dark:border-line-dark dark:hover:bg-stone-800"
-                onClick={() => void createCandidateMutation.mutateAsync('create_and_assign')}
-              >
-                {createCandidateMutation.isPending ? 'Saving…' : 'Create & Assign'}
-              </button>
-              <button
                 type="submit"
-                disabled={createCandidateMutation.isPending}
+                disabled={createCandidateMutation.isPending || !newName.trim()}
                 className="rounded-full bg-[#9b3e20] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-orange-600"
               >
-                {createCandidateMutation.isPending ? 'Saving…' : 'Create'}
+                {createCandidateMutation.isPending ? 'Saving…' : 'Continue'}
               </button>
             </div>
           </form>
         ) : (
           <div className="flex flex-col gap-4">
             <p className="text-ink-muted text-sm dark:text-stone-400">
-              <span className="text-ink font-semibold dark:text-stone-200">{newName.trim() || 'Candidate'}</span> is in
-              your pool. Choose an open role to add them to the pipeline (first stage).
+              <span className="text-ink font-semibold dark:text-stone-200">{newName.trim() || 'Candidate'}</span> was
+              added. Pick an open role to place them on the pipeline (first stage).
             </p>
             {positionsForAssignQ.isLoading ? (
               <p className="text-sm">Loading roles…</p>
