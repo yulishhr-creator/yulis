@@ -15,6 +15,7 @@ import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
 import { usePipelineHeadlineStats } from '@/hooks/usePipelineHeadlineStats'
 import { CompanyClientAvatar } from '@/components/companies/CompanyClientAvatar'
 import { CreatePositionWizard } from '@/pages/CreatePositionWizard'
+import { mapUserFacingError } from '@/lib/errors'
 
 /** Tenure on role: days under a week, else rounded weeks (e.g. 5d, 2w). */
 function formatCandidateAge(createdAt: string): string {
@@ -412,7 +413,7 @@ export function PositionsPage() {
         headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0e315a' },
         body: JSON.stringify({
           sessionId: '0e315a',
-          runId: 'pre-fix',
+          runId: error ? 'pre-fix' : 'post-fix',
           hypothesisId: 'H1',
           location: 'PositionsPage.tsx:positionsQ.queryFn',
           message: 'positions supabase select finished',
@@ -595,7 +596,7 @@ export function PositionsPage() {
       headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0e315a' },
       body: JSON.stringify({
         sessionId: '0e315a',
-        runId: 'pre-fix',
+        runId: positionsQ.isError ? 'pre-fix' : 'post-fix',
         hypothesisId: 'H2-H5',
         location: 'PositionsPage.tsx:agentDebugEffect',
         message: 'positions page derived state',
@@ -709,6 +710,10 @@ export function PositionsPage() {
 
       {positionsQ.isLoading ? (
         <PageSpinner message="Loading roles…" />
+      ) : positionsQ.isError ? (
+        <p className="text-ink-muted rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm dark:border-red-900/40 dark:bg-red-950/25" role="alert">
+          Could not load roles. {mapUserFacingError(positionsQ.error)}
+        </p>
       ) : positions.length === 0 ? (
         <p className="text-ink-muted text-sm">No positions yet.</p>
       ) : filteredPositions.length === 0 ? (
