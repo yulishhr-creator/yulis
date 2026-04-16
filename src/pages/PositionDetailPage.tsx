@@ -497,8 +497,6 @@ export function PositionDetailPage() {
   const [linkedinSearchUrl, setLinkedinSearchUrl] = useState('')
   const [positionSetupOpen, setPositionSetupOpen] = useState(false)
   const [status, setStatus] = useState('active')
-  const [activityFilter, setActivityFilter] = useState<'all' | 'milestones'>('all')
-  const [noteText, setNoteText] = useState('')
   const [shareOpen, setShareOpen] = useState(false)
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const [shareChannelOpen, setShareChannelOpen] = useState(false)
@@ -1117,29 +1115,6 @@ export function PositionDetailPage() {
     onError: (e: Error) => toastError(e.message),
   })
 
-  const addNote = useMutation({
-    mutationFn: async () => {
-      if (!noteText.trim()) throw new Error('Enter a note')
-      const positionCandidateId = highlightCandidate
-        ? ((candidatesQ.data ?? []).find((r) => nestedCandidate(r.candidates)?.id === highlightCandidate)?.id ?? null)
-        : null
-      await logActivityEvent(supabase!, user!.id, {
-        event_type: 'note_added',
-        position_id: id!,
-        candidate_id: highlightCandidate || null,
-        position_candidate_id: positionCandidateId,
-        title: 'Note',
-        subtitle: noteText.trim(),
-      })
-    },
-    onSuccess: async () => {
-      setNoteText('')
-      success('Note saved')
-      await qc.invalidateQueries({ queryKey: ['position-activity', id] })
-    },
-    onError: (e: Error) => toastError(e.message),
-  })
-
   const addDrawerComment = useMutation({
     mutationFn: async (payload: { text: string; candidateId: string; positionCandidateId: string }) => {
       const t = payload.text.trim()
@@ -1340,26 +1315,11 @@ export function PositionDetailPage() {
     window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
   }
 
-  const filteredActivity = useMemo(() => {
-    const rows = activityQ.data ?? []
-    if (activityFilter === 'milestones') {
-      return rows.filter((r) =>
-        [
-          'candidate_reached_critical_stage',
-          'candidate_created',
-          'position_status_changed',
-          'candidate_outcome_changed',
-          'candidate_status_changed',
-        ].includes(r.event_type),
-      )
-    }
-    return rows
-  }, [activityQ.data, activityFilter])
-
   const activityByDay = useMemo(() => {
+    const rows = activityQ.data ?? []
     const groups: { dayKey: string; dayLabel: string; rows: ActivityRow[] }[] = []
     const indexByKey = new Map<string, number>()
-    for (const a of filteredActivity) {
+    for (const a of rows) {
       const d = new Date(a.created_at)
       const dayKey = format(d, 'yyyy-MM-dd')
       const dayLabel = format(d, 'EEEE, MMM d, yyyy')
@@ -1372,7 +1332,7 @@ export function PositionDetailPage() {
       groups[idx]!.rows.push(a)
     }
     return groups
-  }, [filteredActivity])
+  }, [activityQ.data])
 
   const terminalPosition = status === 'succeeded' || status === 'cancelled'
 
@@ -3312,62 +3272,6 @@ export function PositionDetailPage() {
 
       {tab === 'activity' ? (
         <section className="space-y-5">
-          <div className="rounded-2xl border border-stone-200/80 bg-white/70 p-4 dark:border-line-dark dark:bg-stone-900/45">
-            <h2 className="text-stitch-on-surface text-sm font-bold dark:text-stone-100">What you are seeing</h2>
-            <p className="text-ink-muted mt-2 text-sm dark:text-stone-400">
-              This is a chronological log of changes on this role — who moved in the pipeline, status updates, files, and
-              notes. Each card explains the type of event in plain language, then shows the technical detail we stored.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Activity filter">
-              <button
-                type="button"
-                onClick={() => setActivityFilter('all')}
-                className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                  activityFilter === 'all'
-                    ? 'bg-accent text-white'
-                    : 'border border-stone-200 bg-white/90 dark:border-stone-600 dark:bg-stone-900/60'
-                }`}
-              >
-                All activity
-              </button>
-              <button
-                type="button"
-                onClick={() => setActivityFilter('milestones')}
-                className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                  activityFilter === 'milestones'
-                    ? 'bg-accent text-white'
-                    : 'border border-stone-200 bg-white/90 dark:border-stone-600 dark:bg-stone-900/60'
-                }`}
-              >
-                Highlights only
-              </button>
-            </div>
-          </div>
-
-          <div className="border-line rounded-2xl border border-stone-200/80 bg-white/70 p-4 dark:border-line-dark dark:bg-stone-900/45">
-            <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100">Add a note</h3>
-            <p className="text-ink-muted mt-1 text-xs dark:text-stone-500">
-              {highlightCandidate && candidateNameById.get(highlightCandidate)
-                ? `This note will be linked to ${candidateNameById.get(highlightCandidate)} (candidate panel is open).`
-                : 'Saved as a role note. Open a candidate from the Candidates tab to attach notes to a person.'}
-            </p>
-            <textarea
-              value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
-              rows={3}
-              placeholder="What happened? What should the team know?"
-              className="border-line mt-2 w-full rounded-xl border px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/50"
-            />
-            <button
-              type="button"
-              className="bg-accent text-stone-50 mt-2 rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-50"
-              disabled={addNote.isPending}
-              onClick={() => void addNote.mutateAsync()}
-            >
-              Save note
-            </button>
-          </div>
-
           <div className="space-y-6">
             {activityByDay.length === 0 ? (
               <p className="text-ink-muted text-sm">No activity yet.</p>
