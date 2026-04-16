@@ -496,7 +496,6 @@ export function PositionDetailPage() {
   const [welcome3, setWelcome3] = useState('')
   const [linkedinSearchUrl, setLinkedinSearchUrl] = useState('')
   const [positionSetupOpen, setPositionSetupOpen] = useState(false)
-  const [candStatusFilter, setCandStatusFilter] = useState<Set<string>>(() => new Set(['in_progress']))
   const [status, setStatus] = useState('active')
   const [activityFilter, setActivityFilter] = useState<'all' | 'milestones'>('all')
   const [noteText, setNoteText] = useState('')
@@ -1377,10 +1376,11 @@ export function PositionDetailPage() {
 
   const terminalPosition = status === 'succeeded' || status === 'cancelled'
 
-  const filteredCandidates = useMemo(
-    () => (candidatesQ.data ?? []).filter((c) => candStatusFilter.has(c.status as string)),
-    [candidatesQ.data, candStatusFilter],
-  )
+  const rejectedWithdrawnCandidates = useMemo(() => {
+    return (candidatesQ.data ?? [])
+      .filter((c) => c.status === 'rejected' || c.status === 'withdrawn')
+      .sort((a, b) => new Date(b.created_at as string).getTime() - new Date(a.created_at as string).getTime())
+  }, [candidatesQ.data])
 
   const pipelineKanbanCandidates = useMemo(
     () => (candidatesQ.data ?? []).filter((c) => c.status === 'in_progress'),
@@ -1448,17 +1448,6 @@ export function PositionDetailPage() {
     if (!highlightCandidate) return null
     return (candidatesQ.data ?? []).find((r) => nestedCandidate(r.candidates)?.id === highlightCandidate) ?? null
   }, [candidatesQ.data, highlightCandidate])
-
-  function toggleCandStatusFilter(key: string) {
-    setCandStatusFilter((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) {
-        if (next.size <= 1) return prev
-        next.delete(key)
-      } else next.add(key)
-      return next
-    })
-  }
 
   function copyWelcomeSnippet(text: string, label: string) {
     if (!text.trim()) {
@@ -1680,40 +1669,82 @@ export function PositionDetailPage() {
     return last.replace(/\s+/g, '_')
   }
 
-  function renderWithdrawnCandidateRow(c: PositionCandidateJunction) {
+  function renderRejectedWithdrawnCard(c: PositionCandidateJunction) {
     const prof = nestedCandidate(c.candidates)
     const candId = prof?.id
     const stageName = nestedStageName(c.position_stages)
     const displayName = prof?.full_name ?? 'Unnamed'
+    const isRejected = c.status === 'rejected'
+    const when = format(new Date(c.created_at as string), 'MMM d, yyyy')
     return (
       <li
         key={c.id}
         id={candId ? `cand-${candId}` : `pc-${c.id}`}
-        className="border-line rounded-xl border bg-white/60 p-3 dark:border-line-dark dark:bg-stone-900/40"
+        className={`overflow-hidden rounded-2xl border shadow-sm transition hover:shadow-md dark:shadow-none ${
+          isRejected
+            ? 'border-rose-200/90 bg-gradient-to-br from-rose-50/95 via-white to-white dark:border-rose-900/55 dark:from-rose-950/35 dark:via-stone-900 dark:to-stone-950'
+            : 'border-stone-200/90 bg-gradient-to-br from-stone-100/90 via-white to-white dark:border-stone-600 dark:from-stone-900 dark:via-stone-900 dark:to-stone-950'
+        }`}
       >
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <Link
-            to={`?tab=candidates&candidate=${candId ?? ''}`}
-            className="text-accent min-w-0 flex-1 font-semibold hover:underline dark:text-orange-300"
+        <div className="flex gap-3 p-4">
+          <div
+            className={`mt-1.5 h-10 w-10 shrink-0 rounded-xl border flex items-center justify-center ${
+              isRejected
+                ? 'border-rose-200/80 bg-rose-100 text-rose-700 dark:border-rose-800/60 dark:bg-rose-950/50 dark:text-rose-200'
+                : 'border-stone-200/80 bg-stone-100 text-stone-600 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300'
+            }`}
+            aria-hidden
           >
-            {displayName}
-            <ChevronRight className="ml-1 inline h-4 w-4 opacity-50" aria-hidden />
-          </Link>
-          <button
-            type="button"
-            onClick={() => {
-              if (window.confirm(`Withdraw ${displayName} from this role?`)) void withdrawFromRole.mutateAsync(c.id)
-            }}
-            className="text-ink-muted hover:text-red-600 flex shrink-0 items-center gap-1 text-xs"
-          >
-            <Trash2 className="h-3.5 w-3.5" aria-hidden />
-            Withdraw
-          </button>
+            {isRejected ? <Ban className="h-5 w-5" /> : <Pause className="h-5 w-5" />}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <Link
+                  to={`?tab=candidates&candidate=${candId ?? ''}`}
+                  className="text-stitch-on-surface inline-flex min-w-0 items-center gap-1 text-base font-bold tracking-tight hover:text-[#9b3e20] dark:text-stone-100 dark:hover:text-orange-300"
+                >
+                  <span className="truncate">{displayName}</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 opacity-50" aria-hidden />
+                </Link>
+                <p className="text-ink-muted mt-1 text-xs leading-relaxed dark:text-stone-400">
+                  <span className="font-semibold text-stone-600 dark:text-stone-300">{stageName}</span>
+                  <span aria-hidden className="mx-1.5">
+                    ·
+                  </span>
+                  {ASSIGNMENT_SOURCE_LABELS[normalizeAssignmentSource(c.source)]}
+                  <span aria-hidden className="mx-1.5">
+                    ·
+                  </span>
+                  Added {when}
+                </p>
+              </div>
+              <span
+                className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide ${
+                  isRejected
+                    ? 'border-rose-300/80 bg-rose-100 text-rose-900 dark:border-rose-800 dark:bg-rose-950/60 dark:text-rose-100'
+                    : 'border-stone-300/80 bg-stone-200/80 text-stone-800 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-200'
+                }`}
+              >
+                {formatAssignmentStatus(c.status as string)}
+              </span>
+            </div>
+            {c.status === 'rejected' ? (
+              <div className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t border-stone-200/70 pt-3 dark:border-stone-600/60">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm(`Withdraw ${displayName} from this role?`)) void withdrawFromRole.mutateAsync(c.id)
+                  }}
+                  className="text-ink-muted hover:text-red-600 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold transition hover:bg-red-50 dark:hover:bg-red-950/30 dark:hover:text-rose-300"
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                  Mark withdrawn
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
-        <p className="text-ink-muted mt-1 text-xs">
-          {ASSIGNMENT_SOURCE_LABELS[normalizeAssignmentSource(c.source)]} · {stageName} ·{' '}
-          {formatAssignmentStatus(c.status as string)}
-        </p>
       </li>
     )
   }
@@ -2224,32 +2255,14 @@ export function PositionDetailPage() {
 
             <section className="border-line rounded-2xl border bg-white/50 p-4 shadow-sm dark:border-line-dark dark:bg-stone-900/40">
               <h3 className={pipelineSubsectionHeadingClass}>Rejected &amp; withdrawn</h3>
-              <p className="text-ink-muted px-1 text-xs dark:text-stone-500">Filter the list — same tools as before for these assignments.</p>
-              <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Filter candidates by status">
-                {(
-                  [
-                    { id: 'in_progress', label: 'In progress' },
-                    { id: 'rejected', label: 'Rejected' },
-                    { id: 'withdrawn', label: 'Withdrawn' },
-                  ] as const
-                ).map(({ id: fid, label }) => (
-                  <button
-                    key={fid}
-                    type="button"
-                    onClick={() => toggleCandStatusFilter(fid)}
-                    className={`rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                      candStatusFilter.has(fid) ? 'bg-accent text-white' : 'border border-stone-200 bg-white/90 dark:border-stone-600 dark:bg-stone-900/60'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <p className="text-ink-muted mt-1 px-1 text-xs dark:text-stone-500">
+                Candidates who are no longer in progress on this role — most recent first.
+              </p>
               <ul className="mt-4 space-y-3">
-                {filteredCandidates.filter((c) => c.status !== 'in_progress').length === 0 ? (
-                  <li className="text-ink-muted text-sm">No rejected or withdrawn assignments with current filters.</li>
+                {rejectedWithdrawnCandidates.length === 0 ? (
+                  <li className="text-ink-muted text-sm">No rejected or withdrawn candidates on this role yet.</li>
                 ) : (
-                  filteredCandidates.filter((c) => c.status !== 'in_progress').map(renderWithdrawnCandidateRow)
+                  rejectedWithdrawnCandidates.map(renderRejectedWithdrawnCard)
                 )}
               </ul>
             </section>
