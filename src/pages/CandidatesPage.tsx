@@ -251,7 +251,7 @@ export function CandidatesPage() {
           candidate_id: candidateId,
           position_stage_id: firstStageId,
           status: 'in_progress',
-          source: 'sourcing',
+          // Omit `source`: DB default is `app` (legacy) or `sourcing` (after migration 021).
         })
         .select('id')
         .single()
