@@ -4,11 +4,8 @@ import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } 
 import * as XLSX from 'xlsx'
 import {
   Check,
-  CheckCircle,
   CheckCircle2,
   X,
-  PartyPopper,
-  FileText,
   Link2,
   Trash2,
   ChevronRight,
@@ -183,21 +180,6 @@ function formatIlsAmountDisplay(rawDigits: string): string {
   const n = Number(t)
   if (!Number.isFinite(n)) return rawDigits.trim()
   return `₪${n.toLocaleString('en-US')}`
-}
-
-function activityKindCopy(eventType: string): { label: string; explainer: string } {
-  const map: Record<string, { label: string; explainer: string }> = {
-    candidate_created: { label: 'Candidate added', explainer: 'Someone was added to this role.' },
-    candidate_stage_changed: { label: 'Moved to a stage', explainer: 'Pipeline stage updated for a candidate.' },
-    candidate_status_changed: { label: 'Assignment status', explainer: 'In progress, rejected, or withdrawn changed.' },
-    candidate_outcome_changed: { label: 'Outcome', explainer: 'Final outcome updated for a candidate.' },
-    candidate_reached_critical_stage: { label: 'Critical stage', explainer: 'A candidate reached an important step in the funnel.' },
-    position_status_changed: { label: 'Role status', explainer: 'This job was set to active, on hold, succeeded, or cancelled.' },
-    candidate_file_uploaded: { label: 'File', explainer: 'A document was attached to a candidate.' },
-    note_added: { label: 'Your note', explainer: 'A manual note you logged on this role.' },
-    candidate_tag: { label: 'Tag', explainer: 'A label on this candidate for this role.' },
-  }
-  return map[eventType] ?? { label: 'Event', explainer: 'Something changed on this role.' }
 }
 
 function DetailHoverField({
@@ -1651,6 +1633,34 @@ export function PositionDetailPage() {
           dot: 'bg-orange-500 shadow-sm dark:bg-orange-400',
           pill: 'border-orange-200/90 bg-orange-50 text-orange-950 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-100',
           pillLabel: 'Milestone',
+        }
+      case 'note_added':
+        return {
+          rail: 'bg-slate-200/90 dark:bg-slate-800/60',
+          dot: 'bg-slate-500 shadow-sm dark:bg-slate-400',
+          pill: 'border-slate-200/90 bg-slate-50 text-slate-900 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-100',
+          pillLabel: 'Note',
+        }
+      case 'candidate_tag':
+        return {
+          rail: 'bg-fuchsia-200/90 dark:bg-fuchsia-900/40',
+          dot: 'bg-fuchsia-500 shadow-sm dark:bg-fuchsia-400',
+          pill: 'border-fuchsia-200/90 bg-fuchsia-50 text-fuchsia-950 dark:border-fuchsia-800 dark:bg-fuchsia-950/35 dark:text-fuchsia-100',
+          pillLabel: 'Tag',
+        }
+      case 'position_status_changed':
+        return {
+          rail: 'bg-teal-200/90 dark:bg-teal-900/45',
+          dot: 'bg-teal-600 shadow-sm dark:bg-teal-400',
+          pill: 'border-teal-200/90 bg-teal-50 text-teal-950 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-100',
+          pillLabel: 'Role',
+        }
+      case 'candidate_outcome_changed':
+        return {
+          rail: 'bg-indigo-200/90 dark:bg-indigo-900/45',
+          dot: 'bg-indigo-500 shadow-sm dark:bg-indigo-400',
+          pill: 'border-indigo-200/90 bg-indigo-50 text-indigo-950 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-100',
+          pillLabel: 'Outcome',
         }
       default:
         return {
@@ -3354,40 +3364,69 @@ export function PositionDetailPage() {
                   <h3 className="text-ink border-b border-stone-200/90 pb-2 text-xs font-extrabold tracking-wide uppercase dark:border-stone-600 dark:text-stone-200">
                     {group.dayLabel}
                   </h3>
-                  <ul className="mt-3 space-y-3">
+                  <ul className="mt-4 space-y-0">
                     {group.rows.map((a) => {
-                      const kind = activityKindCopy(a.event_type)
+                      const deco = timelineKindStyles(a.event_type)
+                      const primary =
+                        a.event_type === 'candidate_status_changed'
+                          ? formatActivityArrowPath(a.subtitle)
+                          : a.event_type === 'candidate_stage_changed'
+                            ? formatActivityArrowPath(a.subtitle)
+                            : a.title
+                      const statusTail =
+                        a.event_type === 'candidate_status_changed'
+                          ? assignmentStatusPill(tailStatusFromSubtitle(a.subtitle))
+                          : null
+                      const pillLabel =
+                        a.event_type === 'candidate_status_changed' && statusTail
+                          ? statusTail.label
+                          : deco.pillLabel
+                      const pillClass =
+                        a.event_type === 'candidate_status_changed' && statusTail
+                          ? statusTail.className
+                          : deco.pill
                       const whoLabel =
                         a.candidate_id != null ? (candidateNameById.get(a.candidate_id) ?? 'Candidate') : null
+                      const showSubtitle =
+                        Boolean(a.subtitle?.trim()) &&
+                        a.event_type !== 'candidate_status_changed' &&
+                        a.event_type !== 'candidate_stage_changed'
                       return (
-                        <li
-                          key={a.id}
-                          className="border-line flex gap-3 rounded-2xl border border-stone-200/80 bg-white/80 p-3 dark:border-stone-600 dark:bg-stone-900/50"
-                        >
-                          <ActivityIcon type={a.event_type} />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-accent text-[11px] font-extrabold uppercase tracking-wide dark:text-orange-300">
-                              {kind.label}
+                        <li key={a.id} className="relative flex gap-3 pb-7 last:pb-0">
+                          <div className="flex flex-col items-center">
+                            <span className={`z-1 h-4 w-4 rounded-full ${deco.dot}`} />
+                            <span className={`mt-0.5 w-0.5 flex-1 min-h-6 rounded-full ${deco.rail}`} />
+                          </div>
+                          <div className="min-w-0 flex-1 pt-0.5">
+                            <p className="text-stitch-on-surface text-sm font-semibold leading-snug dark:text-stone-100">
+                              {primary}
                             </p>
-                            <p className="text-ink-muted text-xs dark:text-stone-500">{kind.explainer}</p>
-                            <p className="text-stitch-on-surface mt-1 text-sm font-semibold dark:text-stone-100">{a.title}</p>
-                            {a.subtitle ? (
-                              <p className="text-ink-muted mt-0.5 whitespace-pre-wrap text-sm dark:text-stone-400">{a.subtitle}</p>
+                            {showSubtitle ? (
+                              <p className="text-ink-muted mt-1 whitespace-pre-wrap text-xs leading-relaxed dark:text-stone-400">
+                                {a.subtitle}
+                              </p>
                             ) : null}
-                            <div className="text-ink-muted mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <span
+                                className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${pillClass}`}
+                              >
+                                {pillLabel}
+                              </span>
+                              <time className="text-ink-muted text-xs tabular-nums" dateTime={a.created_at}>
+                                {format(new Date(a.created_at), 'MMM d, yyyy · h:mm a')}
+                              </time>
+                            </div>
+                            <div className="text-ink-muted mt-2 text-xs">
                               {a.candidate_id ? (
                                 <Link
                                   to={`/candidates/${a.candidate_id}`}
                                   className="font-medium text-[#006384] hover:underline dark:text-cyan-300"
                                 >
-                                  About: {whoLabel}
+                                  {whoLabel}
                                 </Link>
                               ) : (
-                                <span>Role-wide event</span>
+                                <span>Role-wide</span>
                               )}
-                              <time className="tabular-nums" dateTime={a.created_at}>
-                                {format(new Date(a.created_at), 'p')}
-                              </time>
                             </div>
                           </div>
                         </li>
@@ -3642,15 +3681,3 @@ export function PositionDetailPage() {
   )
 }
 
-function ActivityIcon({ type }: { type: string }) {
-  const cls = 'mt-0.5 h-8 w-8 shrink-0 rounded-lg bg-stone-100 p-1.5 dark:bg-stone-800'
-  if (
-    type === 'candidate_outcome_changed' ||
-    type === 'candidate_status_changed' ||
-    type === 'position_status_changed'
-  )
-    return <PartyPopper className={cls} aria-hidden />
-  if (type === 'candidate_reached_critical_stage') return <CheckCircle className={cls} aria-hidden />
-  if (type === 'candidate_file_uploaded') return <FileText className={cls} aria-hidden />
-  return <ChevronRight className={cls} aria-hidden />
-}
