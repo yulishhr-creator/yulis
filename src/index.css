@@ -1,8 +1,7 @@
 @import 'tailwindcss';
 
 @theme {
-  /* Geometric sans (matches bold display titles like “CUSTOMER SUCCESS”) */
-  --font-sans: 'Montserrat', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
 
   --color-paper: #faf6f2;
   --color-paper-dark: #16151c;
