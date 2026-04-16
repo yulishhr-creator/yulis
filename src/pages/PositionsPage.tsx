@@ -16,6 +16,7 @@ import { usePipelineHeadlineStats } from '@/hooks/usePipelineHeadlineStats'
 import { CompanyClientAvatar } from '@/components/companies/CompanyClientAvatar'
 import { CreatePositionWizard } from '@/pages/CreatePositionWizard'
 import { mapUserFacingError } from '@/lib/errors'
+import { isMissingArchivedAtColumnError } from '@/lib/postgrestErrors'
 
 /** Tenure on role: days under a week, else rounded weeks (e.g. 5d, 2w). */
 function formatCandidateAge(createdAt: string): string {
@@ -388,10 +389,7 @@ export function PositionsPage() {
     queryKey: ['positions', user?.id],
     enabled: Boolean(supabase && user),
     queryFn: async () => {
-      const { data, error } = await supabase!
-        .from('positions')
-        .select(
-          `
+      const selectWithArchive = `
           id, title, status, company_id, created_at, updated_at, opened_at,
           companies ( name ),
           position_candidates (
@@ -402,33 +400,38 @@ export function PositionsPage() {
             position_stages ( name ),
             candidates ( id, full_name, deleted_at )
           )
-        `,
-        )
+        `
+      const selectWithoutArchive = `
+          id, title, status, company_id, created_at, updated_at, opened_at,
+          companies ( name ),
+          position_candidates (
+            id,
+            status,
+            created_at,
+            position_stages ( name ),
+            candidates ( id, full_name, deleted_at )
+          )
+        `
+      const first = await supabase!
+        .from('positions')
+        .select(selectWithArchive)
         .eq('user_id', user!.id)
         .is('deleted_at', null)
         .order('updated_at', { ascending: false })
-      // #region agent log
-      fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0e315a' },
-        body: JSON.stringify({
-          sessionId: '0e315a',
-          runId: error ? 'pre-fix' : 'post-fix',
-          hypothesisId: 'H1',
-          location: 'PositionsPage.tsx:positionsQ.queryFn',
-          message: 'positions supabase select finished',
-          data: {
-            hasError: Boolean(error),
-            errorCode: error?.code ?? null,
-            errorMessage: error?.message ?? null,
-            rowCount: Array.isArray(data) ? data.length : null,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {})
-      // #endregion
+      let data = first.data as PositionListItem[] | null
+      let error = first.error
+      if (error && isMissingArchivedAtColumnError(error)) {
+        const second = await supabase!
+          .from('positions')
+          .select(selectWithoutArchive)
+          .eq('user_id', user!.id)
+          .is('deleted_at', null)
+          .order('updated_at', { ascending: false })
+        data = second.data as PositionListItem[] | null
+        error = second.error
+      }
       if (error) throw error
-      return (data ?? []) as unknown as PositionListItem[]
+      return data ?? []
     },
   })
 
@@ -581,60 +584,6 @@ export function PositionsPage() {
       { replace: true },
     )
   }, [companyFromUrl, tabCompanies, positionsQ.isLoading, setSearchParams])
-
-  useEffect(() => {
-    const err = positionsQ.error
-    const errMsg = err instanceof Error ? err.message : err != null ? String(err) : null
-    const rows = positionsQ.data
-    const posLen = rows?.length ?? 0
-    const sampleCompanyIds = (rows ?? []).slice(0, 8).map((p) => p.company_id)
-    const scopedMatch =
-      scopedCompanyId != null ? (rows ?? []).filter((p) => p.company_id === scopedCompanyId).length : null
-    // #region agent log
-    fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0e315a' },
-      body: JSON.stringify({
-        sessionId: '0e315a',
-        runId: positionsQ.isError ? 'pre-fix' : 'post-fix',
-        hypothesisId: 'H2-H5',
-        location: 'PositionsPage.tsx:agentDebugEffect',
-        message: 'positions page derived state',
-        data: {
-          positionsStatus: positionsQ.status,
-          positionsFetchStatus: positionsQ.fetchStatus,
-          positionsIsLoading: positionsQ.isLoading,
-          positionsIsError: positionsQ.isError,
-          positionsErrorMessage: errMsg,
-          positionsLen: posLen,
-          filteredLen: filteredPositions.length,
-          companiesLen: companies.length,
-          companyFromUrl,
-          scopedCompanyId,
-          urlInTabCompanies: companyFromUrl != null ? tabCompanies.some((c) => c.id === companyFromUrl) : null,
-          tabCompaniesCount: tabCompanies.length,
-          searchTextLen: searchText.trim().length,
-          scopedMatchCount: scopedMatch,
-          samplePositionCompanyIds: sampleCompanyIds,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {})
-    // #endregion
-  }, [
-    positionsQ.status,
-    positionsQ.fetchStatus,
-    positionsQ.isLoading,
-    positionsQ.isError,
-    positionsQ.error,
-    positionsQ.data,
-    filteredPositions,
-    companies.length,
-    companyFromUrl,
-    scopedCompanyId,
-    tabCompanies,
-    searchText,
-  ])
 
   return (
     <div className="flex flex-col gap-6">

@@ -28,6 +28,7 @@ import { differenceInCalendarDays, format } from 'date-fns'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
+import { isMissingArchivedAtColumnError } from '@/lib/postgrestErrors'
 import { normalizeEmail, normalizePhone } from '@/lib/normalize'
 import { addDaysIso, formatDue } from '@/lib/dates'
 import { Modal } from '@/components/ui/Modal'
@@ -410,10 +411,7 @@ export function PositionDetailPage() {
     networkMode: 'always',
     enabled: Boolean(supabase && user && id),
     queryFn: async () => {
-      const { data, error } = await supabase!
-        .from('position_candidates')
-        .select(
-          `
+      const selectWithArchive = `
           id,
           candidate_id,
           position_stage_id,
@@ -423,14 +421,38 @@ export function PositionDetailPage() {
           archived_at,
           candidates ( id, full_name, email, phone, linkedin, salary_expectation, resume_storage_path, profile_photo_storage_path, deleted_at ),
           position_stages ( name )
-        `,
-        )
+        `
+      const selectWithoutArchive = `
+          id,
+          candidate_id,
+          position_stage_id,
+          status,
+          source,
+          created_at,
+          candidates ( id, full_name, email, phone, linkedin, salary_expectation, resume_storage_path, profile_photo_storage_path, deleted_at ),
+          position_stages ( name )
+        `
+      const first = await supabase!
+        .from('position_candidates')
+        .select(selectWithArchive)
         .eq('position_id', id!)
         .eq('user_id', user!.id)
         .is('archived_at', null)
         .order('created_at', { ascending: false })
+      let data = first.data as PositionCandidateJunction[] | null
+      let error = first.error
+      if (error && isMissingArchivedAtColumnError(error)) {
+        const second = await supabase!
+          .from('position_candidates')
+          .select(selectWithoutArchive)
+          .eq('position_id', id!)
+          .eq('user_id', user!.id)
+          .order('created_at', { ascending: false })
+        data = second.data as PositionCandidateJunction[] | null
+        error = second.error
+      }
       if (error) throw error
-      const rows = (data ?? []) as PositionCandidateJunction[]
+      const rows = data ?? []
       return rows.filter((row) => {
         const c = nestedCandidate(row.candidates)
         return c == null || !c.deleted_at

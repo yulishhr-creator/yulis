@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
+import { isMissingArchivedAtColumnError } from '@/lib/postgrestErrors'
 
 export type PipelineHeadlineStats = {
   activeCandidateCount: number
@@ -34,13 +35,21 @@ export function usePipelineHeadlineStats(companyId?: string | null) {
       if (posIds.length === 0) {
         return { activeCandidateCount: 0, activePositionCount: 0 }
       }
-      const { data: rows, error: cErr } = await supabase!
+      let { data: rows, error: cErr } = await supabase!
         .from('position_candidates')
         .select('position_id')
         .eq('user_id', uid!)
         .in('status', ['in_progress'])
         .is('archived_at', null)
         .in('position_id', posIds)
+      if (cErr && isMissingArchivedAtColumnError(cErr)) {
+        ;({ data: rows, error: cErr } = await supabase!
+          .from('position_candidates')
+          .select('position_id')
+          .eq('user_id', uid!)
+          .in('status', ['in_progress'])
+          .in('position_id', posIds))
+      }
       if (cErr) throw cErr
       const list = rows ?? []
       const activeCandidateCount = list.length

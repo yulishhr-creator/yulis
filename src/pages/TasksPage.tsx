@@ -7,6 +7,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '@/auth/useAuth'
 import { useDashboardTaskKpis } from '@/hooks/useDashboardTaskKpis'
 import { getSupabase } from '@/lib/supabase'
+import { isMissingArchivedAtColumnError } from '@/lib/postgrestErrors'
 import { formatDue } from '@/lib/dates'
 import { CompanyClientAvatar } from '@/components/companies/CompanyClientAvatar'
 import { Modal } from '@/components/ui/Modal'
@@ -287,7 +288,7 @@ export function TasksPage() {
     queryKey: ['dashboard-task-pcs', uid, newTaskPositionId],
     enabled: Boolean(supabase && uid && taskModalOpen && newTaskPositionId.trim()),
     queryFn: async () => {
-      const { data, error } = await supabase!
+      let { data, error } = await supabase!
         .from('position_candidates')
         .select('id, status, candidates ( id, full_name )')
         .eq('user_id', uid!)
@@ -295,6 +296,15 @@ export function TasksPage() {
         .eq('status', 'in_progress')
         .is('archived_at', null)
         .order('created_at', { ascending: false })
+      if (error && isMissingArchivedAtColumnError(error)) {
+        ;({ data, error } = await supabase!
+          .from('position_candidates')
+          .select('id, status, candidates ( id, full_name )')
+          .eq('user_id', uid!)
+          .eq('position_id', newTaskPositionId.trim())
+          .eq('status', 'in_progress')
+          .order('created_at', { ascending: false }))
+      }
       if (error) throw error
       return data ?? []
     },

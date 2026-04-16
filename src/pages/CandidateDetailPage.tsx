@@ -18,6 +18,7 @@ import {
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
+import { isMissingArchivedAtColumnError } from '@/lib/postgrestErrors'
 import { formatDateTime, formatDue } from '@/lib/dates'
 import { normalizeEmail, normalizePhone } from '@/lib/normalize'
 import { linkedinHref } from '@/lib/urls'
@@ -147,10 +148,7 @@ export function CandidateDetailPage() {
     queryKey: ['candidate-detail', id, uid],
     enabled: Boolean(supabase && uid && id),
     queryFn: async () => {
-      const { data, error } = await supabase!
-        .from('candidates')
-        .select(
-          `
+      const selectWithArchive = `
           id, full_name, email, phone, linkedin, location, current_title, years_exp, salary_expectation,
           notes, lead_source, status, created_at, updated_at, resume_storage_path,
           position_candidates (
@@ -163,12 +161,36 @@ export function CandidateDetailPage() {
             position_stages ( name ),
             positions ( id, title, status, companies ( name ) )
           )
-        `,
-        )
+        `
+      const selectWithoutArchive = `
+          id, full_name, email, phone, linkedin, location, current_title, years_exp, salary_expectation,
+          notes, lead_source, status, created_at, updated_at, resume_storage_path,
+          position_candidates (
+            id,
+            status,
+            source,
+            created_at,
+            position_stage_id,
+            position_stages ( name ),
+            positions ( id, title, status, companies ( name ) )
+          )
+        `
+      let { data, error } = await supabase!
+        .from('candidates')
+        .select(selectWithArchive)
         .eq('id', id!)
         .eq('user_id', uid!)
         .is('deleted_at', null)
         .maybeSingle()
+      if (error && isMissingArchivedAtColumnError(error)) {
+        ;({ data, error } = await supabase!
+          .from('candidates')
+          .select(selectWithoutArchive)
+          .eq('id', id!)
+          .eq('user_id', uid!)
+          .is('deleted_at', null)
+          .maybeSingle())
+      }
       if (error) throw error
       return data
     },
