@@ -1,7 +1,7 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Check, ChevronDown, GripVertical, ListFilter, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, GripVertical, ListFilter, Pencil, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
@@ -26,18 +26,108 @@ function defaultReminderDatetimeLocal(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-function toDatetimeLocalValue(iso: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
 type TaskStatus = 'open' | 'closed' | 'archived'
 
 function isTaskStatus(s: string): s is TaskStatus {
   return s === 'open' || s === 'closed' || s === 'archived'
+}
+
+function TaskDrawerEditableBlock({
+  label,
+  multiline,
+  editing,
+  draft,
+  onDraft,
+  onStart,
+  onCancel,
+  onSave,
+  display,
+  emptyHint,
+  disabled,
+}: {
+  label: string
+  multiline?: boolean
+  editing: boolean
+  draft: string
+  onDraft: (v: string) => void
+  onStart: () => void
+  onCancel: () => void
+  onSave: () => void
+  display: string
+  emptyHint?: string
+  disabled?: boolean
+}) {
+  const hasText = display.trim().length > 0
+  return (
+    <div className="mt-6 first:mt-0">
+      <p className="text-ink-muted text-xs font-bold uppercase tracking-wide">{label}</p>
+      <div className="group/tdf mt-2 flex min-h-8 flex-wrap items-start gap-2">
+        {editing ? (
+          <>
+            {multiline ? (
+              <textarea
+                value={draft}
+                onChange={(e) => onDraft(e.target.value)}
+                rows={5}
+                className="border-line text-ink min-h-[7rem] w-full min-w-0 flex-1 resize-y rounded-xl border bg-white px-3 py-2 text-sm dark:border-line-dark dark:bg-stone-900/50 dark:text-stone-100"
+                autoFocus
+              />
+            ) : (
+              <input
+                value={draft}
+                onChange={(e) => onDraft(e.target.value)}
+                className="border-line text-ink min-w-0 flex-1 rounded-xl border bg-white px-3 py-2 text-sm font-semibold dark:border-line-dark dark:bg-stone-900/50 dark:text-stone-100"
+                autoFocus
+              />
+            )}
+            <div className="flex shrink-0 gap-1 pt-0.5">
+              <button
+                type="button"
+                className="rounded-lg bg-emerald-600 p-2 text-white hover:bg-emerald-700 disabled:opacity-50"
+                aria-label={`Save ${label}`}
+                disabled={disabled}
+                onClick={onSave}
+              >
+                <Check className="h-4 w-4" aria-hidden />
+              </button>
+              <button
+                type="button"
+                className="border-line rounded-lg border bg-white p-2 dark:border-line-dark dark:bg-stone-800"
+                aria-label="Cancel"
+                disabled={disabled}
+                onClick={onCancel}
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="text-ink min-w-0 flex-1 text-sm leading-relaxed dark:text-stone-100">
+              {hasText ? (
+                multiline ? (
+                  <span className="whitespace-pre-wrap">{display}</span>
+                ) : (
+                  <span className="font-semibold">{display}</span>
+                )
+              ) : (
+                <span className="text-ink-muted">{emptyHint ?? '—'}</span>
+              )}
+            </div>
+            <button
+              type="button"
+              className="text-ink-muted shrink-0 rounded-lg p-2 opacity-0 transition hover:bg-stone-100 hover:text-ink group-hover/tdf:opacity-100 dark:hover:bg-stone-800 dark:hover:text-stone-100 disabled:cursor-not-allowed disabled:opacity-0"
+              aria-label={`Edit ${label}`}
+              disabled={disabled}
+              onClick={onStart}
+            >
+              <Pencil className="h-4 w-4" aria-hidden />
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  )
 }
 
 type TaskRow = {
@@ -91,9 +181,8 @@ export function TasksPage() {
 
   const [searchText, setSearchText] = useState('')
   const [selectedTask, setSelectedTask] = useState<TaskRow | null>(null)
-  const [drawerTitle, setDrawerTitle] = useState('')
-  const [drawerDescription, setDrawerDescription] = useState('')
-  const [drawerDueLocal, setDrawerDueLocal] = useState('')
+  const [drawerEdit, setDrawerEdit] = useState<null | 'title' | 'description' | 'notes'>(null)
+  const [drawerDraft, setDrawerDraft] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null)
   const tasksListOrderedRef = useRef<TaskRow[]>([])
@@ -282,9 +371,8 @@ export function TasksPage() {
 
   useEffect(() => {
     if (!selectedTask) return
-    setDrawerTitle(selectedTask.title)
-    setDrawerDescription(selectedTask.description ?? '')
-    setDrawerDueLocal(toDatetimeLocalValue(selectedTask.due_at))
+    setDrawerEdit(null)
+    setDrawerDraft('')
   }, [selectedTask?.id])
 
   useEffect(() => {
@@ -396,32 +484,17 @@ export function TasksPage() {
     onError: (e: Error) => toastError(e.message),
   })
 
-  const saveDrawerTaskMutation = useMutation({
-    mutationFn: async () => {
+  const patchTaskMutation = useMutation({
+    mutationFn: async (patch: { title?: string; description?: string | null; note_in_progress?: string | null }) => {
       if (!supabase || !uid || !selectedTask) throw new Error('No task')
-      let dueIso: string | null = null
-      if (drawerDueLocal.trim()) {
-        const t = new Date(drawerDueLocal).getTime()
-        if (Number.isNaN(t)) throw new Error('Invalid due date')
-        dueIso = new Date(drawerDueLocal).toISOString()
-      }
-      const { error } = await supabase
-        .from('tasks')
-        .update({
-          title: drawerTitle.trim() || 'Task',
-          description: drawerDescription.trim() ? drawerDescription.trim() : null,
-          due_at: dueIso,
-        })
-        .eq('id', selectedTask.id)
-        .eq('user_id', uid)
+      const { error } = await supabase.from('tasks').update(patch).eq('id', selectedTask.id).eq('user_id', uid)
       if (error) throw error
     },
-    onSuccess: async () => {
-      success('Task saved')
-      const nextDue = drawerDueLocal.trim() ? new Date(drawerDueLocal).toISOString() : null
-      const nextTitle = drawerTitle.trim() || 'Task'
-      const nextDesc = drawerDescription.trim() ? drawerDescription.trim() : null
-      setSelectedTask((prev) => (prev ? { ...prev, title: nextTitle, description: nextDesc, due_at: nextDue } : prev))
+    onSuccess: async (_d, patch) => {
+      success('Saved')
+      setDrawerEdit(null)
+      setDrawerDraft('')
+      setSelectedTask((prev) => (prev ? { ...prev, ...patch, updated_at: new Date().toISOString() } : prev))
       await qc.invalidateQueries({ queryKey: ['tasks-page'] })
       await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
       await qc.invalidateQueries({ queryKey: ['position-tasks'] })
@@ -838,184 +911,235 @@ export function TasksPage() {
             onClick={() => setSelectedTask(null)}
           />
           <motion.aside
-            className="border-line relative flex h-full w-full max-w-md flex-col border-l bg-white shadow-2xl dark:border-line-dark dark:bg-stone-900"
+            className="border-line relative flex h-full w-full max-w-lg flex-col border-l bg-white shadow-2xl dark:border-line-dark dark:bg-stone-900"
             initial={reduceMotion ? false : { x: '100%' }}
             animate={{ x: 0 }}
             transition={{ type: 'spring', stiffness: 380, damping: 34 }}
           >
-            <div className="border-line flex items-start justify-between gap-2 border-b px-4 py-4 dark:border-line-dark">
-              <h2 id="task-drawer-title" className="text-lg font-extrabold text-[#302e2b] dark:text-stone-100">
-                Edit task
-              </h2>
-              <button
-                type="button"
-                className="rounded-xl p-2 text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
-                onClick={() => setSelectedTask(null)}
-                aria-label="Close"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="flex min-h-0 flex-1 flex-col">
-              <div className="flex-1 overflow-y-auto px-4 py-4 text-sm">
-                <label className="flex flex-col gap-1 font-medium">
-                  <span className="text-ink-muted text-xs font-bold uppercase">Title</span>
-                  <input
-                    value={drawerTitle}
-                    onChange={(e) => setDrawerTitle(e.target.value)}
-                    className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                  />
-                </label>
+            {(() => {
+              const pos = selectedTask.positions as
+                | {
+                    id: string
+                    title: string
+                    companies: { id?: string; name?: string; avatar_url?: string | null } | null
+                  }
+                | null
+              const pcJoin = selectedTask.position_candidates as {
+                candidates: { id: string; full_name: string } | { id: string; full_name: string }[] | null
+              } | null
+              const candFromRole = nestedOne(pcJoin?.candidates ?? null)
+              const candPool = nestedOne(
+                selectedTask.candidates as { id: string; full_name: string } | { id: string; full_name: string }[] | null,
+              )
+              const cand = candFromRole ?? candPool
+              const pid = selectedTask.position_id
+              const co = pos?.companies
+              const cid = co?.id
+              const clientName = co?.name?.trim()
+              const hasPosition = Boolean(pid && pos)
+              const initials = (name: string) => {
+                const p = name.trim().split(/\s+/).filter(Boolean)
+                if (p.length === 0) return '?'
+                if (p.length === 1) return (p[0]!.slice(0, 2)).toUpperCase()
+                return (p[0]![0]! + p[1]![0]!).toUpperCase()
+              }
+              return (
+                <>
+                  <div className="shrink-0 px-4 pb-2 pt-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <h2 id="task-drawer-title" className="text-lg font-extrabold tracking-tight text-[#302e2b] dark:text-stone-100">
+                        Edit task
+                      </h2>
+                      <div className="flex shrink-0 items-center gap-0.5">
+                        {selectedTask.status === 'open' ? (
+                          <button
+                            type="button"
+                            className="rounded-xl p-2.5 text-emerald-600 transition hover:bg-emerald-50 disabled:opacity-40 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
+                            aria-label="Mark done"
+                            disabled={updateTaskStatus.isPending}
+                            onClick={() => updateTaskStatus.mutate({ id: selectedTask.id, status: 'closed' })}
+                          >
+                            <Check className="h-5 w-5" aria-hidden />
+                          </button>
+                        ) : null}
+                        {selectedTask.status !== 'archived' ? (
+                          <button
+                            type="button"
+                            className="rounded-xl p-2.5 text-rose-600 transition hover:bg-rose-50 disabled:opacity-40 dark:text-rose-400 dark:hover:bg-rose-950/35"
+                            aria-label="Archive task"
+                            disabled={updateTaskStatus.isPending}
+                            onClick={() => updateTaskStatus.mutate({ id: selectedTask.id, status: 'archived' })}
+                          >
+                            <Trash2 className="h-5 w-5" aria-hidden />
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
 
-                <label className="mt-4 flex flex-col gap-1 font-medium">
-                  <span className="text-ink-muted text-xs font-bold uppercase">Description</span>
-                  <textarea
-                    value={drawerDescription}
-                    onChange={(e) => setDrawerDescription(e.target.value)}
-                    rows={4}
-                    className="border-line resize-y rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                    placeholder="Optional"
-                  />
-                </label>
-
-                <label className="mt-4 flex flex-col gap-1 font-medium">
-                  <span className="text-ink-muted text-xs font-bold uppercase">Due</span>
-                  <input
-                    type="datetime-local"
-                    value={drawerDueLocal}
-                    onChange={(e) => setDrawerDueLocal(e.target.value)}
-                    className="border-line rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
-                  />
-                  <span className="text-ink-muted text-xs font-normal">Leave empty for no due date.</span>
-                </label>
-
-                <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Status</p>
-                <p className="mt-1 font-semibold capitalize">{selectedTask.status}</p>
-
-                {(() => {
-                  const pos = selectedTask.positions as
-                    | {
-                        id: string
-                        title: string
-                        companies: { id?: string; name?: string; avatar_url?: string | null } | null
-                      }
-                    | null
-                  const pcJoin = selectedTask.position_candidates as {
-                    candidates: { id: string; full_name: string } | { id: string; full_name: string }[] | null
-                  } | null
-                  const candFromRole = nestedOne(pcJoin?.candidates ?? null)
-                  const candPool = nestedOne(
-                    selectedTask.candidates as { id: string; full_name: string } | { id: string; full_name: string }[] | null,
-                  )
-                  const cand = candFromRole ?? candPool
-                  const pid = selectedTask.position_id
-                  const co = pos?.companies
-                  const cid = co?.id
-                  return (
-                    <>
-                      <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Position</p>
-                      <div className="mt-1 flex items-center gap-2">
-                        {pid && pos && cid ? (
-                          <>
-                            <CompanyClientAvatar
-                              companyId={cid}
-                              companyName={co?.name ?? 'Client'}
-                              avatarUrl={co?.avatar_url}
-                              readOnly
-                              size="sm"
-                            />
-                            <Link
-                              to={`/positions/${pid}`}
-                              className="font-semibold text-[#9b3e20] underline-offset-2 hover:underline dark:text-orange-400"
-                            >
-                              {pos.title}
-                            </Link>
-                          </>
-                        ) : pid && pos ? (
+                    {hasPosition || clientName || cand ? (
+                      <div className="mt-4 flex flex-col gap-2">
+                        {hasPosition && pos && pid ? (
                           <Link
                             to={`/positions/${pid}`}
-                            className="font-semibold text-[#9b3e20] underline-offset-2 hover:underline dark:text-orange-400"
+                            className="border-line flex items-center gap-3 rounded-2xl border border-stone-200/90 bg-gradient-to-br from-orange-50/95 to-white p-3.5 shadow-sm transition hover:border-[#9b3e20]/35 hover:shadow-md dark:border-stone-600 dark:from-orange-950/30 dark:to-stone-900 dark:hover:border-orange-500/40"
                           >
-                            {pos.title}
+                            {cid ? (
+                              <CompanyClientAvatar
+                                companyId={cid}
+                                companyName={clientName ?? 'Client'}
+                                avatarUrl={co?.avatar_url}
+                                readOnly
+                                size="md"
+                              />
+                            ) : (
+                              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-stone-200 text-xs font-bold text-stone-600 dark:bg-stone-700 dark:text-stone-200">
+                                Role
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[10px] font-extrabold uppercase tracking-wide text-stone-500 dark:text-stone-400">
+                                Position
+                              </p>
+                              <p className="mt-0.5 font-bold leading-snug text-[#9b3e20] dark:text-orange-300">{pos.title}</p>
+                            </div>
                           </Link>
-                        ) : (
-                          <span className="text-ink-muted">Standalone task</span>
-                        )}
-                      </div>
-                      <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Client</p>
-                      <p className="mt-1">{pos?.companies?.name ?? '—'}</p>
-                      {cand ? (
-                        <>
-                          <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Candidate</p>
-                          <p className="mt-1">
-                            {pid ? (
+                        ) : null}
+
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          {clientName ? (
+                            cid ? (
                               <Link
-                                to={`/positions/${pid}?candidate=${cand.id}`}
-                                className="font-semibold text-[#006384] hover:underline dark:text-cyan-300"
+                                to={`/positions?company=${encodeURIComponent(cid)}`}
+                                className="border-line flex items-center gap-3 rounded-2xl border border-stone-200/90 bg-stone-50/90 p-3.5 shadow-sm transition hover:border-stone-300 hover:bg-white dark:border-stone-600 dark:bg-stone-800/60 dark:hover:border-stone-500"
                               >
-                                {cand.full_name}
+                                <CompanyClientAvatar
+                                  companyId={cid}
+                                  companyName={clientName}
+                                  avatarUrl={co?.avatar_url}
+                                  readOnly
+                                  size="md"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-[10px] font-extrabold uppercase tracking-wide text-stone-500 dark:text-stone-400">
+                                    Client
+                                  </p>
+                                  <p className="mt-0.5 truncate font-bold text-stone-900 dark:text-stone-100">{clientName}</p>
+                                </div>
                               </Link>
                             ) : (
-                              <Link
-                                to={`/candidates/${cand.id}`}
-                                className="font-semibold text-[#006384] hover:underline dark:text-cyan-300"
-                              >
-                                {cand.full_name}
-                              </Link>
-                            )}
-                          </p>
-                        </>
-                      ) : null}
-                    </>
-                  )
-                })()}
+                              <div className="border-line flex items-center gap-3 rounded-2xl border border-stone-200/90 bg-stone-50/90 p-3.5 dark:border-stone-600 dark:bg-stone-800/60">
+                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-stone-200 text-xs font-bold text-stone-600 dark:bg-stone-700 dark:text-stone-200">
+                                  {initials(clientName)}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-[10px] font-extrabold uppercase tracking-wide text-stone-500 dark:text-stone-400">
+                                    Client
+                                  </p>
+                                  <p className="mt-0.5 truncate font-bold text-stone-900 dark:text-stone-100">{clientName}</p>
+                                </div>
+                              </div>
+                            )
+                          ) : null}
 
-                {selectedTask.note_in_progress ? (
-                  <>
-                    <p className="text-ink-muted mt-4 text-xs font-bold uppercase">In progress notes</p>
-                    <p className="mt-1 whitespace-pre-wrap text-[#302e2b] dark:text-stone-200">{selectedTask.note_in_progress}</p>
-                  </>
-                ) : null}
+                          {cand ? (
+                            <Link
+                              to={pid ? `/positions/${pid}?candidate=${cand.id}` : `/candidates/${cand.id}`}
+                              className="border-line flex items-center gap-3 rounded-2xl border border-cyan-200/80 bg-gradient-to-br from-cyan-50/90 to-white p-3.5 shadow-sm transition hover:border-[#006384]/40 hover:shadow-md dark:border-cyan-900/40 dark:from-cyan-950/25 dark:to-stone-900 dark:hover:border-cyan-500/40"
+                            >
+                              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#006384]/15 text-xs font-bold text-[#006384] dark:bg-cyan-500/20 dark:text-cyan-200">
+                                {initials(cand.full_name)}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[10px] font-extrabold uppercase tracking-wide text-stone-500 dark:text-stone-400">
+                                  Candidate
+                                </p>
+                                <p className="mt-0.5 truncate font-bold text-[#006384] dark:text-cyan-300">{cand.full_name}</p>
+                              </div>
+                            </Link>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-ink-muted mt-3 text-xs dark:text-stone-500">Standalone task — not linked to a role or person.</p>
+                    )}
+                  </div>
 
-                <p className="text-ink-muted mt-4 text-xs font-bold uppercase">Updated</p>
-                <p className="mt-1 tabular-nums">{new Date(selectedTask.updated_at).toLocaleString()}</p>
-              </div>
+                  <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-2 text-sm">
+                    <TaskDrawerEditableBlock
+                      label="Title"
+                      editing={drawerEdit === 'title'}
+                      draft={drawerDraft}
+                      onDraft={setDrawerDraft}
+                      display={selectedTask.title}
+                      emptyHint="Untitled"
+                      disabled={patchTaskMutation.isPending}
+                      onStart={() => {
+                        setDrawerDraft(selectedTask.title)
+                        setDrawerEdit('title')
+                      }}
+                      onCancel={() => {
+                        setDrawerEdit(null)
+                        setDrawerDraft('')
+                      }}
+                      onSave={() => patchTaskMutation.mutate({ title: drawerDraft.trim() || 'Task' })}
+                    />
 
-              <div className="border-line space-y-3 border-t px-4 py-4 dark:border-line-dark">
-                <div className="flex flex-wrap gap-2">
-                  {selectedTask.status === 'open' ? (
-                    <button
-                      type="button"
-                      className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50 min-[380px]:flex-none"
-                      disabled={updateTaskStatus.isPending}
-                      onClick={() => updateTaskStatus.mutate({ id: selectedTask.id, status: 'closed' })}
-                    >
-                      <Check className="h-4 w-4" aria-hidden />
-                      Mark done
-                    </button>
-                  ) : null}
-                  {selectedTask.status !== 'archived' ? (
-                    <button
-                      type="button"
-                      className="inline-flex flex-1 items-center justify-center gap-2 rounded-full border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-800 hover:bg-rose-100 disabled:opacity-50 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-200 dark:hover:bg-rose-950 min-[380px]:flex-none"
-                      disabled={updateTaskStatus.isPending}
-                      onClick={() => updateTaskStatus.mutate({ id: selectedTask.id, status: 'archived' })}
-                    >
-                      <Trash2 className="h-4 w-4" aria-hidden />
-                      Archive
-                    </button>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  className="w-full rounded-full bg-gradient-to-r from-[#9b3e20] to-[#fd8863] py-2.5 text-sm font-bold text-white disabled:opacity-50"
-                  disabled={saveDrawerTaskMutation.isPending}
-                  onClick={() => saveDrawerTaskMutation.mutate()}
-                >
-                  {saveDrawerTaskMutation.isPending ? 'Saving…' : 'Save changes'}
-                </button>
-              </div>
-            </div>
+                    <TaskDrawerEditableBlock
+                      label="Description"
+                      multiline
+                      editing={drawerEdit === 'description'}
+                      draft={drawerDraft}
+                      onDraft={setDrawerDraft}
+                      display={selectedTask.description ?? ''}
+                      emptyHint="No description"
+                      disabled={patchTaskMutation.isPending}
+                      onStart={() => {
+                        setDrawerDraft(selectedTask.description ?? '')
+                        setDrawerEdit('description')
+                      }}
+                      onCancel={() => {
+                        setDrawerEdit(null)
+                        setDrawerDraft('')
+                      }}
+                      onSave={() =>
+                        patchTaskMutation.mutate({
+                          description: drawerDraft.trim() ? drawerDraft.trim() : null,
+                        })
+                      }
+                    />
+
+                    <TaskDrawerEditableBlock
+                      label="In progress notes"
+                      multiline
+                      editing={drawerEdit === 'notes'}
+                      draft={drawerDraft}
+                      onDraft={setDrawerDraft}
+                      display={selectedTask.note_in_progress ?? ''}
+                      emptyHint="No notes yet"
+                      disabled={patchTaskMutation.isPending}
+                      onStart={() => {
+                        setDrawerDraft(selectedTask.note_in_progress ?? '')
+                        setDrawerEdit('notes')
+                      }}
+                      onCancel={() => {
+                        setDrawerEdit(null)
+                        setDrawerDraft('')
+                      }}
+                      onSave={() =>
+                        patchTaskMutation.mutate({
+                          note_in_progress: drawerDraft.trim() ? drawerDraft.trim() : null,
+                        })
+                      }
+                    />
+
+                    <p className="text-ink-muted mt-8 text-[10px] font-bold uppercase tracking-wide">Updated</p>
+                    <p className="text-ink-muted mt-1 text-xs tabular-nums dark:text-stone-500">
+                      {new Date(selectedTask.updated_at).toLocaleString()}
+                    </p>
+                  </div>
+                </>
+              )
+            })()}
           </motion.aside>
         </div>
       ) : null}
