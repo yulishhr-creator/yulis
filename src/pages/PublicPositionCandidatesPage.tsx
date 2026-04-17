@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { differenceInCalendarDays } from 'date-fns'
@@ -17,6 +17,12 @@ type PipelineCandidate = {
   position_candidate_id?: string
   email?: string | null
   linkedin?: string | null
+}
+
+function publicAssignmentId(c: PipelineCandidate): string | undefined {
+  const id = c.position_candidate_id
+  if (typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id.trim())) return id.trim()
+  return undefined
 }
 
 type PipelineStageGroup = {
@@ -232,6 +238,20 @@ export function PublicPositionCandidatesPage() {
     refetchInterval: 60_000,
   })
 
+  /** One retry: right after hosts deploy RPC that adds assignment ids, cached HTML may still show old payload briefly. */
+  useEffect(() => {
+    if (!q.isSuccess || !q.data || q.isFetching) return
+    const stages = Array.isArray(q.data.stages) ? q.data.stages : []
+    const flat = stages.flatMap((s) => (Array.isArray(s.candidates) ? s.candidates : []))
+    if (flat.length === 0) return
+    const hasId = flat.some((c) => publicAssignmentId(c) != null)
+    if (hasId) return
+    const t = window.setTimeout(() => {
+      void q.refetch()
+    }, 600)
+    return () => window.clearTimeout(t)
+  }, [q.isSuccess, q.data, q.isFetching, q.refetch])
+
   const threadQ = useQuery({
     queryKey: ['public-assignment-thread', token, threadPcId],
     enabled: Boolean(supabase && token && threadPcId),
@@ -303,6 +323,10 @@ export function PublicPositionCandidatesPage() {
   const openedLabel = formatOpenedRelative(position.opened_at)
 
   const flatCandidates = sortedStages.flatMap((s) => (Array.isArray(s.candidates) ? s.candidates : []))
+  const reportHasAssignmentIds = useMemo(() => {
+    const all = stageList.flatMap((s) => (Array.isArray(s.candidates) ? s.candidates : []))
+    return all.some((c) => publicAssignmentId(c) != null)
+  }, [stageList])
   const inProgressCount = flatCandidates.filter((c) => (c.status ?? 'in_progress') === 'in_progress').length
   const closedCount = flatCandidates.filter((c) => {
     const st = c.status ?? 'in_progress'
@@ -471,7 +495,7 @@ export function PublicPositionCandidatesPage() {
                               const isClosed = st === 'rejected' || st === 'withdrawn'
                               const pill = assignmentStatusPill(st)
                               const ini = initialsFromName(c.full_name)
-                              const pcId = c.position_candidate_id
+                              const pcId = publicAssignmentId(c)
                               const liHref = linkedinHref(c.linkedin ?? null)
                               const em = c.email?.trim() || ''
                               const cardKey = pcId ?? `${c.full_name}-${i}`
@@ -485,7 +509,11 @@ export function PublicPositionCandidatesPage() {
                                     className={`${cardClass} cursor-pointer transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-sm`}
                                     onClick={() => {
                                       if (!pcId) {
-                                        toastError('Refresh this page after your host updates the share link to open threads.')
+                                        toastError(
+                                          reportHasAssignmentIds
+                                            ? 'Could not open this thread. Refresh the page and try again.'
+                                            : 'Threads need an updated shared report from the recruiter. Ask them to redeploy or refresh their database, then open this link again (or hard-refresh).',
+                                        )
                                         return
                                       }
                                       openThread(pcId, c.full_name)
