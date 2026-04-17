@@ -1542,12 +1542,17 @@ export function PositionDetailPage() {
       setCandidateDrawerWidthPx(null)
       return
     }
+    // Below `sm`, use full-width drawer (Tailwind `w-full`); dynamic width felt arbitrarily narrow on phones.
+    if (typeof window !== 'undefined' && window.innerWidth < 640) {
+      setCandidateDrawerWidthPx(null)
+      return
+    }
     const el = drawerNameMeasureRef.current
     if (!el) return
     const nameW = el.scrollWidth
-    const minW = 320
+    const minW = 360
     const cap = typeof window !== 'undefined' ? Math.min(window.innerWidth - 24, 560) : 560
-    setCandidateDrawerWidthPx(Math.min(cap, Math.max(minW, nameW + 200)))
+    setCandidateDrawerWidthPx(Math.min(cap, Math.max(minW, nameW + 220)))
   }, [highlightCandidate, drawerCandidate, drawerNameForMeasure])
 
   function copyWelcomeSnippet(text: string, label: string) {
@@ -2419,8 +2424,8 @@ export function PositionDetailPage() {
                 onClick={closeCandidateDrawer}
               />
               <aside
-                className={`border-line fixed top-0 right-0 z-50 flex h-full flex-col border-l bg-white shadow-2xl transition-transform duration-300 ease-out dark:border-line-dark dark:bg-stone-900 ${
-                  candidateDrawerWidthPx == null ? 'w-full max-w-2xl sm:max-w-[34rem]' : ''
+                className={`border-line fixed top-0 right-0 z-50 flex h-full w-full max-w-full flex-col border-l bg-white shadow-2xl transition-transform duration-300 ease-out sm:max-w-[min(100vw-8px,42rem)] dark:border-line-dark dark:bg-stone-900 ${
+                  candidateDrawerWidthPx == null ? '' : 'sm:max-w-none'
                 } ${drawerPanelEntered ? 'translate-x-0' : 'translate-x-full'}`}
                 style={
                   candidateDrawerWidthPx != null
@@ -2525,9 +2530,9 @@ export function PositionDetailPage() {
                           >
                             <Trash2 className="h-4 w-4" aria-hidden />
                           </button>
-                          <div className="flex gap-4">
-                            <div className="flex w-[7rem] shrink-0 flex-col items-stretch gap-2 sm:w-[7.5rem]">
-                              <div className="group/avatar relative mx-auto h-[4.5rem] w-[4.5rem] shrink-0">
+                          <div className="flex flex-col gap-4 sm:flex-row sm:gap-4 sm:items-start">
+                            <div className="order-2 flex w-full shrink-0 flex-row items-start gap-3 sm:order-1 sm:w-[7.5rem] sm:flex-col sm:items-stretch sm:gap-2">
+                              <div className="group/avatar relative h-[4.5rem] w-[4.5rem] shrink-0 sm:mx-auto">
                                 <div className="flex h-[4.5rem] w-[4.5rem] items-center justify-center overflow-hidden rounded-full border border-stone-200 bg-stone-100 text-base font-bold text-stone-600 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300">
                                   {photoSignedUrl && !drawerAvatarBroken ? (
                                     <img
@@ -2550,37 +2555,39 @@ export function PositionDetailPage() {
                                   <Pencil className="h-3 w-3" aria-hidden />
                                 </button>
                               </div>
-                              <select
-                                className="w-full min-w-0 cursor-pointer rounded-md border border-stone-200/70 bg-stone-50/90 py-1 pl-1.5 pr-7 text-[11px] font-medium text-stone-700 shadow-sm dark:border-stone-600 dark:bg-stone-900/70 dark:text-stone-200"
-                                value={normalizeAssignmentSource(c.source)}
-                                disabled={updateAssignmentSource.isPending}
-                                onChange={(e) => {
-                                  const v = e.target.value as AssignmentSourceValue
-                                  if (v === normalizeAssignmentSource(c.source)) return
-                                  void updateAssignmentSource.mutateAsync({
-                                    positionCandidateId: c.id,
-                                    source: v,
-                                  })
-                                }}
-                                aria-label="Source for this assignment"
-                              >
-                                {ASSIGNMENT_SOURCE_VALUES.map((val) => (
-                                  <option key={val} value={val}>
-                                    {ASSIGNMENT_SOURCE_LABELS[val]}
-                                  </option>
-                                ))}
-                              </select>
+                              <div className="min-w-0 flex-1 sm:w-full">
+                                <select
+                                  className="w-full min-w-0 cursor-pointer rounded-md border border-stone-200/70 bg-stone-50/90 py-1 pl-1.5 pr-7 text-[11px] font-medium text-stone-700 shadow-sm dark:border-stone-600 dark:bg-stone-900/70 dark:text-stone-200"
+                                  value={normalizeAssignmentSource(c.source)}
+                                  disabled={updateAssignmentSource.isPending}
+                                  onChange={(e) => {
+                                    const v = e.target.value as AssignmentSourceValue
+                                    if (v === normalizeAssignmentSource(c.source)) return
+                                    void updateAssignmentSource.mutateAsync({
+                                      positionCandidateId: c.id,
+                                      source: v,
+                                    })
+                                  }}
+                                  aria-label="Source for this assignment"
+                                >
+                                  {ASSIGNMENT_SOURCE_VALUES.map((val) => (
+                                    <option key={val} value={val}>
+                                      {ASSIGNMENT_SOURCE_LABELS[val]}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
                             </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex min-w-0 flex-nowrap items-center gap-x-2">
-                                <div className="group/name flex min-w-0 flex-1 flex-col gap-1">
-                                  <div className="flex min-w-0 flex-nowrap items-center gap-x-1.5">
+                            <div className="order-1 min-w-0 w-full flex-1 sm:order-2">
+                              <div className="flex min-w-0 flex-wrap items-start gap-2">
+                                <div className="group/name flex min-w-0 w-full flex-[1_1_100%] flex-col gap-1 sm:flex-[1_1_12rem]">
+                                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
                                     {drawerFieldEdit === 'name' && candId ? (
                                       <>
                                         <input
                                           value={drawerFieldDraft}
                                           onChange={(e) => setDrawerFieldDraft(e.target.value)}
-                                          className="border-line text-stitch-on-surface min-w-0 max-w-[16rem] rounded-lg border bg-white px-2 py-1 text-xl font-bold tracking-tight dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
+                                          className="border-line text-stitch-on-surface min-w-0 max-w-full flex-1 rounded-lg border bg-white px-2 py-1 text-xl font-bold tracking-tight sm:max-w-[16rem] sm:flex-none dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
                                           autoFocus
                                         />
                                         <button
@@ -2600,7 +2607,7 @@ export function PositionDetailPage() {
                                           <X className="h-4 w-4" aria-hidden />
                                         </button>
                                       </>
-                                    ) : drawerFieldEdit === 'salary' && salaryTitleSuffix && candId ? (
+                                    ) : drawerFieldEdit === 'salary' && candId ? (
                                       <>
                                         <span className="text-stitch-on-surface shrink-0 text-xl font-bold tracking-tight dark:text-stone-100">
                                           {displayName}
@@ -2608,7 +2615,7 @@ export function PositionDetailPage() {
                                         <input
                                           value={drawerFieldDraft}
                                           onChange={(e) => setDrawerFieldDraft(e.target.value)}
-                                          className="border-line text-stitch-on-surface min-w-0 max-w-[10rem] rounded-lg border bg-white px-2 py-1 text-sm font-semibold tabular-nums dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
+                                          className="border-line text-stitch-on-surface min-w-0 max-w-full flex-1 rounded-lg border bg-white px-2 py-1 text-sm font-semibold tabular-nums sm:max-w-[12rem] dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
                                           placeholder="₪ amount"
                                           autoFocus
                                         />
@@ -2643,8 +2650,8 @@ export function PositionDetailPage() {
                                       </>
                                     ) : (
                                       <>
-                                        <div className="text-stitch-on-surface flex min-w-0 flex-1 flex-nowrap items-baseline gap-x-1.5 overflow-hidden text-xl font-bold tracking-tight dark:text-stone-100">
-                                          <h2 className="min-w-0 truncate">{displayName}</h2>
+                                        <div className="text-stitch-on-surface flex min-w-0 w-full max-w-full flex-wrap items-baseline gap-x-2 gap-y-0.5 text-lg font-bold tracking-tight sm:text-xl dark:text-stone-100">
+                                          <h2 className="min-w-0 max-w-full break-words">{displayName}</h2>
                                           {salaryTitleSuffix ? (
                                             <button
                                               type="button"
@@ -2658,11 +2665,24 @@ export function PositionDetailPage() {
                                             >
                                               {salaryTitleSuffix}
                                             </button>
-                                          ) : null}
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              className="text-ink-muted shrink-0 rounded px-1 text-sm font-semibold tabular-nums underline decoration-dotted underline-offset-2 hover:text-stone-800 dark:hover:text-stone-200"
+                                              aria-label="Add expected salary"
+                                              title="Expected salary for this candidate"
+                                              onClick={() => {
+                                                setDrawerFieldDraft(salaryRaw)
+                                                setDrawerFieldEdit('salary')
+                                              }}
+                                            >
+                                              · Add salary
+                                            </button>
+                                          )}
                                         </div>
                                         <button
                                           type="button"
-                                          className="text-ink-muted shrink-0 rounded-lg p-1.5 opacity-0 transition hover:bg-stone-200/90 hover:text-ink group-hover/name:opacity-100 dark:hover:bg-stone-600 dark:hover:text-stone-100"
+                                          className="text-ink-muted shrink-0 rounded-lg p-1.5 opacity-100 transition hover:bg-stone-200/90 hover:text-ink sm:opacity-0 sm:group-hover/name:opacity-100 dark:hover:bg-stone-600 dark:hover:text-stone-100"
                                           aria-label="Edit name"
                                           onClick={() => {
                                             setDrawerFieldDraft(displayName)
@@ -2675,12 +2695,12 @@ export function PositionDetailPage() {
                                     )}
                                   </div>
                                 </div>
-                                <div className="relative shrink-0" ref={drawerAssignStatusRef}>
+                                <div className="relative w-full shrink-0 sm:w-auto sm:shrink-0" ref={drawerAssignStatusRef}>
                                   <button
                                     type="button"
                                     onClick={() => setDrawerAssignStatusOpen((o) => !o)}
                                     disabled={patchAssignmentStatus.isPending}
-                                    className={`border-line flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-xs font-bold shadow-sm transition dark:border-line-dark ${
+                                    className={`border-line flex h-8 w-full shrink-0 items-center justify-between gap-1 rounded-lg border px-2 text-xs font-bold shadow-sm transition sm:w-auto sm:justify-center dark:border-line-dark ${
                                       drawerCandidate!.status === 'in_progress'
                                         ? 'border-emerald-200/90 bg-gradient-to-br from-emerald-50 to-white text-emerald-900 dark:border-emerald-800/80 dark:from-emerald-950/60 dark:to-stone-900 dark:text-emerald-200'
                                         : drawerCandidate!.status === 'rejected'
@@ -2699,7 +2719,7 @@ export function PositionDetailPage() {
                                     ) : (
                                       <Pause className="h-3.5 w-3.5 shrink-0 text-stone-600 dark:text-stone-400" aria-hidden />
                                     )}
-                                    <span className="min-w-0 max-w-[7.5rem] truncate sm:max-w-[9rem]">
+                                    <span className="min-w-0 flex-1 truncate sm:max-w-[9rem] sm:flex-none">
                                       {formatAssignmentStatus(drawerCandidate!.status)}
                                     </span>
                                     <ChevronDown className="h-3 w-3 shrink-0 opacity-60" aria-hidden />
@@ -2797,7 +2817,7 @@ export function PositionDetailPage() {
                                       {email ? (
                                         <a
                                           href={`mailto:${email}`}
-                                          className="text-stitch-on-surface min-w-0 flex-1 truncate hover:text-[#006384] dark:text-stone-100 dark:hover:text-cyan-300"
+                                          className="text-stitch-on-surface min-w-0 flex-1 break-all hover:text-[#006384] sm:break-normal sm:truncate dark:text-stone-100 dark:hover:text-cyan-300"
                                         >
                                           {email}
                                         </a>
@@ -2851,7 +2871,7 @@ export function PositionDetailPage() {
                                       {phone ? (
                                         <a
                                           href={`tel:${phone}`}
-                                          className="text-stitch-on-surface min-w-0 flex-1 truncate hover:text-[#006384] dark:text-stone-100 dark:hover:text-cyan-300"
+                                          className="text-stitch-on-surface min-w-0 flex-1 break-all hover:text-[#006384] sm:break-normal sm:truncate dark:text-stone-100 dark:hover:text-cyan-300"
                                         >
                                           {phone}
                                         </a>
@@ -2911,7 +2931,7 @@ export function PositionDetailPage() {
                                           target="_blank"
                                           rel="noopener noreferrer"
                                           title={linkedinRaw ?? undefined}
-                                          className="text-stitch-on-surface min-w-0 flex-1 truncate hover:text-[#006384] dark:text-stone-100 dark:hover:text-cyan-300"
+                                          className="text-stitch-on-surface min-w-0 flex-1 break-all hover:text-[#006384] sm:break-normal sm:truncate dark:text-stone-100 dark:hover:text-cyan-300"
                                         >
                                           {linkedinRaw}
                                         </a>
