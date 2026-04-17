@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import * as XLSX from '@e965/xlsx'
 import {
   Check,
@@ -543,10 +543,13 @@ export function PositionDetailPage() {
     [posQ.data?.status],
   )
 
+  const [shareChannelOpen, setShareChannelOpen] = useState(false)
+
   const publicListTokenQ = useQuery({
     queryKey: ['position-public-list-token', id, user?.id],
     networkMode: 'always',
-    enabled: Boolean(supabase && user && id && positionIsOpen),
+    staleTime: 5 * 60 * 1000,
+    enabled: Boolean(supabase && user && id && positionIsOpen && shareChannelOpen),
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('position_public_list_tokens')
@@ -566,6 +569,68 @@ export function PositionDetailPage() {
     const d = publicListTokenQ.data
     if (d) setPublicShareExposeContact(d.expose_contact)
   }, [publicListTokenQ.data])
+
+  /** One round-trip when possible: keep existing token, only UPDATE expose_contact instead of revoke+insert. */
+  const resolvePublicListToken = useCallback(
+    async (exposeContact: boolean): Promise<string> => {
+      if (!supabase || !user || !id) throw new Error('Not signed in')
+
+      const read = async () => {
+        const { data, error } = await supabase
+          .from('position_public_list_tokens')
+          .select('token, expose_contact')
+          .eq('position_id', id)
+          .is('revoked_at', null)
+          .maybeSingle()
+        if (error) throw error
+        return data as { token: string; expose_contact?: boolean | null } | null
+      }
+
+      let row = await read()
+      if (row?.token) {
+        if (Boolean(row.expose_contact) !== exposeContact) {
+          const { error: upErr } = await supabase
+            .from('position_public_list_tokens')
+            .update({ expose_contact: exposeContact })
+            .eq('position_id', id)
+            .eq('user_id', user.id)
+            .is('revoked_at', null)
+          if (upErr) throw upErr
+        }
+        void qc.invalidateQueries({ queryKey: ['position-public-list-token', id, user.id] })
+        return row.token
+      }
+
+      const token =
+        crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+      const { error: insErr } = await supabase.from('position_public_list_tokens').insert({
+        user_id: user.id,
+        position_id: id,
+        token,
+        expose_contact: exposeContact,
+      })
+      if (insErr) {
+        row = await read()
+        if (row?.token) {
+          if (Boolean(row.expose_contact) !== exposeContact) {
+            const { error: upErr } = await supabase
+              .from('position_public_list_tokens')
+              .update({ expose_contact: exposeContact })
+              .eq('position_id', id)
+              .eq('user_id', user.id)
+              .is('revoked_at', null)
+            if (upErr) throw upErr
+          }
+          void qc.invalidateQueries({ queryKey: ['position-public-list-token', id, user.id] })
+          return row.token
+        }
+        throw insErr
+      }
+      void qc.invalidateQueries({ queryKey: ['position-public-list-token', id, user.id] })
+      return token
+    },
+    [supabase, user, id, qc],
+  )
 
   const position = posQ.data
   const company = position?.companies as unknown as {
@@ -597,7 +662,6 @@ export function PositionDetailPage() {
   const [status, setStatus] = useState('active')
   const [shareOpen, setShareOpen] = useState(false)
   const [shareUrl, setShareUrl] = useState<string | null>(null)
-  const [shareChannelOpen, setShareChannelOpen] = useState(false)
   const [selectedPositionTask, setSelectedPositionTask] = useState<PositionTaskRow | null>(null)
   const [headerStatusOpen, setHeaderStatusOpen] = useState(false)
   const headerStatusRef = useRef<HTMLDivElement>(null)
@@ -1289,33 +1353,6 @@ export function PositionDetailPage() {
       setShareOpen(true)
       void navigator.clipboard.writeText(url).catch(() => {})
       success('Share link copied')
-    },
-    onError: (e: Error) => toastError(e),
-  })
-
-  const ensurePositionPublicListToken = useMutation({
-    mutationFn: async (exposeContact: boolean) => {
-      if (!supabase || !user || !id) throw new Error('Not signed in')
-      const now = new Date().toISOString()
-      const { error: revErr } = await supabase
-        .from('position_public_list_tokens')
-        .update({ revoked_at: now })
-        .eq('position_id', id)
-        .eq('user_id', user.id)
-        .is('revoked_at', null)
-      if (revErr) throw revErr
-      const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
-      const { error } = await supabase.from('position_public_list_tokens').insert({
-        user_id: user.id,
-        position_id: id,
-        token,
-        expose_contact: exposeContact,
-      })
-      if (error) throw error
-      return token
-    },
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ['position-public-list-token', id] })
     },
     onError: (e: Error) => toastError(e),
   })
@@ -2076,32 +2113,36 @@ export function PositionDetailPage() {
                     <button
                       type="button"
                       role="menuitem"
-                      disabled={publicListTokenQ.isLoading || ensurePositionPublicListToken.isPending}
-                      className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-stone-700 disabled:opacity-50 dark:text-stone-200"
-                      onClick={async () => {
-                        setShareChannelOpen(false)
-                        if (!id) return
-                        const existing = publicListTokenQ.data
-                        const needsNew =
-                          existing == null || existing.expose_contact !== publicShareExposeContact
-                        let tok: string | null = existing?.token ?? null
-                        if (needsNew) {
-                          try {
-                            tok = await ensurePositionPublicListToken.mutateAsync(publicShareExposeContact)
-                          } catch (e) {
-                            toastError(e instanceof Error ? e : new Error('Could not create public link'))
-                            return
+                      className="hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-stone-700 dark:text-stone-200"
+                      onClick={() => {
+                        void (async () => {
+                          if (!id) return
+                          const cached = publicListTokenQ.data
+                          let tok: string
+                          if (cached?.token && cached.expose_contact === publicShareExposeContact) {
+                            tok = cached.token
+                          } else {
+                            try {
+                              tok = await resolvePublicListToken(publicShareExposeContact)
+                            } catch (e) {
+                              toastError(
+                                e instanceof Error ? e : new Error('Could not create public link'),
+                              )
+                              return
+                            }
                           }
-                        }
-                        if (!tok) {
-                          toastError('Could not create public link')
-                          return
-                        }
-                        const url = `${window.location.origin}/pub/pos/${tok}`
-                        void navigator.clipboard.writeText(url).then(
-                          () => success('Public URL copied'),
-                          () => toastError('Could not copy'),
-                        )
+                          const url = `${window.location.origin}/pub/pos/${tok}`
+                          void navigator.clipboard.writeText(url).then(
+                            () => {
+                              success('Public URL copied')
+                              setShareChannelOpen(false)
+                            },
+                            () => {
+                              toastError('Could not copy')
+                              setShareChannelOpen(false)
+                            },
+                          )
+                        })()
                       }}
                     >
                       <Link2 className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
