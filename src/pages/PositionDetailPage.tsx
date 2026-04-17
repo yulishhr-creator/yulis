@@ -570,64 +570,18 @@ export function PositionDetailPage() {
     if (d) setPublicShareExposeContact(d.expose_contact)
   }, [publicListTokenQ.data])
 
-  /** One round-trip when possible: keep existing token, only UPDATE expose_contact instead of revoke+insert. */
+  /** Single RPC: verifies you own the position, returns token, handles races (SECURITY DEFINER). */
   const resolvePublicListToken = useCallback(
     async (exposeContact: boolean): Promise<string> => {
       if (!supabase || !user || !id) throw new Error('Not signed in')
-
-      const read = async () => {
-        const { data, error } = await supabase
-          .from('position_public_list_tokens')
-          .select('token, expose_contact')
-          .eq('position_id', id)
-          .is('revoked_at', null)
-          .maybeSingle()
-        if (error) throw error
-        return data as { token: string; expose_contact?: boolean | null } | null
-      }
-
-      let row = await read()
-      if (row?.token) {
-        if (Boolean(row.expose_contact) !== exposeContact) {
-          const { error: upErr } = await supabase
-            .from('position_public_list_tokens')
-            .update({ expose_contact: exposeContact })
-            .eq('position_id', id)
-            .eq('user_id', user.id)
-            .is('revoked_at', null)
-          if (upErr) throw upErr
-        }
-        void qc.invalidateQueries({ queryKey: ['position-public-list-token', id, user.id] })
-        return row.token
-      }
-
-      const token =
-        crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '').slice(0, 16)
-      const { error: insErr } = await supabase.from('position_public_list_tokens').insert({
-        user_id: user.id,
-        position_id: id,
-        token,
-        expose_contact: exposeContact,
+      const { data, error } = await supabase.rpc('ensure_position_public_share_token', {
+        p_position_id: id,
+        p_expose_contact: exposeContact,
       })
-      if (insErr) {
-        row = await read()
-        if (row?.token) {
-          if (Boolean(row.expose_contact) !== exposeContact) {
-            const { error: upErr } = await supabase
-              .from('position_public_list_tokens')
-              .update({ expose_contact: exposeContact })
-              .eq('position_id', id)
-              .eq('user_id', user.id)
-              .is('revoked_at', null)
-            if (upErr) throw upErr
-          }
-          void qc.invalidateQueries({ queryKey: ['position-public-list-token', id, user.id] })
-          return row.token
-        }
-        throw insErr
-      }
+      if (error) throw error
+      if (typeof data !== 'string' || !data.trim()) throw new Error('No share token returned')
       void qc.invalidateQueries({ queryKey: ['position-public-list-token', id, user.id] })
-      return token
+      return data.trim()
     },
     [supabase, user, id, qc],
   )
@@ -2125,9 +2079,7 @@ export function PositionDetailPage() {
                             try {
                               tok = await resolvePublicListToken(publicShareExposeContact)
                             } catch (e) {
-                              toastError(
-                                e instanceof Error ? e : new Error('Could not create public link'),
-                              )
+                              toastError(e)
                               return
                             }
                           }

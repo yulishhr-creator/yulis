@@ -12,7 +12,13 @@ export function mapUserFacingError(err: unknown): string {
           : ''
   const m = raw.trim()
   if (!m) return FALLBACK
+  if (/schema cache|could not find.*column/i.test(m))
+    return 'The database needs the latest migration applied. In Supabase: run SQL from supabase/migrations/031 (or redeploy migrations), then retry.'
+  if (/function public\.ensure_position_public_share_token|42883|does not exist/i.test(m))
+    return 'Sharing needs a quick database update. Apply migration031_ensure_position_public_share_token_rpc.sql in Supabase, then retry.'
   if (/rate_limit/i.test(m)) return 'Too many attempts. Please wait a bit and try again.'
+  if (/^forbidden$|permission denied|42501/i.test(m)) return 'You do not have access to share this role.'
+  if (/position not found/i.test(m)) return 'This role was removed or is unavailable.'
   if (/invalid token|invalid assignment|invalid position|^invalid$/i.test(m)) return 'This link is not valid.'
   if (/violates|constraint|duplicate key|23505/i.test(m)) return 'That value is not allowed or already exists.'
   if (/JWT|session expired|not authenticated/i.test(m)) return 'Please sign in again.'
