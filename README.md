@@ -45,13 +45,13 @@ Apply [`supabase/migrations/033_gmail_integration.sql`](supabase/migrations/033_
 
 ### Local API + Gmail
 
-Server routes live under `/api/*` (Vercel Functions). **`npm run dev` (Vite alone) does not serve `/api`.** Use:
+Server routes live under `/api/*` (Vercel Functions).
 
-```bash
-vercel dev
-```
+**Option A — one process:** run `vercel dev` and open the URL it prints (often `http://localhost:3000`). The SPA and `/api/gmail/*` run together.
 
-so both the SPA and `/api/gmail/*` run together (default URL is often `http://localhost:3000`).
+**Option B — two processes (Vite HMR + APIs):** in one terminal run `vercel dev --listen 3000`, in another run `npm run dev` and open **Vite’s** URL (e.g. `http://localhost:5173`). Vite proxies `/api/*` to `http://127.0.0.1:3000` by default; override with `DEV_API_PROXY_TARGET` in `.env` if your `vercel dev` port differs.
+
+Without a reachable `vercel dev` on that port, Gmail API calls from the Vite app will fail to connect — plain `npm run dev` no longer mis-serves `api/*.ts` as JavaScript, but it does not implement the functions itself.
 
 ---
 
