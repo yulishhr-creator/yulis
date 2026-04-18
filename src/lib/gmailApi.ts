@@ -1,5 +1,20 @@
 import { getSupabase } from '@/lib/supabase'
 
+const AGENT_INGEST = 'http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852'
+
+function agentIngest(payload: {
+  location: string
+  message: string
+  hypothesisId: string
+  data?: Record<string, unknown>
+}) {
+  fetch(AGENT_INGEST, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '938437' },
+    body: JSON.stringify({ sessionId: '938437', timestamp: Date.now(), ...payload }),
+  }).catch(() => {})
+}
+
 async function getAccessToken(): Promise<string | null> {
   const supabase = getSupabase()
   if (!supabase) return null
@@ -22,7 +37,73 @@ async function apiFetch(path: string, init: RequestInit): Promise<Response> {
   if (method !== 'GET' && init.body !== undefined) {
     headers.set('Content-Type', 'application/json')
   }
-  return fetch(path, { ...init, headers })
+  let res: Response
+  try {
+    res = await fetch(path, { ...init, headers })
+  } catch (e) {
+    // #region agent log
+    agentIngest({
+      location: 'gmailApi.ts:apiFetch',
+      message: 'fetch_network_error',
+      hypothesisId: 'H5',
+      data: { path, err: e instanceof Error ? e.name : 'unknown' },
+    })
+    // #endregion
+    throw e
+  }
+  // #region agent log
+  void (async () => {
+    try {
+      const ct = res.headers.get('content-type') ?? ''
+      const clone = res.clone()
+      const t = await clone.text()
+      const snippet = t
+        .slice(0, 220)
+        .replace(/\s+/g, ' ')
+        .replace(/Bearer\s+[\w.-]+/gi, 'Bearer [redacted]')
+      const looksLikeHtml = /^\s*</.test(t) || /<html/i.test(t.slice(0, 80))
+      let errKey: string | undefined
+      let missingEnv: string | undefined
+      try {
+        const j = JSON.parse(t) as { error?: string; missing_env?: string }
+        errKey = j.error
+        missingEnv = j.missing_env
+      } catch {
+        /* not JSON */
+      }
+      agentIngest({
+        location: 'gmailApi.ts:apiFetch',
+        message: 'gmail_api_response',
+        hypothesisId: 'H1-H2-H3',
+        data: {
+          path,
+          status: res.status,
+          contentType: ct,
+          looksLikeHtml,
+          error: errKey,
+          missing_env: missingEnv,
+          hasToken: Boolean(token),
+        },
+      })
+      if (snippet && !looksLikeHtml && snippet.length > 0) {
+        agentIngest({
+          location: 'gmailApi.ts:apiFetch',
+          message: 'body_snippet',
+          hypothesisId: 'H2',
+          data: { path, snippet },
+        })
+      }
+    } catch (e) {
+      agentIngest({
+        location: 'gmailApi.ts:apiFetch',
+        message: 'log_clone_failed',
+        hypothesisId: 'H2',
+        data: { path, err: String(e) },
+      })
+    }
+  })()
+  // #endregion
+  return res
 }
 
 export type GmailStatus = {
