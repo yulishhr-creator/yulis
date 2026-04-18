@@ -29,6 +29,15 @@ function formatApiError(j: { error?: string; missing_env?: string }, fallback: s
   return j.error ?? fallback
 }
 
+/** Vite proxies /api to DEV_API_PROXY_TARGET; 502 means nothing is listening there. */
+function throwIfUnreachableLocalApi(res: Response): void {
+  if (import.meta.env.DEV && res.status === 502) {
+    throw new Error(
+      'Local API returned 502: start `vercel dev` on the port in DEV_API_PROXY_TARGET (default http://127.0.0.1:3000), or run only `npm run dev:vercel` and use that URL. See README → Local API + Gmail.',
+    )
+  }
+}
+
 async function apiFetch(path: string, init: RequestInit): Promise<Response> {
   const token = await getAccessToken()
   const headers = new Headers(init.headers)
@@ -74,7 +83,7 @@ async function apiFetch(path: string, init: RequestInit): Promise<Response> {
       agentIngest({
         location: 'gmailApi.ts:apiFetch',
         message: 'gmail_api_response',
-        hypothesisId: 'H1-H2-H3',
+        hypothesisId: res.status === 502 ? 'H6' : 'H1-H2-H3',
         data: {
           path,
           status: res.status,
@@ -83,6 +92,7 @@ async function apiFetch(path: string, init: RequestInit): Promise<Response> {
           error: errKey,
           missing_env: missingEnv,
           hasToken: Boolean(token),
+          proxyUpstream502: res.status === 502,
         },
       })
       if (snippet && !looksLikeHtml && snippet.length > 0) {
@@ -114,6 +124,7 @@ export type GmailStatus = {
 export async function getGmailStatus(): Promise<GmailStatus> {
   const res = await apiFetch('/api/gmail/status', { method: 'GET' })
   if (!res.ok) {
+    throwIfUnreachableLocalApi(res)
     const j = (await res.json().catch(() => ({}))) as { error?: string; missing_env?: string }
     throw new Error(formatApiError(j, `status_${res.status}`))
   }
@@ -123,6 +134,7 @@ export async function getGmailStatus(): Promise<GmailStatus> {
 export async function disconnectGmail(): Promise<void> {
   const res = await apiFetch('/api/gmail/disconnect', { method: 'POST', body: '{}' })
   if (!res.ok) {
+    throwIfUnreachableLocalApi(res)
     const j = (await res.json().catch(() => ({}))) as { error?: string; missing_env?: string }
     throw new Error(formatApiError(j, `disconnect_${res.status}`))
   }
@@ -143,6 +155,7 @@ export async function sendGmail(payload: SendGmailPayload): Promise<{ id?: strin
     body: JSON.stringify(payload),
   })
   if (!res.ok) {
+    throwIfUnreachableLocalApi(res)
     const j = (await res.json().catch(() => ({}))) as { error?: string; missing_env?: string }
     throw new Error(formatApiError(j, `send_${res.status}`))
   }
@@ -153,6 +166,7 @@ export async function sendGmail(payload: SendGmailPayload): Promise<{ id?: strin
 export async function startGmailOAuth(): Promise<string> {
   const res = await apiFetch('/api/gmail/oauth/start', { method: 'POST', body: '{}' })
   if (!res.ok) {
+    throwIfUnreachableLocalApi(res)
     const j = (await res.json().catch(() => ({}))) as { error?: string; missing_env?: string }
     throw new Error(formatApiError(j, `oauth_start_${res.status}`))
   }
