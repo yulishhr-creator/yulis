@@ -24,7 +24,7 @@ import {
   ArrowLeft,
   GripVertical,
 } from 'lucide-react'
-import { differenceInCalendarDays, format } from 'date-fns'
+import { differenceInCalendarDays, format, parse } from 'date-fns'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
@@ -226,6 +226,15 @@ function formatIlsAmountDisplay(rawDigits: string): string {
   return `₪${n.toLocaleString('en-US')}`
 }
 
+function formatClosureDateDisplay(raw: string): string {
+  const t = raw.trim()
+  if (!t) return ''
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return t
+  const d = parse(t, 'yyyy-MM-dd', new Date())
+  if (Number.isNaN(d.getTime())) return t
+  return format(d, 'MMM d, yyyy')
+}
+
 function DetailHoverField({
   label,
   value,
@@ -234,6 +243,7 @@ function DetailHoverField({
   onSave,
   disabled,
   readOnlyFormat,
+  inputType = 'text',
 }: {
   label: string
   value: string
@@ -243,6 +253,8 @@ function DetailHoverField({
   disabled?: boolean
   /** When set, non-edit view shows this instead of raw `value` (still saves `draft` from typed input). */
   readOnlyFormat?: (value: string) => string
+  /** Use native date picker in edit mode (value / saved value should be YYYY-MM-DD). */
+  inputType?: 'text' | 'date'
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
@@ -273,6 +285,7 @@ function DetailHoverField({
             />
           ) : (
             <input
+              type={inputType}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               className="border-line mt-1 w-full max-w-xl rounded-lg border bg-white px-2 py-2 text-sm dark:border-line-dark dark:bg-stone-900/80"
@@ -2171,6 +2184,7 @@ export function PositionDetailPage() {
             <DetailHoverField
               label="Client salary budget (ILS)"
               value={salaryBudgetStr}
+              readOnlyFormat={formatIlsAmountDisplay}
               onSave={async (next) => {
                 const parsed = parseIlsAmountInput(next)
                 if (parsed === 'invalid') {
@@ -2193,6 +2207,8 @@ export function PositionDetailPage() {
             <DetailHoverField
               label="Closure date (optional)"
               value={closureDateStr}
+              inputType="date"
+              readOnlyFormat={formatClosureDateDisplay}
               onSave={async (next) => {
                 const t = next.trim()
                 const v = t === '' ? null : t
@@ -3557,12 +3573,19 @@ export function PositionDetailPage() {
         }}
         title={terminalFinish === 'succeeded' ? 'Mark role as succeeded' : 'Mark role as cancelled'}
       >
-        <p className="text-ink-muted text-sm dark:text-stone-400">
-          Optionally set a closure date for your records (backfilled roles, reporting). You can skip this and add it later
-          from Details.
-        </p>
+        {terminalFinish === 'succeeded' ? (
+          <p className="text-ink-muted text-sm dark:text-stone-400">
+            <strong className="text-stitch-on-surface font-semibold dark:text-stone-200">Please set the closure date</strong>{' '}
+            if you know when this role closed — it keeps records clear and helps reporting. You can still continue without
+            it and add it later under <strong className="font-semibold">Details</strong>.
+          </p>
+        ) : (
+          <p className="text-ink-muted text-sm dark:text-stone-400">
+            Optionally set a closure date for your records. You can skip this and add it later from Details.
+          </p>
+        )}
         <label className="mt-4 flex flex-col gap-1 text-sm font-medium">
-          Closure date (optional)
+          Closure date {terminalFinish === 'succeeded' ? '(recommended)' : '(optional)'}
           <input
             type="date"
             value={terminalClosureDate}
@@ -3587,6 +3610,12 @@ export function PositionDetailPage() {
             className="bg-accent text-stone-50 rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-50"
             onClick={() => {
               if (!terminalFinish) return
+              if (terminalFinish === 'succeeded' && !terminalClosureDate.trim()) {
+                const proceed = window.confirm(
+                  'You have not set a closure date. It helps with records and reporting. Mark as succeeded without a date? You can add one later under Details.',
+                )
+                if (!proceed) return
+              }
               const d = terminalClosureDate.trim()
               void setPositionTerminal.mutateAsync({
                 next: terminalFinish,
