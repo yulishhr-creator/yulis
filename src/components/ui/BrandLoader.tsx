@@ -24,7 +24,7 @@ export function BrandLoader({ label = 'Loading…' }: BrandLoaderProps) {
           animate={{ rotate: 360 }}
           transition={{ duration: 1.1, repeat: Infinity, ease: 'linear' }}
         />
-        <AppLogo size="lg" />
+        <AppLogo size="lg" showTagline={false} />
       </motion.div>
       <motion.p
         className="text-ink text-lg dark:text-stone-200"

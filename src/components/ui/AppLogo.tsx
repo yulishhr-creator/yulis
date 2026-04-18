@@ -3,6 +3,8 @@ import { clsx } from 'clsx'
 type AppLogoProps = {
   size?: 'sm' | 'md' | 'lg'
   showWordmark?: boolean
+  /** Second line under the wordmark (e.g. loading screens use logo without it). */
+  showTagline?: boolean
   className?: string
 }
 
@@ -13,7 +15,7 @@ const sizes = {
 } as const
 
 /** Stylized “Y” mark + optional wordmark */
-export function AppLogo({ size = 'md', showWordmark = true, className }: AppLogoProps) {
+export function AppLogo({ size = 'md', showWordmark = true, showTagline = true, className }: AppLogoProps) {
   const s = sizes[size]
   return (
     <div className={clsx('flex items-center gap-3', className)}>
@@ -31,9 +33,11 @@ export function AppLogo({ size = 'md', showWordmark = true, className }: AppLogo
           <p className={clsx('text-ink leading-tight font-semibold tracking-tight dark:text-stone-100', s.text)}>
             Yuli’s HR
           </p>
-          <p className="text-ink-muted text-[10px] font-semibold tracking-[0.2em] uppercase dark:text-stone-400">
-            Outsmart
-          </p>
+          {showTagline ? (
+            <p className="text-ink-muted text-[10px] font-semibold tracking-[0.2em] uppercase dark:text-stone-400">
+              Outsmart
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>
