@@ -283,6 +283,13 @@ export function PublicPositionCandidatesPage() {
     onError: (e: Error) => toastError(e),
   })
 
+  const reportHasAssignmentIds = useMemo(() => {
+    if (!q.data) return false
+    const sl = Array.isArray(q.data.stages) ? q.data.stages : []
+    const all = sl.flatMap((s) => (Array.isArray(s.candidates) ? s.candidates : []))
+    return all.some((c) => publicAssignmentId(c) != null)
+  }, [q.data])
+
   if (!token || token.length < 8) {
     return (
       <div className="bg-paper relative flex min-h-dvh items-center justify-center px-4 dark:bg-paper-dark">
@@ -323,10 +330,6 @@ export function PublicPositionCandidatesPage() {
   const openedLabel = formatOpenedRelative(position.opened_at)
 
   const flatCandidates = sortedStages.flatMap((s) => (Array.isArray(s.candidates) ? s.candidates : []))
-  const reportHasAssignmentIds = useMemo(() => {
-    const all = stageList.flatMap((s) => (Array.isArray(s.candidates) ? s.candidates : []))
-    return all.some((c) => publicAssignmentId(c) != null)
-  }, [stageList])
   const inProgressCount = flatCandidates.filter((c) => (c.status ?? 'in_progress') === 'in_progress').length
   const closedCount = flatCandidates.filter((c) => {
     const st = c.status ?? 'in_progress'
