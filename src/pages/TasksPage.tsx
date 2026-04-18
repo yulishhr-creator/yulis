@@ -10,6 +10,7 @@ import { getSupabase } from '@/lib/supabase'
 import { isMissingArchivedAtColumnError } from '@/lib/postgrestErrors'
 import { formatDue } from '@/lib/dates'
 import { CompanyClientAvatar } from '@/components/companies/CompanyClientAvatar'
+import { OffCanvasRegistrar } from '@/components/layout/OffCanvasContext'
 import { Modal } from '@/components/ui/Modal'
 import { PageSpinner } from '@/components/ui/PageSpinner'
 import { useWorkTimer } from '@/work/useWorkTimer'
@@ -633,6 +634,7 @@ export function TasksPage() {
 
   return (
     <div className="flex flex-col gap-8 md:gap-10">
+      <OffCanvasRegistrar active={Boolean(selectedTask)} />
       {kpis ? (
         <motion.section aria-label="Task counts" initial={reduceMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           <div className="grid grid-cols-3 gap-3">

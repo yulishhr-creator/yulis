@@ -31,6 +31,7 @@ import { getSupabase } from '@/lib/supabase'
 import { isMissingArchivedAtColumnError } from '@/lib/postgrestErrors'
 import { normalizeEmail, normalizePhone } from '@/lib/normalize'
 import { addDaysIso, formatDue } from '@/lib/dates'
+import { OffCanvasRegistrar } from '@/components/layout/OffCanvasContext'
 import { Modal } from '@/components/ui/Modal'
 import { PageSpinner } from '@/components/ui/PageSpinner'
 import { useToast } from '@/hooks/useToast'
@@ -1976,6 +1977,9 @@ export function PositionDetailPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <OffCanvasRegistrar
+        active={Boolean(selectedPositionTask) || Boolean(drawerCandidate && highlightCandidate)}
+      />
       <header className="flex flex-col gap-4 border-b border-stone-200/90 pb-5 dark:border-stone-700">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex min-w-0 flex-1 items-start gap-3">

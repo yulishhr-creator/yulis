@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 
+import { useOffCanvasOptional } from '@/components/layout/OffCanvasContext'
+
 type ModalProps = {
   open: boolean
   onClose: () => void
@@ -18,6 +20,13 @@ export function Modal({ open, onClose, title, children, size = 'md', headerAside
   const reduceMotion = useReducedMotion()
   const panelRef = useRef<HTMLDivElement>(null)
   const prevFocusRef = useRef<HTMLElement | null>(null)
+  const offCanvas = useOffCanvasOptional()
+
+  useEffect(() => {
+    if (!offCanvas || !open) return
+    offCanvas.open()
+    return () => offCanvas.close()
+  }, [offCanvas, open])
 
   useEffect(() => {
     if (!open) return

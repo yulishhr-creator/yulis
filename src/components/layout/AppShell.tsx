@@ -22,6 +22,8 @@ import { AnimatedOutlet } from '@/components/layout/AnimatedOutlet'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { QuickActionsSidebarTrigger } from '@/components/layout/QuickActionsMenu'
 import { QuickActionsModal } from '@/components/layout/QuickActionsModal'
+import { OffCanvasProvider } from '@/components/layout/OffCanvasContext'
+import { ComposeFab } from '@/components/inbox/ComposeFab'
 import { WeatherVibes } from '@/components/layout/WeatherVibes'
 import { WeekProgressCard } from '@/components/layout/WeekProgressCard'
 import { PwaInstallPrompt } from '@/components/pwa/PwaInstallPrompt'
@@ -196,6 +198,7 @@ export function AppShell() {
   )
 
   return (
+    <OffCanvasProvider>
     <div className="bg-paper text-ink relative min-h-dvh w-full min-w-0 overflow-x-auto dark:bg-paper-dark dark:text-stone-100">
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         <div
@@ -231,6 +234,7 @@ export function AppShell() {
       </a>
 
       <QuickActionsModal open={quickActionsOpen} onClose={() => setQuickActionsOpen(false)} />
+      <ComposeFab />
 
       {/* Primary navigation — desktop workspace */}
       <aside
@@ -491,5 +495,6 @@ export function AppShell() {
 
       <PwaInstallPrompt />
     </div>
+    </OffCanvasProvider>
   )
 }

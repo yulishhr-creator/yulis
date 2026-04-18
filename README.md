@@ -2,6 +2,55 @@
 
 Recruiting workspace (React + TypeScript + Vite + Supabase).
 
+## Gmail integration (compose)
+
+The app can send email **through your Gmail account** using OAuth and the Gmail API. Configure this once in **Settings → Gmail**.
+
+### Google Cloud Console (one-time)
+
+1. Create a project (or pick an existing one) in [Google Cloud Console](https://console.cloud.google.com/).
+2. **APIs & Services → OAuth consent screen**: choose **External** (or Internal if Workspace-only). For personal testing, set publishing status to **Testing** and add your Gmail address under **Test users** (required for restricted scopes until the app is verified).
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → **Web application**.
+4. Under **Authorized redirect URIs**, add:
+   - `https://yulis.vercel.app/api/gmail/oauth/callback` (production)
+   - `http://localhost:3000/api/gmail/oauth/callback` (local — use `vercel dev`, see below)
+5. Enable **Gmail API** for the project (**APIs & Services → Library** → search “Gmail API” → Enable).
+
+Scopes used: `openid`, `email`, `profile`, `https://www.googleapis.com/auth/gmail.send`.
+
+### Environment variables (Vercel + local)
+
+Set these in the Vercel project (**Settings → Environment Variables**) for Production and Preview:
+
+| Variable | Description |
+|----------|-------------|
+| `GOOGLE_CLIENT_ID` | OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | OAuth client secret |
+| `GOOGLE_OAUTH_REDIRECT_URI` | Must match Google Console exactly, e.g. `https://yulis.vercel.app/api/gmail/oauth/callback` |
+| `SUPABASE_URL` | Same value as `VITE_SUPABASE_URL` |
+| `SUPABASE_ANON_KEY` | Same value as `VITE_SUPABASE_ANON_KEY` (API validates user JWTs) |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Server only** — never expose to the browser |
+| `OAUTH_STATE_SECRET` | Long random secret (e.g. 32+ bytes hex) used to sign OAuth `state` |
+| `APP_ORIGIN` | Optional — site URL for redirects after OAuth (defaults to `https://${VERCEL_URL}` on Vercel) |
+
+Copy from [.env.example](.env.example) into `.env` for local runs.
+
+### Database migration for Gmail tokens
+
+Apply [`supabase/migrations/033_gmail_integration.sql`](supabase/migrations/033_gmail_integration.sql) to your hosted Supabase database (Dashboard → SQL → paste file, or `psql "$DATABASE_URL" -f ...`).
+
+### Local API + Gmail
+
+Server routes live under `/api/*` (Vercel Functions). **`npm run dev` (Vite alone) does not serve `/api`.** Use:
+
+```bash
+vercel dev
+```
+
+so both the SPA and `/api/gmail/*` run together (default URL is often `http://localhost:3000`).
+
+---
+
 ## Scripts
 
 - `npm run dev` — local dev server
