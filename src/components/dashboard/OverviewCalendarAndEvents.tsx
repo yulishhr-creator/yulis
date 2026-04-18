@@ -14,7 +14,7 @@ import {
 } from 'date-fns'
 import { CalendarClock, CalendarDays, Pencil, Star, Trash2 } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import { useAuth } from '@/auth/useAuth'
 import { useToast } from '@/hooks/useToast'
@@ -169,14 +169,6 @@ export function OverviewCalendarAndEvents() {
   function closeEventForm() {
     setEventFormOpen(false)
     setEventFormEdit(null)
-  }
-
-  useEffect(() => {
-    if (searchParams.get('calEvent') !== '1') return
-    const date = searchParams.get('calDate')
-    const start =
-      date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T09:00` : format(new Date(), "yyyy-MM-dd'T'HH:mm")
-    openEventFormCreate(start)
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev)
@@ -186,7 +178,17 @@ export function OverviewCalendarAndEvents() {
       },
       { replace: true },
     )
-  }, [searchParams, setSearchParams, openEventFormCreate])
+  }
+
+  const calIntentFromUrl = searchParams.get('calEvent') === '1'
+  const eventModalOpen = eventFormOpen || calIntentFromUrl
+  const eventModalDefaultStartsAt = useMemo(() => {
+    if (!calIntentFromUrl) return eventFormDefaultStart
+    const date = searchParams.get('calDate')
+    return date && /^\d{4}-\d{2}-\d{2}$/.test(date)
+      ? `${date}T09:00`
+      : format(new Date(), "yyyy-MM-dd'T'HH:mm")
+  }, [calIntentFromUrl, searchParams, eventFormDefaultStart])
 
   const upcomingAll = upcomingQ.data ?? []
   const upcomingImportant = upcomingAll.filter((e) => e.is_important)
@@ -199,9 +201,9 @@ export function OverviewCalendarAndEvents() {
   return (
     <div className="flex flex-col gap-6">
       <CalendarEventFormModal
-        open={eventFormOpen}
+        open={eventModalOpen}
         onClose={closeEventForm}
-        defaultStartsAt={eventFormDefaultStart}
+        defaultStartsAt={eventModalDefaultStartsAt}
         editingEvent={eventFormEdit}
       />
 

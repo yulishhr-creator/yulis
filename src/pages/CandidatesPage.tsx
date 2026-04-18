@@ -93,7 +93,8 @@ export function CandidatesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const companyFromUrl = searchParams.get('company')
   const showAssignHint = searchParams.get('assign') === '1'
-  const openNewCandidateFromQuery = searchParams.get('new') === '1'
+  /** Opening intent — keep param until modal closes so route transition double-mount does not swallow it */
+  const newCandidateIntentUrl = searchParams.get('new') === '1'
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'archived'>('active')
   const [companyTab, setCompanyTab] = useState<'all' | string>('all')
   const [search, setSearch] = useState('')
@@ -121,6 +122,14 @@ export function CandidatesPage() {
   function closeNewCandidateModal() {
     setNewCandidateOpen(false)
     resetNewCandidateModal()
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('new')
+        return next
+      },
+      { replace: true },
+    )
   }
 
   function dismissAssignHint() {
@@ -141,20 +150,6 @@ export function CandidatesPage() {
     })
     return () => cancelAnimationFrame(id)
   }, [showAssignHint])
-
-  useEffect(() => {
-    if (!openNewCandidateFromQuery) return
-    resetNewCandidateModal()
-    setNewCandidateOpen(true)
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev)
-        next.delete('new')
-        return next
-      },
-      { replace: true },
-    )
-  }, [openNewCandidateFromQuery, setSearchParams])
 
   const companiesQ = useQuery({
     queryKey: ['companies', uid],
@@ -435,7 +430,7 @@ export function CandidatesPage() {
   return (
     <div className="flex flex-col gap-6">
       <Modal
-        open={newCandidateOpen}
+        open={newCandidateOpen || newCandidateIntentUrl}
         onClose={() => {
           if (createCandidateMutation.isPending || assignMutation.isPending) return
           closeNewCandidateModal()

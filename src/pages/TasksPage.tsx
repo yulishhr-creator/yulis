@@ -162,6 +162,9 @@ export function TasksPage() {
   const taskStatusParam = searchParams.get('taskStatus')
   const urlStatusFilter = taskStatusParam && isTaskStatus(taskStatusParam) ? taskStatusParam : null
   const companyParam = searchParams.get('company')
+  /** Keep intent params until modal closes — stripping on open breaks first paint after animated route transitions */
+  const addTaskIntentUrl = searchParams.get('addTask') === '1'
+  const trackTimeIntentUrl = searchParams.get('trackTime') === '1'
 
   const [trackOpen, setTrackOpen] = useState(false)
   const [trackPosId, setTrackPosId] = useState('')
@@ -187,6 +190,9 @@ export function TasksPage() {
   const [showArchived, setShowArchived] = useState(false)
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null)
   const tasksListOrderedRef = useRef<TaskRow[]>([])
+
+  const taskModalShowing = taskModalOpen || addTaskIntentUrl
+  const trackUiOpen = trackOpen || trackTimeIntentUrl
 
   const tasksQ = useQuery({
     queryKey: ['tasks-page', uid],
@@ -241,7 +247,7 @@ export function TasksPage() {
 
   const allPositionsForTaskQ = useQuery({
     queryKey: ['dashboard-all-positions', uid],
-    enabled: Boolean(supabase && uid && taskModalOpen),
+    enabled: Boolean(supabase && uid && taskModalShowing),
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('positions')
@@ -256,7 +262,7 @@ export function TasksPage() {
 
   const taskTemplatesQ = useQuery({
     queryKey: ['task-templates', uid],
-    enabled: Boolean(supabase && uid && taskModalOpen),
+    enabled: Boolean(supabase && uid && taskModalShowing),
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('task_templates')
@@ -270,7 +276,7 @@ export function TasksPage() {
 
   const candidatesForTaskModalQ = useQuery({
     queryKey: ['tasks-modal-candidates', uid],
-    enabled: Boolean(supabase && uid && taskModalOpen),
+    enabled: Boolean(supabase && uid && taskModalShowing),
     queryFn: async () => {
       const { data, error } = await supabase!
         .from('candidates')
@@ -286,7 +292,7 @@ export function TasksPage() {
 
   const positionCandidatesForTaskQ = useQuery({
     queryKey: ['dashboard-task-pcs', uid, newTaskPositionId],
-    enabled: Boolean(supabase && uid && taskModalOpen && newTaskPositionId.trim()),
+    enabled: Boolean(supabase && uid && taskModalShowing && newTaskPositionId.trim()),
     queryFn: async () => {
       let { data, error } = await supabase!
         .from('position_candidates')
@@ -412,7 +418,7 @@ export function TasksPage() {
   }, [templatePickerOpen])
 
   useEffect(() => {
-    if (searchParams.get('addTask') !== '1') return
+    if (!addTaskIntentUrl) return
     setNewTaskTitle('')
     setNewTaskDescription('')
     setNewTaskPositionCandidateId('')
@@ -423,6 +429,9 @@ export function TasksPage() {
     const pid = sessionStorage.getItem('yulis_task_prefill_position_id')
     setNewTaskPositionId(pid ?? '')
     setTaskModalOpen(true)
+  }, [addTaskIntentUrl])
+
+  function stripAddTaskQuery() {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev)
@@ -431,11 +440,9 @@ export function TasksPage() {
       },
       { replace: true },
     )
-  }, [searchParams, setSearchParams])
+  }
 
-  useEffect(() => {
-    if (searchParams.get('trackTime') !== '1') return
-    setTrackOpen(true)
+  function stripTrackTimeQuery() {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev)
@@ -444,7 +451,7 @@ export function TasksPage() {
       },
       { replace: true },
     )
-  }, [searchParams, setSearchParams])
+  }
 
   useEffect(() => {
     setNewTaskPositionCandidateId('')
@@ -452,10 +459,10 @@ export function TasksPage() {
   }, [newTaskPositionId])
 
   useEffect(() => {
-    if (!trackOpen) return
+    if (!trackUiOpen) return
     const rows = timerPositionsQ.data ?? []
     if (rows.length && !trackPosId) setTrackPosId(rows[0]!.id)
-  }, [trackOpen, timerPositionsQ.data, trackPosId])
+  }, [trackUiOpen, timerPositionsQ.data, trackPosId])
 
   const updateTaskStatus = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: TaskStatus }) => {
@@ -601,6 +608,7 @@ export function TasksPage() {
     onSuccess: async (_d, opts) => {
       success(opts?.saveTemplate ? 'Task created and template saved' : 'Task added')
       setTaskModalOpen(false)
+      stripAddTaskQuery()
       resetNewTaskForm()
       await qc.invalidateQueries({ queryKey: ['tasks-page'] })
       await qc.invalidateQueries({ queryKey: ['dashboard-task-kpis'] })
@@ -1166,7 +1174,14 @@ export function TasksPage() {
         </div>
       ) : null}
 
-      <Modal open={trackOpen} onClose={() => setTrackOpen(false)} title="Track time on a role">
+      <Modal
+        open={trackUiOpen}
+        onClose={() => {
+          setTrackOpen(false)
+          stripTrackTimeQuery()
+        }}
+        title="Track time on a role"
+      >
         <p className="text-ink-muted mb-3 text-sm">Every session is tied to a position. Stop the header timer when you are done.</p>
         {timer.open ? (
           <p className="text-ink mb-3 text-sm font-medium dark:text-stone-200">A timer is already running — stop it first.</p>
@@ -1207,6 +1222,7 @@ export function TasksPage() {
                 else {
                   success('Timer started')
                   setTrackOpen(false)
+                  stripTrackTimeQuery()
                   await qc.invalidateQueries({ queryKey: ['notification-count'] })
                 }
               }}
@@ -1218,9 +1234,10 @@ export function TasksPage() {
       </Modal>
 
       <Modal
-        open={taskModalOpen}
+        open={taskModalShowing}
         onClose={() => {
           setTaskModalOpen(false)
+          stripAddTaskQuery()
           resetNewTaskForm()
         }}
         title="New task"
