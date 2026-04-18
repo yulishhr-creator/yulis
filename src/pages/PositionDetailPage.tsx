@@ -2598,10 +2598,10 @@ export function PositionDetailPage() {
                             for (let i = 0; i < fs.length; i++) void uploadCandidateAttachment(candId, fs[i]!)
                           }}
                         />
-                        <div className="border-b border-stone-200/90 relative px-4 pb-3 pt-1 dark:border-stone-700">
+                        <div className="border-b border-stone-200/90 relative px-4 pb-3 pt-[max(1.25rem,env(safe-area-inset-top))] dark:border-stone-700 sm:pt-5">
                           <button
                             type="button"
-                            className="text-ink-muted hover:text-rose-600 absolute top-1 right-2 rounded-lg p-2 transition hover:bg-rose-50 dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
+                            className="text-ink-muted hover:text-rose-600 absolute top-3.5 right-2 rounded-lg p-2 transition hover:bg-rose-50 dark:hover:bg-rose-950/30 dark:hover:text-rose-400 sm:top-4"
                             title="Remove from this role"
                             aria-label="Remove candidate from this role"
                             disabled={archiveAssignmentOnRole.isPending}
