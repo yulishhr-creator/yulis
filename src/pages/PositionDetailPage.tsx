@@ -1827,11 +1827,26 @@ export function PositionDetailPage() {
       <li
         key={c.id}
         id={candId ? `cand-${candId}` : `pc-${c.id}`}
-        className={`overflow-hidden rounded-2xl border shadow-sm transition hover:shadow-md dark:shadow-none ${
+        className={`group overflow-hidden rounded-2xl border shadow-sm transition hover:shadow-md dark:shadow-none ${
+          candId ? 'cursor-pointer' : ''
+        } ${
           isRejected
             ? 'border-rose-200/90 bg-gradient-to-br from-rose-50/95 via-white to-white dark:border-rose-900/55 dark:from-rose-950/35 dark:via-stone-900 dark:to-stone-950'
             : 'border-stone-200/90 bg-gradient-to-br from-stone-100/90 via-white to-white dark:border-stone-600 dark:from-stone-900 dark:via-stone-900 dark:to-stone-950'
         }`}
+        role={candId ? 'button' : undefined}
+        tabIndex={candId ? 0 : undefined}
+        aria-label={candId ? `Open details for ${displayName}` : undefined}
+        onClick={() => {
+          if (candId) openCandidateDrawer(candId)
+        }}
+        onKeyDown={(e) => {
+          if (!candId) return
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            openCandidateDrawer(candId)
+          }
+        }}
       >
         <div className="flex gap-3 p-4">
           <div
@@ -1847,13 +1862,10 @@ export function PositionDetailPage() {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
-                <Link
-                  to={`?tab=candidates&candidate=${candId ?? ''}`}
-                  className="text-stitch-on-surface inline-flex min-w-0 items-center gap-1 text-base font-bold tracking-tight hover:text-[#9b3e20] dark:text-stone-100 dark:hover:text-orange-300"
-                >
+                <span className="text-stitch-on-surface inline-flex min-w-0 items-center gap-1 text-base font-bold tracking-tight group-hover:text-[#9b3e20] dark:text-stone-100 dark:group-hover:text-orange-300">
                   <span className="truncate">{displayName}</span>
                   <ChevronRight className="h-4 w-4 shrink-0 opacity-50" aria-hidden />
-                </Link>
+                </span>
                 <p className="text-ink-muted mt-1 text-xs leading-relaxed dark:text-stone-400">
                   <span className="font-semibold text-stone-600 dark:text-stone-300">{stageName}</span>
                   <span aria-hidden className="mx-1.5">
@@ -1880,7 +1892,8 @@ export function PositionDetailPage() {
               <div className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t border-stone-200/70 pt-3 dark:border-stone-600/60">
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation()
                     if (!window.confirm(`Withdraw ${displayName} from this role?`)) return
                     setOutcomeReasonId('')
                     setOutcomeReasonOther('')
