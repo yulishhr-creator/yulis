@@ -2594,10 +2594,10 @@ export function PositionDetailPage() {
                             for (let i = 0; i < fs.length; i++) void uploadCandidateAttachment(candId, fs[i]!)
                           }}
                         />
-                        <div className="border-b border-stone-200/90 relative px-5 pb-4 pt-2 dark:border-stone-700">
+                        <div className="border-b border-stone-200/90 relative px-4 pb-3 pt-1 dark:border-stone-700">
                           <button
                             type="button"
-                            className="text-ink-muted hover:text-rose-600 absolute top-2 right-3 rounded-lg p-2 transition hover:bg-rose-50 dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
+                            className="text-ink-muted hover:text-rose-600 absolute top-1 right-2 rounded-lg p-2 transition hover:bg-rose-50 dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
                             title="Remove from this role"
                             aria-label="Remove candidate from this role"
                             disabled={archiveAssignmentOnRole.isPending}
@@ -2613,8 +2613,8 @@ export function PositionDetailPage() {
                           >
                             <Trash2 className="h-4 w-4" aria-hidden />
                           </button>
-                          <div className="flex flex-col gap-4 sm:flex-row sm:gap-4 sm:items-start">
-                            <div className="order-2 flex w-full shrink-0 flex-row items-start gap-3 sm:order-1 sm:w-[7.5rem] sm:flex-col sm:items-stretch sm:gap-2">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+                            <div className="order-2 flex w-full shrink-0 flex-col items-stretch gap-2 sm:order-1 sm:w-[7.5rem]">
                               <div className="group/avatar relative h-[4.5rem] w-[4.5rem] shrink-0 sm:mx-auto">
                                 <div className="flex h-[4.5rem] w-[4.5rem] items-center justify-center overflow-hidden rounded-full border border-stone-200 bg-stone-100 text-base font-bold text-stone-600 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300">
                                   {photoSignedUrl && !drawerAvatarBroken ? (
@@ -2638,7 +2638,80 @@ export function PositionDetailPage() {
                                   <Pencil className="h-3 w-3" aria-hidden />
                                 </button>
                               </div>
-                              <div className="min-w-0 flex-1 sm:w-full">
+                              <div className="relative w-full shrink-0" ref={drawerAssignStatusRef}>
+                                <button
+                                  type="button"
+                                  onClick={() => setDrawerAssignStatusOpen((o) => !o)}
+                                  disabled={patchAssignmentStatus.isPending}
+                                  className={`border-line flex h-8 w-full shrink-0 items-center justify-between gap-1 rounded-lg border px-2 text-xs font-bold shadow-sm transition dark:border-line-dark ${
+                                    drawerCandidate!.status === 'in_progress'
+                                      ? 'border-emerald-200/90 bg-gradient-to-br from-emerald-50 to-white text-emerald-900 dark:border-emerald-800/80 dark:from-emerald-950/60 dark:to-stone-900 dark:text-emerald-200'
+                                      : drawerCandidate!.status === 'rejected'
+                                        ? 'border-rose-200/90 bg-gradient-to-br from-rose-50 to-white text-rose-900 dark:border-rose-800/80 dark:from-rose-950/50 dark:to-stone-900 dark:text-rose-100'
+                                        : 'border-stone-200/90 bg-gradient-to-br from-stone-100 to-white text-stone-800 dark:border-stone-600 dark:from-stone-800/80 dark:to-stone-900 dark:text-stone-200'
+                                  }`}
+                                  aria-expanded={drawerAssignStatusOpen}
+                                  aria-haspopup="listbox"
+                                  aria-label="Assignment status"
+                                  title="Assignment status"
+                                >
+                                  {drawerCandidate!.status === 'in_progress' ? (
+                                    <Play className="h-3.5 w-3.5 shrink-0 fill-current text-emerald-600 dark:text-emerald-400" aria-hidden />
+                                  ) : drawerCandidate!.status === 'rejected' ? (
+                                    <Ban className="h-3.5 w-3.5 shrink-0 text-rose-600 dark:text-rose-300" aria-hidden />
+                                  ) : (
+                                    <Pause className="h-3.5 w-3.5 shrink-0 text-stone-600 dark:text-stone-400" aria-hidden />
+                                  )}
+                                  <span className="min-w-0 flex-1 truncate">{formatAssignmentStatus(drawerCandidate!.status)}</span>
+                                  <ChevronDown className="h-3 w-3 shrink-0 opacity-60" aria-hidden />
+                                </button>
+                                {drawerAssignStatusOpen ? (
+                                  <div
+                                    role="listbox"
+                                    className="border-line absolute top-full left-0 right-0 z-[60] mt-1 rounded-xl border bg-white py-1 shadow-xl dark:border-line-dark dark:bg-stone-900 sm:left-auto sm:right-0 sm:min-w-[12rem]"
+                                  >
+                                    {(
+                                      [
+                                        { v: 'in_progress' as const, label: 'In progress', icon: Play, cls: 'text-emerald-800 dark:text-emerald-300' },
+                                        { v: 'rejected' as const, label: 'Rejected', icon: Ban, cls: 'text-rose-800 dark:text-rose-200' },
+                                        { v: 'withdrawn' as const, label: 'Withdrawn', icon: Pause, cls: 'text-stone-700 dark:text-stone-300' },
+                                      ] as const
+                                    ).map(({ v, label, icon: Icon, cls }) => (
+                                      <button
+                                        key={v}
+                                        type="button"
+                                        role="option"
+                                        className={`hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold ${cls}`}
+                                        onClick={() => {
+                                          setDrawerAssignStatusOpen(false)
+                                          if (v === drawerCandidate!.status) return
+                                          if (v === 'in_progress') {
+                                            if (!window.confirm('Move this assignment back to in progress?')) return
+                                            void patchAssignmentStatus.mutateAsync({
+                                              positionCandidateId: drawerCandidate!.id,
+                                              nextStatus: v,
+                                              closeTasks: false,
+                                            })
+                                            return
+                                          }
+                                          setOutcomeReasonId('')
+                                          setOutcomeReasonOther('')
+                                          setOutcomeCloseTasks(true)
+                                          setAssignmentOutcomeModal({
+                                            nextStatus: v,
+                                            positionCandidateId: drawerCandidate!.id,
+                                            source: 'drawer',
+                                          })
+                                        }}
+                                      >
+                                        <Icon className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
+                                        {label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="min-w-0 w-full">
                                 <select
                                   className="w-full min-w-0 cursor-pointer rounded-md border border-stone-200/70 bg-stone-50/90 py-1 pl-1.5 pr-7 text-[11px] font-medium text-stone-700 shadow-sm dark:border-stone-600 dark:bg-stone-900/70 dark:text-stone-200"
                                   value={normalizeAssignmentSource(c.source)}
@@ -2662,9 +2735,10 @@ export function PositionDetailPage() {
                               </div>
                             </div>
                             <div className="order-1 min-w-0 w-full flex-1 sm:order-2">
-                              <div className="flex min-w-0 flex-wrap items-start gap-2">
-                                <div className="group/name flex min-w-0 w-full flex-[1_1_100%] flex-col gap-1 sm:flex-[1_1_12rem]">
-                                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                              <div className="flex min-w-0 flex-col gap-2">
+                                <div className="flex min-h-[4.5rem] flex-col justify-center gap-1 pr-10 sm:pr-12">
+                                  <div className="group/name flex min-w-0 w-full flex-col gap-1">
+                                    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
                                     {drawerFieldEdit === 'name' && candId ? (
                                       <>
                                         <input
@@ -2776,84 +2850,9 @@ export function PositionDetailPage() {
                                         </button>
                                       </>
                                     )}
+                                    </div>
                                   </div>
                                 </div>
-                                <div className="relative w-full shrink-0 sm:w-auto sm:shrink-0" ref={drawerAssignStatusRef}>
-                                  <button
-                                    type="button"
-                                    onClick={() => setDrawerAssignStatusOpen((o) => !o)}
-                                    disabled={patchAssignmentStatus.isPending}
-                                    className={`border-line flex h-8 w-full shrink-0 items-center justify-between gap-1 rounded-lg border px-2 text-xs font-bold shadow-sm transition sm:w-auto sm:justify-center dark:border-line-dark ${
-                                      drawerCandidate!.status === 'in_progress'
-                                        ? 'border-emerald-200/90 bg-gradient-to-br from-emerald-50 to-white text-emerald-900 dark:border-emerald-800/80 dark:from-emerald-950/60 dark:to-stone-900 dark:text-emerald-200'
-                                        : drawerCandidate!.status === 'rejected'
-                                          ? 'border-rose-200/90 bg-gradient-to-br from-rose-50 to-white text-rose-900 dark:border-rose-800/80 dark:from-rose-950/50 dark:to-stone-900 dark:text-rose-100'
-                                          : 'border-stone-200/90 bg-gradient-to-br from-stone-100 to-white text-stone-800 dark:border-stone-600 dark:from-stone-800/80 dark:to-stone-900 dark:text-stone-200'
-                                    }`}
-                                    aria-expanded={drawerAssignStatusOpen}
-                                    aria-haspopup="listbox"
-                                    aria-label="Assignment status"
-                                    title="Assignment status"
-                                  >
-                                    {drawerCandidate!.status === 'in_progress' ? (
-                                      <Play className="h-3.5 w-3.5 shrink-0 fill-current text-emerald-600 dark:text-emerald-400" aria-hidden />
-                                    ) : drawerCandidate!.status === 'rejected' ? (
-                                      <Ban className="h-3.5 w-3.5 shrink-0 text-rose-600 dark:text-rose-300" aria-hidden />
-                                    ) : (
-                                      <Pause className="h-3.5 w-3.5 shrink-0 text-stone-600 dark:text-stone-400" aria-hidden />
-                                    )}
-                                    <span className="min-w-0 flex-1 truncate sm:max-w-[9rem] sm:flex-none">
-                                      {formatAssignmentStatus(drawerCandidate!.status)}
-                                    </span>
-                                    <ChevronDown className="h-3 w-3 shrink-0 opacity-60" aria-hidden />
-                                  </button>
-                                  {drawerAssignStatusOpen ? (
-                                    <div
-                                      role="listbox"
-                                      className="border-line absolute top-full right-0 z-[60] mt-1 min-w-[12rem] rounded-xl border bg-white py-1 shadow-xl dark:border-line-dark dark:bg-stone-900"
-                                    >
-                                      {(
-                                        [
-                                          { v: 'in_progress' as const, label: 'In progress', icon: Play, cls: 'text-emerald-800 dark:text-emerald-300' },
-                                          { v: 'rejected' as const, label: 'Rejected', icon: Ban, cls: 'text-rose-800 dark:text-rose-200' },
-                                          { v: 'withdrawn' as const, label: 'Withdrawn', icon: Pause, cls: 'text-stone-700 dark:text-stone-300' },
-                                        ] as const
-                                      ).map(({ v, label, icon: Icon, cls }) => (
-                                        <button
-                                          key={v}
-                                          type="button"
-                                          role="option"
-                                          className={`hover:bg-stone-50 dark:hover:bg-stone-800 flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold ${cls}`}
-                                          onClick={() => {
-                                            setDrawerAssignStatusOpen(false)
-                                            if (v === drawerCandidate!.status) return
-                                            if (v === 'in_progress') {
-                                              if (!window.confirm('Move this assignment back to in progress?')) return
-                                              void patchAssignmentStatus.mutateAsync({
-                                                positionCandidateId: drawerCandidate!.id,
-                                                nextStatus: v,
-                                                closeTasks: false,
-                                              })
-                                              return
-                                            }
-                                            setOutcomeReasonId('')
-                                            setOutcomeReasonOther('')
-                                            setOutcomeCloseTasks(true)
-                                            setAssignmentOutcomeModal({
-                                              nextStatus: v,
-                                              positionCandidateId: drawerCandidate!.id,
-                                              source: 'drawer',
-                                            })
-                                          }}
-                                        >
-                                          <Icon className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
-                                          {label}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  ) : null}
-                                </div>
-                              </div>
                               {tagRows.length > 0 ? (
                                 <div className="mt-2 flex flex-wrap gap-1.5">
                                   {tagRows.map((t) => (
@@ -3109,6 +3108,7 @@ export function PositionDetailPage() {
                                     )}
                                   </div>
                                 ) : null}
+                              </div>
                               </div>
                             </div>
                           </div>
