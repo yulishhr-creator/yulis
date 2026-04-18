@@ -103,6 +103,23 @@ function normalizeAssignmentSource(raw: string): AssignmentSourceValue {
   return 'sourcing'
 }
 
+const ASSIGNMENT_OUTCOME_REJECTED_REASONS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: 'profile_mismatch', label: 'Not a fit — profile or experience mismatch' },
+  { id: 'client_passed', label: 'Client passed — chose another candidate' },
+  { id: 'process_exit', label: 'Dropped out during process (interview / assessment)' },
+  { id: 'compensation', label: 'Compensation or terms misalignment' },
+  { id: 'other', label: 'Other' },
+]
+
+const ASSIGNMENT_OUTCOME_WITHDRAWN_REASONS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: 'candidate_withdrew', label: 'Candidate withdrew interest' },
+  { id: 'other_offer', label: 'Accepted another offer elsewhere' },
+  { id: 'personal', label: 'Personal, relocation, or availability change' },
+  { id: 'other', label: 'Other' },
+]
+
+const DRAWER_WIDTH_SCALE = 1.3
+
 const MAX_RESUME_UPLOAD_BYTES = 15 * 1024 * 1024
 const MAX_ATTACHMENT_UPLOAD_BYTES = 15 * 1024 * 1024
 const MAX_AVATAR_UPLOAD_BYTES = 5 * 1024 * 1024
@@ -646,6 +663,14 @@ export function PositionDetailPage() {
   const drawerAssignStatusRef = useRef<HTMLDivElement>(null)
   const drawerNameMeasureRef = useRef<HTMLSpanElement>(null)
   const [candidateDrawerWidthPx, setCandidateDrawerWidthPx] = useState<number | null>(null)
+  const [assignmentOutcomeModal, setAssignmentOutcomeModal] = useState<null | {
+    nextStatus: 'rejected' | 'withdrawn'
+    positionCandidateId: string
+    source: 'drawer' | 'list_withdraw'
+  }>(null)
+  const [outcomeReasonId, setOutcomeReasonId] = useState('')
+  const [outcomeReasonOther, setOutcomeReasonOther] = useState('')
+  const [outcomeCloseTasks, setOutcomeCloseTasks] = useState(true)
   useEffect(() => {
     if (tab !== 'tasks') setSelectedPositionTask(null)
   }, [tab])
@@ -1138,10 +1163,12 @@ export function PositionDetailPage() {
       positionCandidateId,
       nextStatus,
       closeTasks,
+      outcomeReason,
     }: {
       positionCandidateId: string
       nextStatus: 'in_progress' | 'rejected' | 'withdrawn'
       closeTasks: boolean
+      outcomeReason?: string | null
     }) => {
       const row = (candidatesQ.data ?? []).find((c) => c.id === positionCandidateId)
       const prev = (row?.status as string) ?? 'in_progress'
@@ -1166,9 +1193,10 @@ export function PositionDetailPage() {
         prev,
         nextStatus,
         name: prof?.full_name ?? 'Candidate',
+        outcomeReason: outcomeReason?.trim() || null,
       }
     },
-    onSuccess: async ({ positionCandidateId, candidateId, prev, nextStatus, name }) => {
+    onSuccess: async ({ positionCandidateId, candidateId, prev, nextStatus, name, outcomeReason }) => {
       success('Status updated')
       await logPositionCandidateTransition(supabase!, user!.id, {
         position_candidate_id: positionCandidateId,
@@ -1182,8 +1210,12 @@ export function PositionDetailPage() {
         candidate_id: candidateId ?? null,
         position_candidate_id: positionCandidateId,
         title: `${name}: ${nextStatus}`,
-        subtitle: `${prev} → ${nextStatus}`,
-        metadata: { from: prev, to: nextStatus },
+        subtitle: outcomeReason ? `${prev} → ${nextStatus} · ${outcomeReason}` : `${prev} → ${nextStatus}`,
+        metadata: {
+          from: prev,
+          to: nextStatus,
+          ...(outcomeReason ? { outcome_reason: outcomeReason } : {}),
+        },
       })
       await invalidateAll()
     },
@@ -1215,7 +1247,15 @@ export function PositionDetailPage() {
   })
 
   const withdrawFromRole = useMutation({
-    mutationFn: async (positionCandidateId: string) => {
+    mutationFn: async ({
+      positionCandidateId,
+      outcomeReason,
+      closeTasks,
+    }: {
+      positionCandidateId: string
+      outcomeReason?: string | null
+      closeTasks?: boolean
+    }) => {
       const row = (candidatesQ.data ?? []).find((c) => c.id === positionCandidateId)
       const prevStatus = (row?.status as string) ?? 'in_progress'
       const prof = nestedCandidate(row?.candidates ?? null)
@@ -1225,14 +1265,23 @@ export function PositionDetailPage() {
         .eq('id', positionCandidateId)
         .eq('user_id', user!.id)
       if (error) throw error
+      if (closeTasks) {
+        await supabase!
+          .from('tasks')
+          .update({ status: 'closed' })
+          .eq('position_candidate_id', positionCandidateId)
+          .eq('user_id', user!.id)
+          .neq('status', 'closed')
+      }
       return {
         positionCandidateId,
         prevStatus,
         candidateId: prof?.id ?? row?.candidate_id ?? null,
         name: prof?.full_name ?? 'Candidate',
+        outcomeReason: outcomeReason?.trim() || null,
       }
     },
-    onSuccess: async ({ positionCandidateId, prevStatus, candidateId, name }) => {
+    onSuccess: async ({ positionCandidateId, prevStatus, candidateId, name, outcomeReason }) => {
       success('Withdrawn from this role')
       await logPositionCandidateTransition(supabase!, user!.id, {
         position_candidate_id: positionCandidateId,
@@ -1246,7 +1295,8 @@ export function PositionDetailPage() {
         candidate_id: candidateId,
         position_candidate_id: positionCandidateId,
         title: `${name}: withdrawn from role`,
-        subtitle: 'Assignment closed',
+        subtitle: outcomeReason ? `Assignment closed · ${outcomeReason}` : 'Assignment closed',
+        metadata: outcomeReason ? { outcome_reason: outcomeReason } : {},
       })
       if (highlightCandidate && candidateId === highlightCandidate) setSearch({}, { replace: true })
       await invalidateAll()
@@ -1556,7 +1606,9 @@ export function PositionDetailPage() {
     const nameW = el.scrollWidth
     const minW = 360
     const cap = typeof window !== 'undefined' ? Math.min(window.innerWidth - 24, 560) : 560
-    setCandidateDrawerWidthPx(Math.min(cap, Math.max(minW, nameW + 220)))
+    const base = Math.min(cap, Math.max(minW, nameW + 220))
+    const vwCap = typeof window !== 'undefined' ? Math.floor((window.innerWidth - 24) * 0.98) : base
+    setCandidateDrawerWidthPx(Math.min(vwCap, Math.round(base * DRAWER_WIDTH_SCALE)))
   }, [highlightCandidate, drawerCandidate, drawerNameForMeasure])
 
   function copyWelcomeSnippet(text: string, label: string) {
@@ -1829,7 +1881,15 @@ export function PositionDetailPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (window.confirm(`Withdraw ${displayName} from this role?`)) void withdrawFromRole.mutateAsync(c.id)
+                    if (!window.confirm(`Withdraw ${displayName} from this role?`)) return
+                    setOutcomeReasonId('')
+                    setOutcomeReasonOther('')
+                    setOutcomeCloseTasks(true)
+                    setAssignmentOutcomeModal({
+                      nextStatus: 'withdrawn',
+                      positionCandidateId: c.id,
+                      source: 'list_withdraw',
+                    })
                   }}
                   className="text-ink-muted hover:text-red-600 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold transition hover:bg-red-50 dark:hover:bg-red-950/30 dark:hover:text-rose-300"
                 >
@@ -2433,7 +2493,7 @@ export function PositionDetailPage() {
                 onClick={closeCandidateDrawer}
               />
               <aside
-                className={`border-line fixed top-0 right-0 z-50 flex h-full w-full max-w-full flex-col border-l bg-white shadow-2xl transition-transform duration-300 ease-out sm:max-w-[min(100vw-8px,42rem)] dark:border-line-dark dark:bg-stone-900 ${
+                className={`border-line fixed top-0 right-0 z-50 flex h-full w-full max-w-full flex-col border-l bg-white shadow-2xl transition-transform duration-300 ease-out sm:max-w-[min(100vw-8px,54.6rem)] dark:border-line-dark dark:bg-stone-900 ${
                   candidateDrawerWidthPx == null ? '' : 'sm:max-w-none'
                 } ${drawerPanelEntered ? 'translate-x-0' : 'translate-x-full'}`}
                 style={
@@ -2753,12 +2813,22 @@ export function PositionDetailPage() {
                                           onClick={() => {
                                             setDrawerAssignStatusOpen(false)
                                             if (v === drawerCandidate!.status) return
-                                            if (!window.confirm('Change this assignment’s status?')) return
-                                            const closeTasks = v !== 'in_progress' ? window.confirm('Also mark open tasks for this assignment as done?') : false
-                                            void patchAssignmentStatus.mutateAsync({
-                                              positionCandidateId: drawerCandidate!.id,
+                                            if (v === 'in_progress') {
+                                              if (!window.confirm('Move this assignment back to in progress?')) return
+                                              void patchAssignmentStatus.mutateAsync({
+                                                positionCandidateId: drawerCandidate!.id,
+                                                nextStatus: v,
+                                                closeTasks: false,
+                                              })
+                                              return
+                                            }
+                                            setOutcomeReasonId('')
+                                            setOutcomeReasonOther('')
+                                            setOutcomeCloseTasks(true)
+                                            setAssignmentOutcomeModal({
                                               nextStatus: v,
-                                              closeTasks,
+                                              positionCandidateId: drawerCandidate!.id,
+                                              source: 'drawer',
                                             })
                                           }}
                                         >
@@ -3626,6 +3696,136 @@ export function PositionDetailPage() {
             {setPositionTerminal.isPending ? 'Saving…' : 'Confirm'}
           </button>
         </div>
+      </Modal>
+
+      <Modal
+        open={assignmentOutcomeModal != null}
+        onClose={() => {
+          setAssignmentOutcomeModal(null)
+          setOutcomeReasonId('')
+          setOutcomeReasonOther('')
+        }}
+        title={
+          assignmentOutcomeModal == null
+            ? 'Assignment update'
+            : assignmentOutcomeModal.nextStatus === 'rejected'
+              ? 'Why was this assignment rejected?'
+              : 'Why was this assignment withdrawn?'
+        }
+      >
+        {assignmentOutcomeModal ? (
+          <>
+            <p className="text-ink-muted text-sm dark:text-stone-400">
+              Choose the closest reason. It is stored on the activity timeline for your records.
+            </p>
+            <div className="mt-4 flex max-h-[min(50vh,16rem)] flex-col gap-2 overflow-y-auto pr-0.5">
+              {(assignmentOutcomeModal.nextStatus === 'rejected'
+                ? ASSIGNMENT_OUTCOME_REJECTED_REASONS
+                : ASSIGNMENT_OUTCOME_WITHDRAWN_REASONS
+              ).map((opt) => (
+                <label
+                  key={opt.id}
+                  className={`flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-2.5 text-sm transition ${
+                    outcomeReasonId === opt.id
+                      ? 'border-accent bg-accent/8 dark:bg-accent/15'
+                      : 'border-stone-200 dark:border-stone-600'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="outcome-reason"
+                    className="border-line mt-1 accent-[#9b3e20] dark:border-stone-500"
+                    checked={outcomeReasonId === opt.id}
+                    onChange={() => setOutcomeReasonId(opt.id)}
+                  />
+                  <span className="text-stitch-on-surface dark:text-stone-100">{opt.label}</span>
+                </label>
+              ))}
+            </div>
+            {outcomeReasonId === 'other' ? (
+              <label className="mt-3 flex flex-col gap-1 text-sm font-medium">
+                Please specify
+                <textarea
+                  value={outcomeReasonOther}
+                  onChange={(e) => setOutcomeReasonOther(e.target.value)}
+                  rows={3}
+                  className="border-line font-normal rounded-xl border px-3 py-2 dark:border-line-dark dark:bg-stone-900/50"
+                  placeholder="Briefly explain…"
+                />
+              </label>
+            ) : null}
+            <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="border-line rounded accent-[#9b3e20] dark:border-stone-500"
+                checked={outcomeCloseTasks}
+                onChange={(e) => setOutcomeCloseTasks(e.target.checked)}
+              />
+              Close open tasks linked to this assignment
+            </label>
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                className="border-line rounded-full border px-4 py-2 text-sm font-semibold dark:border-line-dark"
+                onClick={() => {
+                  setAssignmentOutcomeModal(null)
+                  setOutcomeReasonId('')
+                  setOutcomeReasonOther('')
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={patchAssignmentStatus.isPending || withdrawFromRole.isPending}
+                className="bg-accent text-stone-50 rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                onClick={() => {
+                  if (!assignmentOutcomeModal) return
+                  const opts =
+                    assignmentOutcomeModal.nextStatus === 'rejected'
+                      ? ASSIGNMENT_OUTCOME_REJECTED_REASONS
+                      : ASSIGNMENT_OUTCOME_WITHDRAWN_REASONS
+                  if (!outcomeReasonId) {
+                    toastError('Select a reason')
+                    return
+                  }
+                  const preset = opts.find((p) => p.id === outcomeReasonId)
+                  let reasonText = ''
+                  if (outcomeReasonId === 'other') {
+                    const t = outcomeReasonOther.trim()
+                    if (!t) {
+                      toastError('Please describe the reason')
+                      return
+                    }
+                    reasonText = `Other: ${t}`
+                  } else {
+                    reasonText = preset?.label ?? outcomeReasonId
+                  }
+                  const { nextStatus, positionCandidateId, source } = assignmentOutcomeModal
+                  setAssignmentOutcomeModal(null)
+                  setOutcomeReasonId('')
+                  setOutcomeReasonOther('')
+                  if (source === 'list_withdraw') {
+                    void withdrawFromRole.mutateAsync({
+                      positionCandidateId,
+                      outcomeReason: reasonText,
+                      closeTasks: outcomeCloseTasks,
+                    })
+                  } else {
+                    void patchAssignmentStatus.mutateAsync({
+                      positionCandidateId,
+                      nextStatus,
+                      closeTasks: outcomeCloseTasks,
+                      outcomeReason: reasonText,
+                    })
+                  }
+                }}
+              >
+                {patchAssignmentStatus.isPending || withdrawFromRole.isPending ? 'Saving…' : 'Confirm'}
+              </button>
+            </div>
+          </>
+        ) : null}
       </Modal>
 
       <Modal open={positionSetupOpen} onClose={() => setPositionSetupOpen(false)} title="Role setup" size="lg">
