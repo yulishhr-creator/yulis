@@ -748,6 +748,7 @@ export function PositionDetailPage() {
 
   const invalidateAll = async () => {
     await qc.invalidateQueries({ queryKey: ['position', id] })
+    await qc.invalidateQueries({ queryKey: ['position-stages', id] })
     await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
     await qc.invalidateQueries({ queryKey: ['position-transition-stats', id] })
     await qc.invalidateQueries({ queryKey: ['position-activity', id] })
