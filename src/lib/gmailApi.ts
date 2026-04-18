@@ -33,7 +33,7 @@ function formatApiError(j: { error?: string; missing_env?: string }, fallback: s
 function throwIfUnreachableLocalApi(res: Response): void {
   if (import.meta.env.DEV && res.status === 502) {
     throw new Error(
-      'Local API returned 502: start `vercel dev` on the port in DEV_API_PROXY_TARGET (default http://127.0.0.1:3000), or run only `npm run dev:vercel` and use that URL. See README → Local API + Gmail.',
+      'Local API returned 502: run `npm run dev:stack` (starts Vercel on :3000 then Vite on :5173), or start `vercel dev --listen 3000` before `npm run dev`. See README → Local API + Gmail.',
     )
   }
 }

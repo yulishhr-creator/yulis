@@ -12,7 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const apiProxyTarget =
-    env.DEV_API_PROXY_TARGET || 'http://127.0.0.1:3000'
+    env.DEV_API_PROXY_TARGET || 'http://localhost:3000'
 
   return {
   plugins: [

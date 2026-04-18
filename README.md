@@ -47,20 +47,29 @@ Apply [`supabase/migrations/033_gmail_integration.sql`](supabase/migrations/033_
 
 Server routes live under `/api/*` (Vercel Functions).
 
-**Option A — one process:** run `vercel dev` and open the URL it prints (often `http://localhost:3000`). The SPA and `/api/gmail/*` run together.
+**Recommended (Vite + `/api` in one step):** from the repo root run:
 
-**Option B — two processes (Vite HMR + APIs):** in one terminal run `vercel dev --listen 3000` (or `npm run dev:vercel`), in another run `npm run dev` and open **Vite’s** URL (e.g. `http://localhost:5173`). Vite proxies `/api/*` to `http://127.0.0.1:3000` by default; override with `DEV_API_PROXY_TARGET` in `.env` if your `vercel dev` port differs.
+```bash
+npm run dev:stack
+```
 
-If `/api/gmail/*` returns **502** in the browser while using Vite, the proxy target is unreachable: start `vercel dev` on that host/port first, or use **Option A** only.
+This starts `vercel dev` on **port 3000**, waits until that port accepts connections, then starts Vite on **port 5173**. Open **`http://localhost:5173`** — Vite proxies `/api/*` to `http://localhost:3000` (override with `DEV_API_PROXY_TARGET` in `.env` if needed).
 
-Without a reachable `vercel dev` on that port, Gmail API calls from the Vite app will fail to connect — plain `npm run dev` no longer mis-serves `api/*.ts` as JavaScript, but it does not implement the functions itself.
+**Option A — one process, one URL:** run `npm run dev:vercel` (or `vercel dev`) and open the URL it prints (often `http://localhost:3000`). The SPA and `/api/gmail/*` share that origin (no Vite proxy).
+
+**Option B — two terminals:** start `vercel dev --listen 3000` first, then in another terminal run `npm run dev` and open Vite’s URL.
+
+If `/api/gmail/*` returns **502** while using Vite on :5173, nothing is listening on the proxy target — use `npm run dev:stack` or start `vercel dev` on that port before loading the app.
+
+Plain `npm run dev` alone does not run serverless routes; it only proxies `/api` if a backend is already up on the target port.
 
 ---
 
 ## Scripts
 
-- `npm run dev` — Vite dev server (proxies `/api` to `DEV_API_PROXY_TARGET`; run `vercel dev` too if you need Gmail APIs)
-- `npm run dev:vercel` — `vercel dev` (SPA + `/api/*` on one origin; recommended for Gmail locally)
+- `npm run dev` — Vite only (proxies `/api` to `DEV_API_PROXY_TARGET`; needs `vercel dev` on that port for Gmail APIs)
+- `npm run dev:stack` — `vercel dev` on :3000, then Vite on :5173 (use this for local Gmail + HMR)
+- `npm run dev:vercel` — `vercel dev` only (single URL, often `http://localhost:3000`)
 - `npm run build` — typecheck + production bundle
 - `npm run lint` — ESLint
 - `npm run test` — Vitest (unit tests under `src/**/*.test.ts`)
