@@ -9,6 +9,10 @@
       "headers": {
         "Authorization": "Bearer YOUR_MAKE_MCP_BEARER_TOKEN"
       }
+    },
+    "gmail": {
+      "command": "npx",
+      "args": ["-y", "@peakmojo/mcp-server-headless-gmail"]
     }
   }
 }
