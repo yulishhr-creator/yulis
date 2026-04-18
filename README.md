@@ -31,7 +31,11 @@ Set these in the Vercel project (**Settings → Environment Variables**) for Pro
 | `SUPABASE_ANON_KEY` | Same value as `VITE_SUPABASE_ANON_KEY` (API validates user JWTs) |
 | `SUPABASE_SERVICE_ROLE_KEY` | **Server only** — never expose to the browser |
 | `OAUTH_STATE_SECRET` | Long random secret (e.g. 32+ bytes hex) used to sign OAuth `state` |
-| `APP_ORIGIN` | Optional — site URL for redirects after OAuth (defaults to `https://${VERCEL_URL}` on Vercel) |
+| `APP_ORIGIN` | Recommended: `https://yulis.vercel.app` so OAuth return URL is stable (preview deploys use a different `VERCEL_URL`) |
+
+**Important:** `VITE_SUPABASE_*` is **only for the browser bundle**. Serverless functions under `/api/*` **do not** see `VITE_*` variables. You must set `SUPABASE_URL` and `SUPABASE_ANON_KEY` explicitly (same values as in the Vite vars). If `/api/gmail/status` or Connect fails with a message about a missing env name, add that variable in Vercel and **redeploy**.
+
+From the Google **Download JSON** (OAuth client): use `client_id` → `GOOGLE_CLIENT_ID` and `client_secret` → `GOOGLE_CLIENT_SECRET`.
 
 Copy from [.env.example](.env.example) into `.env` for local runs.
 

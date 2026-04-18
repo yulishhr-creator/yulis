@@ -54,8 +54,8 @@ export function ComposeFab() {
       }
       setComposerOpen(true)
       setMinimized(false)
-    } catch {
-      toastError('Could not check Gmail connection.')
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : 'Could not check Gmail connection.')
     }
   }, [gmailQ.data, navigate, toastError])
 

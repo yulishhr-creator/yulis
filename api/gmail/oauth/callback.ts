@@ -3,6 +3,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { appOrigin, requireEnv } from '../../_lib/env'
 import { exchangeAuthorizationCode, fetchGoogleEmail } from '../../_lib/google-oauth'
 import { parseOAuthState } from '../../_lib/oauth-state'
+import { parseMissingEnvKey } from '../../_lib/respond'
 import { createServiceRoleClient } from '../../_lib/supabase-admin'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -74,6 +75,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     res.redirect(302, `${origin}/settings/gmail?connected=1`)
   } catch (e) {
+    const key = parseMissingEnvKey(e)
+    if (key) {
+      res.redirect(302, `${origin}/settings/gmail?error=${encodeURIComponent(`missing_env:${key}`)}`)
+      return
+    }
     console.error(e)
     res.redirect(302, `${origin}/settings/gmail?error=callback_failed`)
   }

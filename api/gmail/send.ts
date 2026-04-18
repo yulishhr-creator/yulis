@@ -3,6 +3,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { requireUserId } from '../_lib/auth'
 import { buildRfc822Message, toGmailRawBase64Url } from '../_lib/gmail-raw'
 import { refreshAccessToken } from '../_lib/google-oauth'
+import { sendApiError } from '../_lib/respond'
 import { createServiceRoleClient } from '../_lib/supabase-admin'
 
 type Row = {
@@ -166,7 +167,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     res.status(200).json({ id: sendJson.id, threadId: sendJson.threadId })
   } catch (e) {
-    console.error(e)
-    res.status(500).json({ error: 'send_failed' })
+    sendApiError(res, 500, e, 'send_failed')
   }
 }

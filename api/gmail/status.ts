@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 import { requireUserId } from '../_lib/auth'
 import { createServiceRoleClient } from '../_lib/supabase-admin'
+import { sendApiError } from '../_lib/respond'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
@@ -32,7 +33,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       email: connected ? data!.provider_account_email : null,
     })
   } catch (e) {
-    console.error(e)
-    res.status(500).json({ error: 'status_failed' })
+    sendApiError(res, 500, e, 'status_failed')
   }
 }

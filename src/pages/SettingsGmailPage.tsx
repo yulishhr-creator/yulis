@@ -14,6 +14,7 @@ export function SettingsGmailPage() {
   const gmailQ = useQuery({
     queryKey: ['gmail-status'],
     queryFn: getGmailStatus,
+    retry: false,
   })
 
   const oauthHandled = useRef(false)
@@ -27,12 +28,36 @@ export function SettingsGmailPage() {
       success('Gmail connected')
       void queryClient.invalidateQueries({ queryKey: ['gmail-status'] })
     }
-    if (err) toastError(`Google: ${err}`)
+    if (err) {
+      if (err.startsWith('missing_env:')) {
+        const key = err.slice('missing_env:'.length)
+        toastError(`Vercel is missing "${key}". Add it under Project → Settings → Environment Variables, then redeploy.`)
+      } else {
+        toastError(`Google: ${err}`)
+      }
+    }
     const next = new URLSearchParams(params)
     next.delete('connected')
     next.delete('error')
     setParams(next, { replace: true })
   }, [params, queryClient, setParams, success, toastError])
+
+  const connectOnce = useRef(false)
+  useEffect(() => {
+    if (params.get('connect') !== '1' || connectOnce.current) return
+    connectOnce.current = true
+    const next = new URLSearchParams(params)
+    next.delete('connect')
+    setParams(next, { replace: true })
+    void (async () => {
+      try {
+        const url = await startGmailOAuth()
+        window.location.href = url
+      } catch (e) {
+        toastError(e instanceof Error ? e.message : 'Could not start Google sign-in')
+      }
+    })()
+  }, [params, setParams, toastError])
 
   const discMut = useMutation({
     mutationFn: disconnectGmail,
@@ -75,8 +100,18 @@ export function SettingsGmailPage() {
         <p className="text-ink-muted mt-2 text-sm dark:text-stone-400">
           Authorize with Google (OAuth). Only the Gmail send scope is requested. Tokens stay on the server.
         </p>
+        <p className="text-ink-muted mt-2 text-xs dark:text-stone-500">
+          One-click: open{' '}
+          <code className="rounded bg-stone-100 px-1 py-0.5 text-[11px] dark:bg-stone-800">/settings/gmail?connect=1</code>{' '}
+          while signed in.
+        </p>
 
         <div className="mt-6">
+          {gmailQ.isError ? (
+            <p className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-900/40 dark:bg-red-950/35 dark:text-red-200">
+              {gmailQ.error instanceof Error ? gmailQ.error.message : 'Could not reach Gmail status API.'}
+            </p>
+          ) : null}
           {gmailQ.isPending ? (
             <p className="text-ink-muted text-sm dark:text-stone-400">Checking connection…</p>
           ) : gmailQ.data?.connected && gmailQ.data.email ? (

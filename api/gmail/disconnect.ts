@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 import { requireUserId } from '../_lib/auth'
 import { revokeGoogleToken } from '../_lib/google-oauth'
+import { sendApiError } from '../_lib/respond'
 import { createServiceRoleClient } from '../_lib/supabase-admin'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -40,7 +41,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     res.status(200).json({ ok: true })
   } catch (e) {
-    console.error(e)
-    res.status(500).json({ error: 'disconnect_failed' })
+    sendApiError(res, 500, e, 'disconnect_failed')
   }
 }

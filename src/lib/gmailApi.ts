@@ -7,6 +7,13 @@ async function getAccessToken(): Promise<string | null> {
   return data.session?.access_token ?? null
 }
 
+function formatApiError(j: { error?: string; missing_env?: string }, fallback: string): string {
+  if (j.missing_env) {
+    return `${j.error ?? 'config'}: add "${j.missing_env}" in Vercel (Environment Variables) and redeploy`
+  }
+  return j.error ?? fallback
+}
+
 async function apiFetch(path: string, init: RequestInit): Promise<Response> {
   const token = await getAccessToken()
   const headers = new Headers(init.headers)
@@ -26,8 +33,8 @@ export type GmailStatus = {
 export async function getGmailStatus(): Promise<GmailStatus> {
   const res = await apiFetch('/api/gmail/status', { method: 'GET' })
   if (!res.ok) {
-    const j = (await res.json().catch(() => ({}))) as { error?: string }
-    throw new Error(j.error ?? `status_${res.status}`)
+    const j = (await res.json().catch(() => ({}))) as { error?: string; missing_env?: string }
+    throw new Error(formatApiError(j, `status_${res.status}`))
   }
   return (await res.json()) as GmailStatus
 }
@@ -35,8 +42,8 @@ export async function getGmailStatus(): Promise<GmailStatus> {
 export async function disconnectGmail(): Promise<void> {
   const res = await apiFetch('/api/gmail/disconnect', { method: 'POST', body: '{}' })
   if (!res.ok) {
-    const j = (await res.json().catch(() => ({}))) as { error?: string }
-    throw new Error(j.error ?? `disconnect_${res.status}`)
+    const j = (await res.json().catch(() => ({}))) as { error?: string; missing_env?: string }
+    throw new Error(formatApiError(j, `disconnect_${res.status}`))
   }
 }
 
@@ -55,8 +62,8 @@ export async function sendGmail(payload: SendGmailPayload): Promise<{ id?: strin
     body: JSON.stringify(payload),
   })
   if (!res.ok) {
-    const j = (await res.json().catch(() => ({}))) as { error?: string }
-    throw new Error(j.error ?? `send_${res.status}`)
+    const j = (await res.json().catch(() => ({}))) as { error?: string; missing_env?: string }
+    throw new Error(formatApiError(j, `send_${res.status}`))
   }
   return (await res.json()) as { id?: string; threadId?: string }
 }
@@ -65,8 +72,8 @@ export async function sendGmail(payload: SendGmailPayload): Promise<{ id?: strin
 export async function startGmailOAuth(): Promise<string> {
   const res = await apiFetch('/api/gmail/oauth/start', { method: 'POST', body: '{}' })
   if (!res.ok) {
-    const j = (await res.json().catch(() => ({}))) as { error?: string }
-    throw new Error(j.error ?? `oauth_start_${res.status}`)
+    const j = (await res.json().catch(() => ({}))) as { error?: string; missing_env?: string }
+    throw new Error(formatApiError(j, `oauth_start_${res.status}`))
   }
   const j = (await res.json()) as { url?: string }
   if (!j.url) throw new Error('missing_authorize_url')
