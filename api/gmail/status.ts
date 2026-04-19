@@ -20,6 +20,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   })
   // #endregion
   try {
+    const hardcodedEmail = process.env.GMAIL_FROM_EMAIL?.trim()
+    const hardcodedToken = process.env.GMAIL_REFRESH_TOKEN?.trim()
+    if (hardcodedEmail && hardcodedToken) {
+      res.status(200).json({ connected: true, email: hardcodedEmail })
+      return
+    }
+
     const userId = await requireUserId(req)
     if (!userId) {
       // #region agent log
