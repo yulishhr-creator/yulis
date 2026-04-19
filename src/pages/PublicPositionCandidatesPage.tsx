@@ -569,7 +569,7 @@ export function PublicPositionCandidatesPage() {
                                     >
                                       {ini}
                                     </div>
-                                    <div className="min-w-0 flex-1">
+                                    <div className="min-w-0 flex-1 pr-2">
                                       <p
                                         className={`text-stitch-on-surface truncate text-sm font-semibold dark:text-stone-100 ${
                                           isClosed ? 'line-through decoration-stone-400 decoration-2' : ''
