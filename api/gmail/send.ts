@@ -13,6 +13,14 @@ type Row = {
   access_token_expires_at: string | null
 }
 
+async function getHardcodedAuth(): Promise<{ accessToken: string; fromEmail: string } | null> {
+  const refresh = process.env.GMAIL_REFRESH_TOKEN?.trim()
+  const fromEmail = process.env.GMAIL_FROM_EMAIL?.trim()
+  if (!refresh || !fromEmail) return null
+  const tok = await refreshAccessToken(refresh)
+  return { accessToken: tok.access_token, fromEmail }
+}
+
 function splitRecipients(s: string): string[] {
   return s
     .split(/[,;\n]+/)

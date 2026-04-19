@@ -91,6 +91,42 @@ function nestedStageName(v: PositionCandidateJunction['position_stages']): strin
   return Array.isArray(v) ? (v[0]?.name ?? '—') : (v.name ?? '—')
 }
 
+/** Colored dots for active calendar events on pipeline cards (cycles by stage column index). */
+const PIPELINE_STAGE_EVENT_DOT_PALETTE = [
+  'bg-emerald-500',
+  'bg-sky-500',
+  'bg-violet-500',
+  'bg-amber-500',
+  'bg-rose-500',
+  'bg-cyan-500',
+] as const
+
+type PositionScopedCalendarEventRow = {
+  id: string
+  title: string
+  subtitle: string | null
+  starts_at: string
+  ends_at: string | null
+  candidate_id: string | null
+  position_stage_id: string | null
+  candidates: { full_name: string } | { full_name: string }[] | null
+  position_stages: { name: string } | { name: string }[] | null
+}
+
+function positionCalendarCandidateLabel(ev: PositionScopedCalendarEventRow): string {
+  const v = ev.candidates
+  if (v == null) return '—'
+  const o = Array.isArray(v) ? v[0] : v
+  return o?.full_name?.trim() || '—'
+}
+
+function positionCalendarStageLabel(ev: PositionScopedCalendarEventRow): string {
+  const v = ev.position_stages
+  if (v == null) return '—'
+  const o = Array.isArray(v) ? v[0] : v
+  return o?.name?.trim() || '—'
+}
+
 const ASSIGNMENT_SOURCE_VALUES = ['import', 'sourcing', 'cv', 'referral'] as const
 type AssignmentSourceValue = (typeof ASSIGNMENT_SOURCE_VALUES)[number]
 
@@ -373,7 +409,7 @@ export function PositionDetailPage() {
   const [search, setSearch] = useSearchParams()
   const highlightCandidate = search.get('candidate')
 
-  type TabId = 'details' | 'candidates' | 'openings' | 'tasks' | 'comments' | 'activity'
+  type TabId = 'details' | 'candidates' | 'openings' | 'tasks' | 'events' | 'comments' | 'activity'
   const tab = useMemo<TabId>(() => {
     if (highlightCandidate) return 'candidates'
     const v = search.get('tab')
@@ -383,6 +419,7 @@ export function PositionDetailPage() {
       v === 'candidates' ||
       v === 'openings' ||
       v === 'tasks' ||
+      v === 'events' ||
       v === 'comments' ||
       v === 'activity'
     )
@@ -816,6 +853,7 @@ export function PositionDetailPage() {
     await qc.invalidateQueries({ queryKey: ['position-transition-stats', id] })
     await qc.invalidateQueries({ queryKey: ['position-activity', id] })
     await qc.invalidateQueries({ queryKey: ['position-viewer-comments', id] })
+    await qc.invalidateQueries({ queryKey: ['position-calendar-events', id] })
     await qc.invalidateQueries({ queryKey: ['position-public-list-token', id] })
     await qc.invalidateQueries({ queryKey: ['positions'] })
     await qc.invalidateQueries({ queryKey: ['dashboard-top-positions'] })
@@ -1650,6 +1688,70 @@ export function PositionDetailPage() {
     return m
   }, [candidatesQ.data])
 
+  const positionCalendarCandidateIdsKey = useMemo(
+    () =>
+      (candidatesQ.data ?? [])
+        .map((r) => r.candidate_id)
+        .filter(Boolean)
+        .sort()
+        .join(','),
+    [candidatesQ.data],
+  )
+
+  const positionCalendarEventsQ = useQuery({
+    queryKey: ['position-calendar-events', id, user?.id, positionCalendarCandidateIdsKey],
+    networkMode: 'always',
+    enabled: Boolean(supabase && user && id && positionCalendarCandidateIdsKey.length > 0),
+    queryFn: async () => {
+      const ids = (candidatesQ.data ?? []).map((r) => r.candidate_id).filter(Boolean) as string[]
+      if (ids.length === 0) return [] as PositionScopedCalendarEventRow[]
+      const { data, error } = await supabase!
+        .from('calendar_events')
+        .select(
+          'id, title, subtitle, starts_at, ends_at, candidate_id, position_stage_id, candidates ( full_name ), position_stages ( name )',
+        )
+        .eq('user_id', user!.id)
+        .in('candidate_id', ids)
+        .order('starts_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as PositionScopedCalendarEventRow[]
+    },
+  })
+
+  const positionActiveStageEventsMap = useMemo(() => {
+    const rows = positionCalendarEventsQ.data ?? []
+    const now = Date.now()
+    const active = rows.filter((ev) => {
+      if (!ev.candidate_id || !ev.position_stage_id || !ev.ends_at) return false
+      return new Date(ev.ends_at).getTime() > now
+    })
+    active.sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())
+    const m = new Map<string, { title: string }>()
+    for (const ev of active) {
+      const k = `${ev.candidate_id}:${ev.position_stage_id}`
+      if (!m.has(k)) m.set(k, { title: ev.title })
+    }
+    return m
+  }, [positionCalendarEventsQ.data])
+
+  const positionEventsForTab = useMemo(() => {
+    const rows = positionCalendarEventsQ.data ?? []
+    const now = Date.now()
+    const upcoming: PositionScopedCalendarEventRow[] = []
+    const previous: PositionScopedCalendarEventRow[] = []
+    for (const ev of rows) {
+      const endMs = ev.ends_at ? new Date(ev.ends_at).getTime() : null
+      if (endMs != null) {
+        if (endMs > now) upcoming.push(ev)
+        else previous.push(ev)
+      } else if (new Date(ev.starts_at).getTime() > now) upcoming.push(ev)
+      else previous.push(ev)
+    }
+    upcoming.sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())
+    previous.sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime())
+    return { upcoming, previous }
+  }, [positionCalendarEventsQ.data])
+
   function stageDropSlot(stageId: string | null) {
     return stageId ?? '__unassigned__'
   }
@@ -2043,10 +2145,16 @@ export function PositionDetailPage() {
     )
   }
 
-  function renderPipelineKanbanCard(c: PositionCandidateJunction) {
+  function renderPipelineKanbanCard(
+    c: PositionCandidateJunction,
+    activeEventTitle: string | null,
+    stageDotIdx: number,
+  ) {
     const prof = nestedCandidate(c.candidates)
     const candId = prof?.id
     const tenure = formatTenureOnRoleShort(c.created_at as string)
+    const dotClass =
+      PIPELINE_STAGE_EVENT_DOT_PALETTE[stageDotIdx % PIPELINE_STAGE_EVENT_DOT_PALETTE.length] ?? 'bg-emerald-500'
     return (
       <div
         key={c.id}
@@ -2091,6 +2199,17 @@ export function PositionDetailPage() {
               {tenure}
             </span>
           </div>
+          {activeEventTitle ? (
+            <div className="mt-1 flex min-w-0 items-center gap-1.5">
+              <span className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`} aria-hidden />
+              <span
+                className="text-ink-muted min-w-0 truncate text-xs font-semibold dark:text-stone-400"
+                title={activeEventTitle}
+              >
+                {activeEventTitle}
+              </span>
+            </div>
+          ) : null}
         </div>
       </div>
     )
@@ -2332,6 +2451,7 @@ export function PositionDetailPage() {
               ['candidates', 'Candidates', candidateTabCount],
               ['openings', 'Approaches', null],
               ['tasks', 'Tasks', (tasksQ.data ?? []).length],
+              ['events', 'Events', (positionCalendarEventsQ.data ?? []).length],
               ['comments', 'Comments', (viewerCommentsQ.data ?? []).length],
               ['activity', 'Activity', (activityQ.data ?? []).length],
             ] as const
@@ -2562,7 +2682,7 @@ export function PositionDetailPage() {
                         {pipelineKanbanCandidates.length === 0 ? (
                           <p className="text-ink-muted px-1 py-3 text-xs">None — drop a candidate here.</p>
                         ) : (
-                          pipelineKanbanCandidates.map((c) => renderPipelineKanbanCard(c))
+                          pipelineKanbanCandidates.map((c) => renderPipelineKanbanCard(c, null, 0))
                         )}
                       </div>
                     </div>
@@ -2603,7 +2723,12 @@ export function PositionDetailPage() {
                         {cards.length === 0 ? (
                           <p className="text-ink-muted px-1 py-3 text-xs">None — drop a candidate here.</p>
                         ) : (
-                          cards.map((c) => renderPipelineKanbanCard(c))
+                          cards.map((c) => {
+                            const cid = nestedCandidate(c.candidates)?.id
+                            const activeTitle =
+                              cid ? positionActiveStageEventsMap.get(`${cid}:${st.id}`)?.title ?? null : null
+                            return renderPipelineKanbanCard(c, activeTitle, stageIdx)
+                          })
                         )}
                       </div>
                     </div>
@@ -3516,6 +3641,7 @@ export function PositionDetailPage() {
                     nestedCandidate(drawerCandidate?.candidates ?? null)?.full_name?.trim() || 'Candidate'
                   }
                   positionTitle={position?.title?.trim() ?? ''}
+                  positionId={id!}
                 />
               ) : null}
             </>
@@ -3713,6 +3839,126 @@ export function PositionDetailPage() {
               </ul>
             )}
           </div>
+        </section>
+      ) : null}
+
+      {tab === 'events' ? (
+        <section className="border-line max-w-3xl rounded-2xl border border-stone-200/80 bg-white/70 p-5 dark:border-line-dark dark:bg-stone-900/45">
+          <h2 className="text-stitch-on-surface text-lg font-extrabold tracking-tight dark:text-stone-100">
+            Events on this role
+          </h2>
+          <p className="text-ink-muted mt-2 text-sm dark:text-stone-400">
+            Calendar interviews for candidates assigned here. Upcoming events have not ended yet; previous events have
+            passed their end time.
+          </p>
+          {!positionCalendarCandidateIdsKey.length ? (
+            <p className="text-ink-muted mt-6 text-sm">Add candidates to this role to track scheduled interviews.</p>
+          ) : positionCalendarEventsQ.isLoading ? (
+            <p className="text-ink-muted mt-6 text-sm">Loading…</p>
+          ) : positionCalendarEventsQ.isError ? (
+            <p className="mt-6 text-sm text-rose-600 dark:text-rose-400">Could not load events.</p>
+          ) : (
+            <div className="mt-6 space-y-10">
+              <div>
+                <h3 className="text-ink border-b border-stone-200/90 pb-2 text-xs font-extrabold uppercase tracking-wide dark:border-stone-600 dark:text-stone-200">
+                  Upcoming events
+                </h3>
+                {positionEventsForTab.upcoming.length === 0 ? (
+                  <p className="text-ink-muted mt-4 text-sm">No upcoming events.</p>
+                ) : (
+                  <ul className="mt-4 space-y-3">
+                    {positionEventsForTab.upcoming.map((ev) => (
+                      <li
+                        key={ev.id}
+                        className="border-line rounded-xl border border-stone-200/90 bg-white/90 px-4 py-3 dark:border-line-dark dark:bg-stone-900/60"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <p className="text-stitch-on-surface min-w-0 flex-1 font-semibold dark:text-stone-100">
+                            {ev.title}
+                          </p>
+                          <time
+                            className="text-ink-muted shrink-0 text-xs tabular-nums dark:text-stone-500"
+                            dateTime={ev.starts_at}
+                          >
+                            {format(new Date(ev.starts_at), 'MMM d · h:mm a')}
+                            {ev.ends_at ? ` – ${format(new Date(ev.ends_at), 'h:mm a')}` : ''}
+                          </time>
+                        </div>
+                        <div className="text-ink-muted mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                          <span>
+                            <span className="font-semibold text-stone-600 dark:text-stone-400">Candidate:</span>{' '}
+                            {ev.candidate_id ? (
+                              <Link
+                                className="font-medium text-[#006384] hover:underline dark:text-cyan-300"
+                                to={`/positions/${id}?tab=candidates&candidate=${encodeURIComponent(ev.candidate_id)}`}
+                              >
+                                {positionCalendarCandidateLabel(ev)}
+                              </Link>
+                            ) : (
+                              '—'
+                            )}
+                          </span>
+                          <span>
+                            <span className="font-semibold text-stone-600 dark:text-stone-400">Stage:</span>{' '}
+                            {positionCalendarStageLabel(ev)}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <h3 className="text-ink border-b border-stone-200/90 pb-2 text-xs font-extrabold uppercase tracking-wide dark:border-stone-600 dark:text-stone-200">
+                  Previous events
+                </h3>
+                {positionEventsForTab.previous.length === 0 ? (
+                  <p className="text-ink-muted mt-4 text-sm">No previous events.</p>
+                ) : (
+                  <ul className="mt-4 space-y-3">
+                    {positionEventsForTab.previous.map((ev) => (
+                      <li
+                        key={ev.id}
+                        className="border-line rounded-xl border border-stone-200/80 bg-stone-50/90 px-4 py-3 dark:border-line-dark dark:bg-stone-900/40"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <p className="text-stitch-on-surface min-w-0 flex-1 font-semibold dark:text-stone-200">
+                            {ev.title}
+                          </p>
+                          <time
+                            className="text-ink-muted shrink-0 text-xs tabular-nums dark:text-stone-500"
+                            dateTime={ev.starts_at}
+                          >
+                            {format(new Date(ev.starts_at), 'MMM d · h:mm a')}
+                            {ev.ends_at ? ` – ${format(new Date(ev.ends_at), 'h:mm a')}` : ''}
+                          </time>
+                        </div>
+                        <div className="text-ink-muted mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                          <span>
+                            <span className="font-semibold text-stone-600 dark:text-stone-400">Candidate:</span>{' '}
+                            {ev.candidate_id ? (
+                              <Link
+                                className="font-medium text-[#006384] hover:underline dark:text-cyan-300"
+                                to={`/positions/${id}?tab=candidates&candidate=${encodeURIComponent(ev.candidate_id)}`}
+                              >
+                                {positionCalendarCandidateLabel(ev)}
+                              </Link>
+                            ) : (
+                              '—'
+                            )}
+                          </span>
+                          <span>
+                            <span className="font-semibold text-stone-600 dark:text-stone-400">Stage:</span>{' '}
+                            {positionCalendarStageLabel(ev)}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
         </section>
       ) : null}
 

@@ -13,9 +13,11 @@ export type CalendarEventRow = {
   position_id: string | null
   candidate_id: string | null
   company_id: string | null
+  position_stage_id?: string | null
   positions: One<{ title: string }>
   candidates: One<{ full_name: string }>
   companies: One<{ name: string }>
+  position_stages?: One<{ name: string }>
 }
 
 export function one<T>(v: T | T[] | null | undefined): T | null {
@@ -23,10 +25,11 @@ export function one<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : v
 }
 
-export const CALENDAR_EVENT_SELECT = `id, title, subtitle, starts_at, ends_at, reminder_at, is_important, position_id, candidate_id, company_id,
+export const CALENDAR_EVENT_SELECT = `id, title, subtitle, starts_at, ends_at, reminder_at, is_important, position_id, candidate_id, company_id, position_stage_id,
   positions ( title ),
   candidates ( full_name ),
-  companies ( name )`
+  companies ( name ),
+  position_stages ( name )`
 
 export type RelKind = 'none' | 'position' | 'candidate' | 'company'
 

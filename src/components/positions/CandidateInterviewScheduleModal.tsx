@@ -28,6 +28,7 @@ type Props = {
   candidateId: string
   candidateName: string
   positionTitle: string
+  positionId: string
 }
 
 function defaultStartsAtLocal(): string {
@@ -45,6 +46,7 @@ export function CandidateInterviewScheduleModal({
   candidateId,
   candidateName,
   positionTitle,
+  positionId,
 }: Props) {
   const { user } = useAuth()
   const supabase = getSupabase()
@@ -91,6 +93,7 @@ export function CandidateInterviewScheduleModal({
         iv ? `Interviewer: ${iv}` : null,
         n ? `Notes: ${n}` : null,
       ].filter(Boolean) as string[]
+      const stageFk = stageId.trim() ? stageId : null
       const { error } = await supabase.from('calendar_events').insert({
         user_id: uid,
         title,
@@ -102,12 +105,14 @@ export function CandidateInterviewScheduleModal({
         position_id: null,
         candidate_id: candidateId,
         company_id: null,
+        position_stage_id: stageFk,
       })
       if (error) throw error
     },
     onSuccess: async () => {
       success('Event added to calendar')
       await qc.invalidateQueries({ queryKey: ['calendar-events'] })
+      await qc.invalidateQueries({ queryKey: ['position-calendar-events', positionId] })
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
       await qc.invalidateQueries({ queryKey: ['notifications-calendar-events'] })
       onClose()
