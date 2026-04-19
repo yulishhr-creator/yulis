@@ -87,7 +87,7 @@ function sortStages(stages: PipelineStageGroup[]): PipelineStageGroup[] {
 function assignmentMatchesTab(c: PipelineCandidate, tab: PublicPipelineTab): boolean {
   const st = c.status ?? 'in_progress'
   if (tab === 'in_progress') return st === 'in_progress'
-  return st === 'rejected' || st === 'withdrawn'
+  return st === 'rejected' || st === 'withdrawn' || st === 'hired'
 }
 
 function filterStagesForTab(stages: PipelineStageGroup[], tab: PublicPipelineTab): PipelineStageGroup[] {
@@ -334,7 +334,7 @@ export function PublicPositionCandidatesPage() {
   const inProgressCount = flatCandidates.filter((c) => (c.status ?? 'in_progress') === 'in_progress').length
   const closedCount = flatCandidates.filter((c) => {
     const st = c.status ?? 'in_progress'
-    return st === 'rejected' || st === 'withdrawn'
+    return st === 'rejected' || st === 'withdrawn' || st === 'hired'
   }).length
 
   const filteredStages = filterStagesForTab(sortedStages, pipelineTab)
@@ -527,7 +527,7 @@ export function PublicPositionCandidatesPage() {
                           <ul className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3">
                             {rows.map((c, i) => {
                               const st = c.status ?? 'in_progress'
-                              const isClosed = st === 'rejected' || st === 'withdrawn'
+                              const isClosed = st === 'rejected' || st === 'withdrawn' || st === 'hired'
                               const pill = assignmentStatusPill(st)
                               const ini = initialsFromName(c.full_name)
                               const pcId = publicAssignmentId(c)

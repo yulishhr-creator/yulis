@@ -39,6 +39,7 @@ import { useToast } from '@/hooks/useToast'
 import { criticalStageThreshold, logActivityEvent } from '@/lib/activityLog'
 import { assignmentStatusPill, formatAssignmentStatus } from '@/lib/candidateStatus'
 import { logPositionCandidateTransition } from '@/lib/positionTransitions'
+import { fireInsaneHireConfetti } from '@/lib/hireConfetti'
 import { normalizeRequirementsText } from '@/lib/requirementValues'
 import { CompanyClientAvatar } from '@/components/companies/CompanyClientAvatar'
 import {
@@ -786,6 +787,8 @@ export function PositionDetailPage() {
     positionCandidateId: string
     source: 'drawer' | 'list_withdraw'
   }>(null)
+  const [hiredFollowUpPcId, setHiredFollowUpPcId] = useState<string | null>(null)
+  const hireConfettiStopRef = useRef<(() => void) | null>(null)
   const [outcomeReasonId, setOutcomeReasonId] = useState('')
   const [outcomeReasonOther, setOutcomeReasonOther] = useState('')
   const [outcomeCloseTasks, setOutcomeCloseTasks] = useState(true)
@@ -809,6 +812,13 @@ export function PositionDetailPage() {
     setDrawerAvatarBroken(false)
     setDrawerFilesDragging(false)
   }, [highlightCandidate])
+
+  useEffect(() => {
+    return () => {
+      hireConfettiStopRef.current?.()
+      hireConfettiStopRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     if (!position) return
@@ -1289,7 +1299,7 @@ export function PositionDetailPage() {
       outcomeReason,
     }: {
       positionCandidateId: string
-      nextStatus: 'in_progress' | 'rejected' | 'withdrawn'
+      nextStatus: 'in_progress' | 'rejected' | 'withdrawn' | 'hired'
       closeTasks: boolean
       outcomeReason?: string | null
     }) => {
@@ -1321,6 +1331,11 @@ export function PositionDetailPage() {
     },
     onSuccess: async ({ positionCandidateId, candidateId, prev, nextStatus, name, outcomeReason }) => {
       success('Status updated')
+      if (nextStatus === 'hired') {
+        hireConfettiStopRef.current?.()
+        hireConfettiStopRef.current = fireInsaneHireConfetti(10_000)
+        setHiredFollowUpPcId(positionCandidateId)
+      }
       await logPositionCandidateTransition(supabase!, user!.id, {
         position_candidate_id: positionCandidateId,
         transition_type: 'status',
@@ -1339,6 +1354,54 @@ export function PositionDetailPage() {
           to: nextStatus,
           ...(outcomeReason ? { outcome_reason: outcomeReason } : {}),
         },
+      })
+      await invalidateAll()
+    },
+    onError: (e: Error) => toastError(e),
+  })
+
+  const bulkRejectOthersAndSucceedPosition = useMutation({
+    mutationFn: async (hiredPcId: string) => {
+      const otherIds = (candidatesQ.data ?? []).filter((c) => c.id !== hiredPcId).map((c) => c.id)
+      if (otherIds.length > 0) {
+        const { error } = await supabase!
+          .from('position_candidates')
+          .update({ status: 'rejected' })
+          .in('id', otherIds)
+          .eq('user_id', user!.id)
+          .eq('position_id', id!)
+        if (error) throw error
+        const { error: taskErr } = await supabase!
+          .from('tasks')
+          .update({ status: 'closed' })
+          .in('position_candidate_id', otherIds)
+          .eq('user_id', user!.id)
+          .neq('status', 'closed')
+        if (taskErr) throw taskErr
+      }
+      const prev = position?.status ?? 'active'
+      const { error: posErr } = await supabase!
+        .from('positions')
+        .update({ status: 'succeeded', closure_date: null })
+        .eq('id', id!)
+        .eq('user_id', user!.id)
+      if (posErr) throw posErr
+      return { prev, otherCount: otherIds.length }
+    },
+    onSuccess: async ({ prev, otherCount }) => {
+      setHiredFollowUpPcId(null)
+      setStatus('succeeded')
+      success(
+        otherCount > 0
+          ? `Position marked succeeded · ${otherCount} other assignment(s) set to Rejected`
+          : 'Position marked succeeded',
+      )
+      await logActivityEvent(supabase!, user!.id, {
+        event_type: 'position_status_changed',
+        position_id: id!,
+        title: 'Position closed after hire',
+        subtitle: `${prev} → succeeded · bulk rejected ${otherCount}`,
+        metadata: { from: prev, to: 'succeeded', bulk_reject_count: otherCount },
       })
       await invalidateAll()
     },
@@ -1671,6 +1734,12 @@ export function PositionDetailPage() {
   const rejectedWithdrawnCandidates = useMemo(() => {
     return (candidatesQ.data ?? [])
       .filter((c) => c.status === 'rejected' || c.status === 'withdrawn')
+      .sort((a, b) => new Date(b.created_at as string).getTime() - new Date(a.created_at as string).getTime())
+  }, [candidatesQ.data])
+
+  const hiredCandidates = useMemo(() => {
+    return (candidatesQ.data ?? [])
+      .filter((c) => c.status === 'hired')
       .sort((a, b) => new Date(b.created_at as string).getTime() - new Date(a.created_at as string).getTime())
   }, [candidatesQ.data])
 
@@ -2176,6 +2245,69 @@ export function PositionDetailPage() {
                 </button>
               </div>
             ) : null}
+          </div>
+        </div>
+      </li>
+    )
+  }
+
+  function renderHiredAssignmentCard(c: PositionCandidateJunction) {
+    const prof = nestedCandidate(c.candidates)
+    const candId = prof?.id
+    const stageName = nestedStageName(c.position_stages)
+    const displayName = prof?.full_name ?? 'Unnamed'
+    const when = format(new Date(c.created_at as string), 'MMM d, yyyy')
+    return (
+      <li
+        key={c.id}
+        id={candId ? `cand-${candId}` : `pc-${c.id}`}
+        className={`group overflow-hidden rounded-2xl border border-emerald-200/90 bg-gradient-to-br from-emerald-50/95 via-white to-white shadow-sm transition hover:shadow-md dark:border-emerald-800/55 dark:from-emerald-950/40 dark:via-stone-900 dark:to-stone-950 dark:shadow-none ${
+          candId ? 'cursor-pointer' : ''
+        }`}
+        role={candId ? 'button' : undefined}
+        tabIndex={candId ? 0 : undefined}
+        aria-label={candId ? `Open details for ${displayName}` : undefined}
+        onClick={() => {
+          if (candId) openCandidateDrawer(candId)
+        }}
+        onKeyDown={(e) => {
+          if (!candId) return
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            openCandidateDrawer(candId)
+          }
+        }}
+      >
+        <div className="flex gap-3 p-4">
+          <div
+            className="mt-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-200/80 bg-emerald-100 text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-200"
+            aria-hidden
+          >
+            <CheckCircle2 className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <span className="text-stitch-on-surface inline-flex min-w-0 items-center gap-1 text-base font-bold tracking-tight group-hover:text-[#9b3e20] dark:text-stone-100 dark:group-hover:text-orange-300">
+                  <span className="truncate">{displayName}</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 opacity-50" aria-hidden />
+                </span>
+                <p className="text-ink-muted mt-1 text-xs leading-relaxed dark:text-stone-400">
+                  <span className="font-semibold text-stone-600 dark:text-stone-300">{stageName}</span>
+                  <span aria-hidden className="mx-1.5">
+                    ·
+                  </span>
+                  {ASSIGNMENT_SOURCE_LABELS[normalizeAssignmentSource(c.source)]}
+                  <span aria-hidden className="mx-1.5">
+                    ·
+                  </span>
+                  Added {when}
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full border border-emerald-300/80 bg-emerald-100 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-100">
+                Hired
+              </span>
+            </div>
           </div>
         </div>
       </li>
@@ -2814,6 +2946,20 @@ export function PositionDetailPage() {
             </div>
 
             <section className="border-line rounded-2xl border bg-white/50 p-4 shadow-sm dark:border-line-dark dark:bg-stone-900/40">
+              <h3 className={pipelineSubsectionHeadingClass}>Hired</h3>
+              <p className="text-ink-muted mt-1 px-1 text-xs dark:text-stone-500">
+                Candidates marked hired on this role — most recent first.
+              </p>
+              <ul className="mt-4 space-y-3">
+                {hiredCandidates.length === 0 ? (
+                  <li className="text-ink-muted text-sm">No hired candidates on this role yet.</li>
+                ) : (
+                  hiredCandidates.map(renderHiredAssignmentCard)
+                )}
+              </ul>
+            </section>
+
+            <section className="border-line rounded-2xl border bg-white/50 p-4 shadow-sm dark:border-line-dark dark:bg-stone-900/40">
               <h3 className={pipelineSubsectionHeadingClass}>Rejected &amp; withdrawn</h3>
               <p className="text-ink-muted mt-1 px-1 text-xs dark:text-stone-500">
                 Candidates who are no longer in progress on this role — most recent first.
@@ -2982,9 +3128,11 @@ export function PositionDetailPage() {
                                   className={`border-line flex h-8 w-full shrink-0 items-center justify-between gap-1 rounded-lg border px-2 text-xs font-bold shadow-sm transition dark:border-line-dark ${
                                     drawerCandidate!.status === 'in_progress'
                                       ? 'border-emerald-200/90 bg-gradient-to-br from-emerald-50 to-white text-emerald-900 dark:border-emerald-800/80 dark:from-emerald-950/60 dark:to-stone-900 dark:text-emerald-200'
-                                      : drawerCandidate!.status === 'rejected'
-                                        ? 'border-rose-200/90 bg-gradient-to-br from-rose-50 to-white text-rose-900 dark:border-rose-800/80 dark:from-rose-950/50 dark:to-stone-900 dark:text-rose-100'
-                                        : 'border-stone-200/90 bg-gradient-to-br from-stone-100 to-white text-stone-800 dark:border-stone-600 dark:from-stone-800/80 dark:to-stone-900 dark:text-stone-200'
+                                      : drawerCandidate!.status === 'hired'
+                                        ? 'border-amber-200/90 bg-gradient-to-br from-emerald-100 via-amber-50/90 to-white text-emerald-950 dark:border-emerald-700/70 dark:from-emerald-950/55 dark:via-amber-950/25 dark:to-stone-900 dark:text-emerald-100'
+                                        : drawerCandidate!.status === 'rejected'
+                                          ? 'border-rose-200/90 bg-gradient-to-br from-rose-50 to-white text-rose-900 dark:border-rose-800/80 dark:from-rose-950/50 dark:to-stone-900 dark:text-rose-100'
+                                          : 'border-stone-200/90 bg-gradient-to-br from-stone-100 to-white text-stone-800 dark:border-stone-600 dark:from-stone-800/80 dark:to-stone-900 dark:text-stone-200'
                                   }`}
                                   aria-expanded={drawerAssignStatusOpen}
                                   aria-haspopup="listbox"
@@ -2993,6 +3141,8 @@ export function PositionDetailPage() {
                                 >
                                   {drawerCandidate!.status === 'in_progress' ? (
                                     <Play className="h-3.5 w-3.5 shrink-0 fill-current text-emerald-600 dark:text-emerald-400" aria-hidden />
+                                  ) : drawerCandidate!.status === 'hired' ? (
+                                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
                                   ) : drawerCandidate!.status === 'rejected' ? (
                                     <Ban className="h-3.5 w-3.5 shrink-0 text-rose-600 dark:text-rose-300" aria-hidden />
                                   ) : (
@@ -3011,6 +3161,7 @@ export function PositionDetailPage() {
                                     {(
                                       [
                                         { v: 'in_progress' as const, label: 'In progress', icon: Play, cls: 'text-emerald-800 dark:text-emerald-300' },
+                                        { v: 'hired' as const, label: 'Hired', icon: CheckCircle2, cls: 'text-emerald-800 dark:text-emerald-300' },
                                         { v: 'rejected' as const, label: 'Rejected', icon: Ban, cls: 'text-rose-800 dark:text-rose-200' },
                                         { v: 'withdrawn' as const, label: 'Withdrawn', icon: Pause, cls: 'text-stone-700 dark:text-stone-300' },
                                       ] as const
@@ -3029,6 +3180,14 @@ export function PositionDetailPage() {
                                               positionCandidateId: drawerCandidate!.id,
                                               nextStatus: v,
                                               closeTasks: false,
+                                            })
+                                            return
+                                          }
+                                          if (v === 'hired') {
+                                            void patchAssignmentStatus.mutateAsync({
+                                              positionCandidateId: drawerCandidate!.id,
+                                              nextStatus: 'hired',
+                                              closeTasks: true,
                                             })
                                             return
                                           }
@@ -4456,6 +4615,40 @@ export function PositionDetailPage() {
                 }}
               >
                 {patchAssignmentStatus.isPending || withdrawFromRole.isPending ? 'Saving…' : 'Confirm'}
+              </button>
+            </div>
+          </>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={hiredFollowUpPcId != null}
+        onClose={() => setHiredFollowUpPcId(null)}
+        title="Hired — next steps"
+        size="sm"
+      >
+        {hiredFollowUpPcId ? (
+          <>
+            <p className="text-stitch-on-surface text-sm leading-relaxed dark:text-stone-200">
+              Should we set all of this position&apos;s candidates into <strong>Rejected</strong> and set the position to{' '}
+              <strong>Success</strong>?
+            </p>
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-full bg-orange-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-600 disabled:opacity-50"
+                disabled={bulkRejectOthersAndSucceedPosition.isPending}
+                onClick={() => setHiredFollowUpPcId(null)}
+              >
+                Skip
+              </button>
+              <button
+                type="button"
+                className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
+                disabled={bulkRejectOthersAndSucceedPosition.isPending}
+                onClick={() => void bulkRejectOthersAndSucceedPosition.mutateAsync(hiredFollowUpPcId)}
+              >
+                {bulkRejectOthersAndSucceedPosition.isPending ? 'Working…' : 'Sure thing!'}
               </button>
             </div>
           </>

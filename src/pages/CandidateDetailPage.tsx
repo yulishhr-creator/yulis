@@ -265,7 +265,11 @@ export function CandidateDetailPage() {
   }, [c?.position_candidates])
 
   const primaryAssignment = useMemo(
-    () => assignments.find((a) => a.status === 'in_progress') ?? assignments[0] ?? null,
+    () =>
+      assignments.find((a) => a.status === 'in_progress') ??
+      assignments.find((a) => a.status === 'hired') ??
+      assignments[0] ??
+      null,
     [assignments],
   )
   const pos = primaryAssignment?.positions ?? null

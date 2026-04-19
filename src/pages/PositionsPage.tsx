@@ -110,7 +110,7 @@ function PositionCard({
   const daysSinceCreated = differenceInCalendarDays(new Date(), new Date(p.created_at))
   const cands = (p.position_candidates ?? []).filter((pc) => {
     if (pc.archived_at) return false
-    if (pc.status === 'rejected') return false
+    if (pc.status === 'rejected' || pc.status === 'hired') return false
     const c = boardCandidateOne(pc.candidates)
     return Boolean(c && !c.deleted_at)
   })

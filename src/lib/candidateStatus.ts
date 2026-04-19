@@ -2,7 +2,7 @@
 export type CandidateGlobalStatus = 'active' | 'archived'
 
 /** Assignment of a candidate to a specific position (junction). */
-export type PositionCandidateStatus = 'in_progress' | 'rejected' | 'withdrawn'
+export type PositionCandidateStatus = 'in_progress' | 'rejected' | 'withdrawn' | 'hired'
 
 export function formatCandidateGlobalStatus(value: string): string {
   switch (value) {
@@ -45,6 +45,8 @@ export function formatAssignmentStatus(value: string): string {
       return 'Rejected'
     case 'withdrawn':
       return 'Withdrawn'
+    case 'hired':
+      return 'Hired'
     default:
       return value.replace(/_/g, ' ')
   }
@@ -70,6 +72,12 @@ export function assignmentStatusPill(status: string): { label: string; className
         label: 'Withdrawn',
         className:
           'border-stone-200/80 bg-stone-100 text-stone-700 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300',
+      }
+    case 'hired':
+      return {
+        label: 'Hired',
+        className:
+          'border-emerald-200/80 bg-emerald-50 text-emerald-900 dark:border-emerald-700/60 dark:bg-emerald-950/40 dark:text-emerald-100',
       }
     default:
       return {
