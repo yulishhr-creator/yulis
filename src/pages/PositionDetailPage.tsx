@@ -715,7 +715,7 @@ export function PositionDetailPage() {
   const shareChannelRef = useRef<HTMLDivElement>(null)
   const [candidateDragId, setCandidateDragId] = useState<string | null>(null)
   const [candidateDropStage, setCandidateDropStage] = useState<string | null>(null)
-  const [candidateDrawerPanel, setCandidateDrawerPanel] = useState<'overview' | 'files' | 'comments'>('overview')
+  const [candidateDrawerPanel, setCandidateDrawerPanel] = useState<'overview' | 'files' | 'notes'>('overview')
   const [drawerPanelEntered, setDrawerPanelEntered] = useState(false)
   const [drawerFieldEdit, setDrawerFieldEdit] = useState<null | 'name' | 'email' | 'phone' | 'linkedin' | 'salary'>(null)
   const [drawerFieldDraft, setDrawerFieldDraft] = useState('')
@@ -2742,8 +2742,8 @@ export function PositionDetailPage() {
                           >
                             <Trash2 className="h-4 w-4" aria-hidden />
                           </button>
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
-                            <div className="order-2 flex w-full shrink-0 flex-col items-stretch gap-2 sm:order-1 sm:w-[7.5rem]">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-5">
+                            <div className="order-2 flex w-full shrink-0 flex-col items-stretch gap-2 sm:order-1 sm:min-w-[11rem] sm:max-w-[13rem] sm:w-44">
                               <div className="group/avatar relative h-[4.5rem] w-[4.5rem] shrink-0 sm:mx-auto">
                                 <div className="flex h-[4.5rem] w-[4.5rem] items-center justify-center overflow-hidden rounded-full border border-stone-200 bg-stone-100 text-base font-bold text-stone-600 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-300">
                                   {photoSignedUrl && !drawerAvatarBroken ? (
@@ -2791,7 +2791,9 @@ export function PositionDetailPage() {
                                   ) : (
                                     <Pause className="h-3.5 w-3.5 shrink-0 text-stone-600 dark:text-stone-400" aria-hidden />
                                   )}
-                                  <span className="min-w-0 flex-1 truncate">{formatAssignmentStatus(drawerCandidate!.status)}</span>
+                                  <span className="min-w-0 flex-1 text-left whitespace-nowrap">
+                                    {formatAssignmentStatus(drawerCandidate!.status)}
+                                  </span>
                                   <ChevronDown className="h-3 w-3 shrink-0 opacity-60" aria-hidden />
                                 </button>
                                 {drawerAssignStatusOpen ? (
@@ -2872,7 +2874,7 @@ export function PositionDetailPage() {
                                 </select>
                               </div>
                             </div>
-                            <div className="order-1 min-w-0 w-full flex-1 sm:order-2">
+                            <div className="order-1 min-w-0 w-full flex-1 sm:order-2 sm:pl-1 md:pl-3">
                               <div className="flex min-w-0 flex-col gap-2">
                                 <div className="flex min-h-[4.5rem] flex-col justify-center gap-1 pr-10 sm:pr-12">
                                   <div className="group/name flex min-w-0 w-full flex-col gap-1">
@@ -3257,7 +3259,7 @@ export function PositionDetailPage() {
                             [
                               { id: 'overview' as const, label: 'Overview' },
                               { id: 'files' as const, label: `Files (${fileCount})` },
-                              { id: 'comments' as const, label: `Comments (${commentRows.length})` },
+                              { id: 'notes' as const, label: `Notes (${commentRows.length})` },
                             ] as const
                           ).map(({ id: tid, label }) => (
                             <button
@@ -3445,7 +3447,7 @@ export function PositionDetailPage() {
                           </div>
                         ) : null}
 
-                        {candidateDrawerPanel === 'comments' ? (
+                        {candidateDrawerPanel === 'notes' ? (
                           <div className="bg-stone-50/60 px-5 py-4 dark:bg-stone-900/50">
                             <div className="flex gap-2">
                               <input
