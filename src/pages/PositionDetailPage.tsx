@@ -294,6 +294,18 @@ function formatClosureDateDisplay(raw: string): string {
   return format(d, 'MMM d, yyyy')
 }
 
+/** Postgres `date` or ISO string → short display (MMM d, yyyy) or em dash. */
+function formatOpenedAtShort(openedAt: string | null | undefined): string {
+  if (openedAt == null || openedAt === '') return '—'
+  const slice = String(openedAt).slice(0, 10)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(slice)) {
+    const d = parse(slice, 'yyyy-MM-dd', new Date())
+    if (!Number.isNaN(d.getTime())) return format(d, 'MMM d, yyyy')
+  }
+  const d = new Date(openedAt)
+  return !Number.isNaN(d.getTime()) ? format(d, 'MMM d, yyyy') : '—'
+}
+
 function DetailHoverField({
   label,
   value,
@@ -739,6 +751,7 @@ export function PositionDetailPage() {
   const [welcome1, setWelcome1] = useState('')
   const [welcome2, setWelcome2] = useState('')
   const [welcome3, setWelcome3] = useState('')
+  const [openedAtStr, setOpenedAtStr] = useState('')
   const [closureDateStr, setClosureDateStr] = useState('')
   const [terminalFinish, setTerminalFinish] = useState<null | 'succeeded' | 'cancelled'>(null)
   const [terminalClosureDate, setTerminalClosureDate] = useState('')
@@ -813,6 +826,8 @@ export function PositionDetailPage() {
     setWelcome1(position.welcome_1 ?? '')
     setWelcome2(position.welcome_2 ?? '')
     setWelcome3(position.welcome_3 ?? '')
+    const oa = (position as { opened_at?: string | null }).opened_at
+    setOpenedAtStr(oa ? String(oa).slice(0, 10) : '')
     setClosureDateStr((position as { closure_date?: string | null }).closure_date ?? '')
     setStatus(position.status ?? 'active')
   }, [position])
@@ -1952,9 +1967,9 @@ export function PositionDetailPage() {
 
   const createdAt = (position as { created_at?: string }).created_at
   const daysSinceCreated = createdAt ? differenceInCalendarDays(new Date(), new Date(createdAt)) : 0
-  const openedLabel = createdAt
-    ? `Opened ${format(new Date(createdAt), 'MMM d, yyyy')}`
-    : 'Opened —'
+  const openedAtForHeader = (position as { opened_at?: string | null }).opened_at
+  const openedShort = formatOpenedAtShort(openedAtForHeader)
+  const openedLabel = openedShort === '—' ? 'Opened —' : `Opened ${openedShort}`
 
   function formatActivityArrowPath(subtitle: string | null): string {
     if (!subtitle) return '—'
@@ -2528,6 +2543,36 @@ export function PositionDetailPage() {
               }}
             />
             <DetailHoverField
+              label="Opened on"
+              value={openedAtStr}
+              inputType="date"
+              readOnlyFormat={formatClosureDateDisplay}
+              onSave={async (next) => {
+                const t = next.trim()
+                const created = (position as { created_at?: string }).created_at
+                const fallbackOpened =
+                  created && /^\d{4}-\d{2}-\d{2}/.test(created)
+                    ? created.slice(0, 10)
+                    : format(new Date(), 'yyyy-MM-dd')
+                const v = t === '' ? fallbackOpened : t
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+                  toastError('Use YYYY-MM-DD.')
+                  return
+                }
+                const { error } = await supabase!
+                  .from('positions')
+                  .update({ opened_at: v })
+                  .eq('id', id!)
+                  .eq('user_id', user!.id)
+                if (error) toastError(error)
+                else {
+                  setOpenedAtStr(v)
+                  success('Saved')
+                  await invalidateAll()
+                }
+              }}
+            />
+            <DetailHoverField
               label="Closure date (optional)"
               value={closureDateStr}
               inputType="date"
@@ -2810,10 +2855,9 @@ export function PositionDetailPage() {
                       posBudget != null && Number.isFinite(Number(posBudget))
                         ? `₪${Number(posBudget).toLocaleString('he-IL')}`
                         : '—'
-                    const positionOpenedShort =
-                      createdAt != null && createdAt !== ''
-                        ? format(new Date(createdAt), 'MMM d, yyyy')
-                        : '—'
+                    const positionOpenedShort = formatOpenedAtShort(
+                      (position as { opened_at?: string | null }).opened_at,
+                    )
                     return (
                       <>
                         <span
