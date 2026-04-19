@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
-import { requireUserId } from '../_lib/auth'
-import { revokeGoogleToken } from '../_lib/google-oauth'
-import { sendApiError } from '../_lib/respond'
-import { createServiceRoleClient } from '../_lib/supabase-admin'
+import { requireUserId } from '../_lib/auth.js'
+import { revokeGoogleToken } from '../_lib/google-oauth.js'
+import { sendApiError } from '../_lib/respond.js'
+import { createServiceRoleClient } from '../_lib/supabase-admin.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {

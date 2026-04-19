@@ -1,10 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
-import { requireUserId } from '../_lib/auth'
-import { buildRfc822Message, toGmailRawBase64Url } from '../_lib/gmail-raw'
-import { refreshAccessToken } from '../_lib/google-oauth'
-import { sendApiError } from '../_lib/respond'
-import { createServiceRoleClient } from '../_lib/supabase-admin'
+import { requireUserId } from '../_lib/auth.js'
+import { buildRfc822Message, toGmailRawBase64Url } from '../_lib/gmail-raw.js'
+import { refreshAccessToken } from '../_lib/google-oauth.js'
+import { sendApiError } from '../_lib/respond.js'
+import { createServiceRoleClient } from '../_lib/supabase-admin.js'
 
 type Row = {
   provider_account_email: string | null

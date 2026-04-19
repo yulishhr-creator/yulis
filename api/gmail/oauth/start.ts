@@ -1,10 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
-import { requireUserId } from '../../_lib/auth'
-import { requireEnv } from '../../_lib/env'
-import { createOAuthState } from '../../_lib/oauth-state'
-import { agentDebugLog } from '../../_lib/agent-debug-log'
-import { sendApiError } from '../../_lib/respond'
+import { requireUserId } from '../../_lib/auth.js'
+import { requireEnv } from '../../_lib/env.js'
+import { createOAuthState } from '../../_lib/oauth-state.js'
+import { agentDebugLog } from '../../_lib/agent-debug-log.js'
+import { sendApiError } from '../../_lib/respond.js'
 
 /** Google OAuth scopes (space-separated). */
 const SCOPES = ['openid', 'email', 'profile', 'https://www.googleapis.com/auth/gmail.send'].join(' ')

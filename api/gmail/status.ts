@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
-import { requireUserId } from '../_lib/auth'
-import { createServiceRoleClient } from '../_lib/supabase-admin'
-import { agentDebugLog } from '../_lib/agent-debug-log'
-import { sendApiError } from '../_lib/respond'
+import { requireUserId } from '../_lib/auth.js'
+import { createServiceRoleClient } from '../_lib/supabase-admin.js'
+import { agentDebugLog } from '../_lib/agent-debug-log.js'
+import { sendApiError } from '../_lib/respond.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {

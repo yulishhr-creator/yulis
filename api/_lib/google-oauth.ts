@@ -1,4 +1,4 @@
-import { requireEnv } from './env'
+import { requireEnv } from './env.js'
 
 type TokenResponse = {
   access_token: string

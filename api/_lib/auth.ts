@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import type { VercelRequest } from '@vercel/node'
 
-import { requireEnv } from './env'
+import { requireEnv } from './env.js'
 
 export function getBearerToken(req: VercelRequest): string | null {
   const h = req.headers.authorization

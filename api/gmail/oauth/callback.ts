@@ -1,10 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
-import { appOrigin, requireEnv } from '../../_lib/env'
-import { exchangeAuthorizationCode, fetchGoogleEmail } from '../../_lib/google-oauth'
-import { parseOAuthState } from '../../_lib/oauth-state'
-import { parseMissingEnvKey } from '../../_lib/respond'
-import { createServiceRoleClient } from '../../_lib/supabase-admin'
+import { appOrigin, requireEnv } from '../../_lib/env.js'
+import { exchangeAuthorizationCode, fetchGoogleEmail } from '../../_lib/google-oauth.js'
+import { parseOAuthState } from '../../_lib/oauth-state.js'
+import { parseMissingEnvKey } from '../../_lib/respond.js'
+import { createServiceRoleClient } from '../../_lib/supabase-admin.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
