@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { differenceInCalendarDays } from 'date-fns'
 import { format } from 'date-fns'
-import { AlertTriangle, Mail, MessageCircle, X } from 'lucide-react'
+import { AlertTriangle, Mail, X } from 'lucide-react'
 
 import { getSupabase } from '@/lib/supabase'
 import { linkedinHref } from '@/lib/urls'
@@ -537,21 +537,29 @@ export function PublicPositionCandidatesPage() {
                               const cardClass = `border-line/80 flex w-full items-center gap-3 rounded-xl border bg-gradient-to-br from-white to-stone-50/80 px-3 py-3 text-left shadow-sm dark:border-stone-600 dark:from-stone-900 dark:to-stone-900/60 ${
                                 isClosed ? 'opacity-80' : ''
                               }`
+                              const openThreadFromCard = () => {
+                                if (!pcId) {
+                                  toastError(
+                                    reportHasAssignmentIds
+                                      ? 'Could not open this thread. Refresh the page and try again.'
+                                      : 'Threads need a database update from the hiring team (Yulis migration 032). Ask them to apply it in Supabase, then reload — see the yellow notice above.',
+                                  )
+                                  return
+                                }
+                                openThread(pcId, c.full_name)
+                              }
                               return (
                                 <li key={cardKey}>
-                                  <button
-                                    type="button"
-                                    className={`${cardClass} cursor-pointer transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-sm`}
-                                    onClick={() => {
-                                      if (!pcId) {
-                                        toastError(
-                                          reportHasAssignmentIds
-                                            ? 'Could not open this thread. Refresh the page and try again.'
-                                            : 'Threads need a database update from the hiring team (Yulis migration 032). Ask them to apply it in Supabase, then reload — see the yellow notice above.',
-                                        )
-                                        return
+                                  <div
+                                    role="button"
+                                    tabIndex={0}
+                                    className={`${cardClass} cursor-pointer transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 dark:focus-visible:ring-orange-400/50 ${!pcId ? 'opacity-90' : ''}`}
+                                    onClick={openThreadFromCard}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault()
+                                        openThreadFromCard()
                                       }
-                                      openThread(pcId, c.full_name)
                                     }}
                                     title={pcId ? 'Open updates thread' : 'Thread needs an updated share link'}
                                   >
@@ -570,57 +578,62 @@ export function PublicPositionCandidatesPage() {
                                         {c.full_name}
                                       </p>
                                       <p
-                                        className={`mt-1.5 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${pill.className}`}
+                                        className={`mt-1.5 inline-flex max-w-full whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${pill.className}`}
                                       >
                                         {pill.label}
                                       </p>
                                     </div>
-                                    <span
-                                      className="flex shrink-0 items-center gap-1"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                      }}
+                                    <div
+                                      className="flex shrink-0 items-center gap-0.5"
+                                      onClick={(e) => e.stopPropagation()}
                                       onKeyDown={(e) => e.stopPropagation()}
                                     >
-                                      {liHref ? (
-                                        <a
-                                          href={liHref}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="text-ink-muted hover:text-[#0a66c2] flex h-9 w-9 items-center justify-center rounded-lg transition hover:bg-stone-100 dark:hover:bg-stone-800"
-                                          aria-label={`Open ${c.full_name} on LinkedIn`}
-                                          title="LinkedIn"
-                                        >
-                                          <IconLinkedIn className="h-4 w-4" />
-                                        </a>
-                                      ) : null}
-                                      {em ? (
-                                        <button
-                                          type="button"
-                                          className="text-ink-muted hover:text-accent flex h-9 w-9 items-center justify-center rounded-lg transition hover:bg-stone-100 dark:hover:bg-stone-800 dark:hover:text-orange-300"
-                                          aria-label="Copy email"
-                                          title="Copy email"
-                                          onClick={() => {
-                                            void navigator.clipboard.writeText(em).then(
-                                              () => success('Email copied'),
-                                              () => toastError('Could not copy'),
-                                            )
-                                          }}
-                                        >
-                                          <Mail className="h-4 w-4" aria-hidden />
-                                        </button>
-                                      ) : null}
-                                      {pcId ? (
-                                        <span
-                                          className="text-ink-muted flex h-9 w-9 items-center justify-center rounded-lg opacity-70"
-                                          title="Open thread"
-                                          aria-hidden
-                                        >
-                                          <MessageCircle className="h-4 w-4" aria-hidden />
-                                        </span>
-                                      ) : null}
-                                    </span>
-                                  </button>
+                                      <button
+                                        type="button"
+                                        className={`flex h-9 w-9 items-center justify-center rounded-lg transition hover:bg-stone-100 dark:hover:bg-stone-800 ${
+                                          em ? 'text-ink-muted hover:text-accent dark:hover:text-orange-300' : 'text-ink-muted/45 cursor-pointer'
+                                        }`}
+                                        aria-label={em ? 'Copy email' : 'Email not shared'}
+                                        title={em ? 'Copy email' : 'Email not shared on this link'}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          if (!em) {
+                                            toastError('Email not shared on this link')
+                                            return
+                                          }
+                                          void navigator.clipboard.writeText(em).then(
+                                            () => success('Email copied'),
+                                            () => toastError('Could not copy'),
+                                          )
+                                        }}
+                                      >
+                                        <Mail className="h-4 w-4" aria-hidden />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className={`flex h-9 w-9 items-center justify-center rounded-lg transition hover:bg-stone-100 dark:hover:bg-stone-800 ${
+                                          liHref
+                                            ? 'text-ink-muted hover:text-[#0a66c2]'
+                                            : 'text-ink-muted/45 cursor-pointer'
+                                        }`}
+                                        aria-label={liHref ? 'Copy LinkedIn profile URL' : 'LinkedIn not shared'}
+                                        title={liHref ? 'Copy LinkedIn URL' : 'LinkedIn not shared on this link'}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          if (!liHref) {
+                                            toastError('LinkedIn not shared on this link')
+                                            return
+                                          }
+                                          void navigator.clipboard.writeText(liHref).then(
+                                            () => success('LinkedIn URL copied'),
+                                            () => toastError('Could not copy'),
+                                          )
+                                        }}
+                                      >
+                                        <IconLinkedIn className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  </div>
                                 </li>
                               )
                             })}
