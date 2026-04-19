@@ -23,6 +23,7 @@ import {
   Pencil,
   ArrowLeft,
   GripVertical,
+  CalendarPlus,
 } from 'lucide-react'
 import { differenceInCalendarDays, format, parse } from 'date-fns'
 
@@ -40,6 +41,10 @@ import { assignmentStatusPill, formatAssignmentStatus } from '@/lib/candidateSta
 import { logPositionCandidateTransition } from '@/lib/positionTransitions'
 import { normalizeRequirementsText } from '@/lib/requirementValues'
 import { CompanyClientAvatar } from '@/components/companies/CompanyClientAvatar'
+import {
+  CandidateInterviewScheduleModal,
+  type CandidateScheduleInitial,
+} from '@/components/positions/CandidateInterviewScheduleModal'
 import { linkedinHref } from '@/lib/urls'
 
 type StageRow = {
@@ -1678,6 +1683,33 @@ export function PositionDetailPage() {
     return (candidatesQ.data ?? []).find((r) => nestedCandidate(r.candidates)?.id === highlightCandidate) ?? null
   }, [candidatesQ.data, highlightCandidate])
 
+  const [candidateSchedule, setCandidateSchedule] = useState<CandidateScheduleInitial | null>(null)
+  const [candidateScheduleModalKey, setCandidateScheduleModalKey] = useState(0)
+
+  const openCandidateScheduleModal = useCallback(() => {
+    if (!drawerCandidate) return
+    const stages = stagesQ.data ?? []
+    const sid = drawerCandidate.position_stage_id ?? stages[0]?.id ?? ''
+    const stageRow = stages.find((s) => s.id === sid)
+    const dur =
+      stageRow?.duration_minutes != null && stageRow.duration_minutes > 0 ? stageRow.duration_minutes : 60
+    const hm = (posQ.data as { hiring_manager_name?: string | null } | undefined)?.hiring_manager_name?.trim() ?? ''
+    const d = new Date()
+    d.setMinutes(0, 0, 0)
+    d.setHours(d.getHours() + 1)
+    setCandidateSchedule({
+      startsAt: format(d, "yyyy-MM-dd'T'HH:mm"),
+      durationMin: dur,
+      stageId: sid,
+      interviewer: hm,
+    })
+    setCandidateScheduleModalKey((k) => k + 1)
+  }, [drawerCandidate, stagesQ.data, posQ.data])
+
+  useEffect(() => {
+    if (!highlightCandidate) setCandidateSchedule(null)
+  }, [highlightCandidate])
+
   const drawerNameForMeasure = useMemo(() => {
     if (!drawerCandidate) return ''
     const nm = nestedCandidate(drawerCandidate.candidates)?.full_name ?? 'Unnamed'
@@ -2808,6 +2840,15 @@ export function PositionDetailPage() {
                                   </div>
                                 ) : null}
                               </div>
+                              <button
+                                type="button"
+                                onClick={() => openCandidateScheduleModal()}
+                                className="border-line flex h-8 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border bg-white px-2 text-[11px] font-bold text-[#006384] shadow-sm transition hover:bg-stone-50 dark:border-line-dark dark:bg-stone-900 dark:text-cyan-300 dark:hover:bg-stone-800"
+                                title="Schedule interview on Overview calendar"
+                              >
+                                <CalendarPlus className="h-3.5 w-3.5 shrink-0 opacity-90" aria-hidden />
+                                Schedule
+                              </button>
                               <div className="min-w-0 w-full">
                                 <select
                                   className="w-full min-w-0 cursor-pointer rounded-md border border-stone-200/70 bg-stone-50/90 py-1 pl-1.5 pr-7 text-[11px] font-medium text-stone-700 shadow-sm dark:border-stone-600 dark:bg-stone-900/70 dark:text-stone-200"
@@ -3461,6 +3502,20 @@ export function PositionDetailPage() {
                   })()}
                 </div>
               </aside>
+              {candidateSchedule && highlightCandidate ? (
+                <CandidateInterviewScheduleModal
+                  key={candidateScheduleModalKey}
+                  open
+                  initial={candidateSchedule}
+                  onClose={() => setCandidateSchedule(null)}
+                  stages={stagesQ.data ?? []}
+                  candidateId={highlightCandidate}
+                  candidateName={
+                    nestedCandidate(drawerCandidate?.candidates ?? null)?.full_name?.trim() || 'Candidate'
+                  }
+                  positionTitle={position?.title?.trim() ?? ''}
+                />
+              ) : null}
             </>
           ) : null}
         </div>
