@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { differenceInCalendarDays } from 'date-fns'
 import { format } from 'date-fns'
-import { Mail, MessageCircle, X } from 'lucide-react'
+import { AlertTriangle, Mail, MessageCircle, X } from 'lucide-react'
 
 import { getSupabase } from '@/lib/supabase'
 import { linkedinHref } from '@/lib/urls'
@@ -20,8 +20,9 @@ type PipelineCandidate = {
 }
 
 function publicAssignmentId(c: PipelineCandidate): string | undefined {
-  const id = c.position_candidate_id
-  if (typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id.trim())) return id.trim()
+  const raw = c.position_candidate_id
+  const id = typeof raw === 'string' ? raw : raw != null ? String(raw) : ''
+  if (id && /^[0-9a-f-]{36}$/i.test(id.trim())) return id.trim()
   return undefined
 }
 
@@ -338,6 +339,9 @@ export function PublicPositionCandidatesPage() {
 
   const filteredStages = filterStagesForTab(sortedStages, pipelineTab)
 
+  /** Hosted DB must run migration 032 (`get_position_public_pipeline_report` includes assignment ids); otherwise threads cannot open. */
+  const threadsUnavailable = flatCandidates.length > 0 && !reportHasAssignmentIds
+
   const threadRows: ThreadMessage[] = Array.isArray(threadQ.data) ? threadQ.data : []
 
   function openThread(pcId: string | undefined, name: string) {
@@ -417,6 +421,34 @@ export function PublicPositionCandidatesPage() {
           </div>
         ) : (
           <>
+            {threadsUnavailable ? (
+              <div
+                className="border-amber-300/90 mb-8 rounded-2xl border bg-amber-50/95 px-4 py-4 shadow-sm dark:border-amber-700/60 dark:bg-amber-950/35 sm:px-5"
+                role="status"
+              >
+                <div className="flex gap-3">
+                  <AlertTriangle
+                    className="text-amber-700 mt-0.5 h-5 w-5 shrink-0 dark:text-amber-400"
+                    aria-hidden
+                  />
+                  <div className="min-w-0">
+                    <p className="text-stitch-on-surface text-sm font-semibold dark:text-stone-100">
+                      Per-candidate message threads are not available on this link yet
+                    </p>
+                    <p className="text-ink-muted mt-1.5 text-sm leading-relaxed">
+                      The page is working, but the server is not yet sending assignment IDs that threads need. If you are
+                      the hiring team, open the Supabase project for this app, run the SQL in{' '}
+                      <code className="rounded bg-white/90 px-1 py-px text-xs dark:bg-stone-900">
+                        supabase/migrations/032_public_pipeline_report_position_candidate_ids.sql
+                      </code>
+                      , then reload this page (or notify viewers after deploy). Visitors can still browse the funnel
+                      below.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             <div
               className="border-line/80 mb-10 flex flex-wrap gap-2 rounded-2xl border bg-white/80 p-1.5 shadow-sm backdrop-blur-sm dark:border-line-dark dark:bg-stone-900/70"
               role="tablist"
@@ -515,7 +547,7 @@ export function PublicPositionCandidatesPage() {
                                         toastError(
                                           reportHasAssignmentIds
                                             ? 'Could not open this thread. Refresh the page and try again.'
-                                            : 'Threads need an updated shared report from the recruiter. Ask them to redeploy or refresh their database, then open this link again (or hard-refresh).',
+                                            : 'Threads need a database update from the hiring team (Yulis migration 032). Ask them to apply it in Supabase, then reload — see the yellow notice above.',
                                         )
                                         return
                                       }
