@@ -91,7 +91,7 @@ function nestedStageName(v: PositionCandidateJunction['position_stages']): strin
   return Array.isArray(v) ? (v[0]?.name ?? '—') : (v.name ?? '—')
 }
 
-/** Colored dots for active calendar events on pipeline cards (cycles by stage column index). */
+/** Colored dots for upcoming calendar events on pipeline cards (cycles by stage column index). */
 const PIPELINE_STAGE_EVENT_DOT_PALETTE = [
   'bg-emerald-500',
   'bg-sky-500',
@@ -100,6 +100,9 @@ const PIPELINE_STAGE_EVENT_DOT_PALETTE = [
   'bg-rose-500',
   'bg-cyan-500',
 ] as const
+
+/** Past (ended) events use a fixed blue dot so they stay visible after the slot. */
+const PIPELINE_STAGE_EVENT_DOT_PAST = 'bg-blue-500 dark:bg-blue-400' as const
 
 type PositionScopedCalendarEventRow = {
   id: string
@@ -1749,6 +1752,23 @@ export function PositionDetailPage() {
     return m
   }, [positionCalendarEventsQ.data])
 
+  /** Ended events for the same candidate+stage (most recently ended wins). Shown with a blue dot when no upcoming slot exists. */
+  const positionPastStageEventsMap = useMemo(() => {
+    const rows = positionCalendarEventsQ.data ?? []
+    const now = Date.now()
+    const past = rows.filter((ev) => {
+      if (!ev.candidate_id || !ev.position_stage_id || !ev.ends_at) return false
+      return new Date(ev.ends_at).getTime() <= now
+    })
+    past.sort((a, b) => new Date(b.ends_at as string).getTime() - new Date(a.ends_at as string).getTime())
+    const m = new Map<string, { title: string }>()
+    for (const ev of past) {
+      const k = `${ev.candidate_id}:${ev.position_stage_id}`
+      if (!m.has(k)) m.set(k, { title: ev.title })
+    }
+    return m
+  }, [positionCalendarEventsQ.data])
+
   const positionEventsForTab = useMemo(() => {
     const rows = positionCalendarEventsQ.data ?? []
     const now = Date.now()
@@ -2162,14 +2182,16 @@ export function PositionDetailPage() {
 
   function renderPipelineKanbanCard(
     c: PositionCandidateJunction,
-    activeEventTitle: string | null,
+    pipelineEvent: { title: string; variant: 'upcoming' | 'past' } | null,
     stageDotIdx: number,
   ) {
     const prof = nestedCandidate(c.candidates)
     const candId = prof?.id
     const tenure = formatTenureOnRoleShort(c.created_at as string)
     const dotClass =
-      PIPELINE_STAGE_EVENT_DOT_PALETTE[stageDotIdx % PIPELINE_STAGE_EVENT_DOT_PALETTE.length] ?? 'bg-emerald-500'
+      pipelineEvent?.variant === 'past'
+        ? PIPELINE_STAGE_EVENT_DOT_PAST
+        : PIPELINE_STAGE_EVENT_DOT_PALETTE[stageDotIdx % PIPELINE_STAGE_EVENT_DOT_PALETTE.length] ?? 'bg-emerald-500'
     return (
       <div
         key={c.id}
@@ -2214,14 +2236,14 @@ export function PositionDetailPage() {
               {tenure}
             </span>
           </div>
-          {activeEventTitle ? (
+          {pipelineEvent ? (
             <div className="mt-1 flex min-w-0 items-center gap-1.5">
               <span className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`} aria-hidden />
               <span
                 className="text-ink-muted min-w-0 truncate text-xs font-semibold dark:text-stone-400"
-                title={activeEventTitle}
+                title={pipelineEvent.title}
               >
-                {activeEventTitle}
+                {pipelineEvent.title}
               </span>
             </div>
           ) : null}
@@ -2770,9 +2792,16 @@ export function PositionDetailPage() {
                         ) : (
                           cards.map((c) => {
                             const cid = nestedCandidate(c.candidates)?.id
-                            const activeTitle =
-                              cid ? positionActiveStageEventsMap.get(`${cid}:${st.id}`)?.title ?? null : null
-                            return renderPipelineKanbanCard(c, activeTitle, stageIdx)
+                            const key = cid ? `${cid}:${st.id}` : ''
+                            const upcoming = cid ? positionActiveStageEventsMap.get(key) : undefined
+                            const ended = cid ? positionPastStageEventsMap.get(key) : undefined
+                            const pipelineEvent =
+                              upcoming != null
+                                ? { title: upcoming.title, variant: 'upcoming' as const }
+                                : ended != null
+                                  ? { title: ended.title, variant: 'past' as const }
+                                  : null
+                            return renderPipelineKanbanCard(c, pipelineEvent, stageIdx)
                           })
                         )}
                       </div>
