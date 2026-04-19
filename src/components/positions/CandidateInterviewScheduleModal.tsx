@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 
@@ -61,17 +61,22 @@ export function CandidateInterviewScheduleModal({
   const [interviewer, setInterviewer] = useState('')
   const [notes, setNotes] = useState('')
 
+  /** Parent passes `stages={data ?? []}` — new array ref every render; must not reset the form or focus is lost while typing. */
+  const stagesRef = useRef(stages)
+  stagesRef.current = stages
+
   useEffect(() => {
     if (!open || !initial) return
+    const stList = stagesRef.current
     setTaskName('')
     setStartsAt(initial.startsAt || defaultStartsAtLocal())
     setDurationMin(Number.isFinite(initial.durationMin) && initial.durationMin > 0 ? initial.durationMin : 60)
     const sid =
-      initial.stageId && stages.some((s) => s.id === initial.stageId) ? initial.stageId : stages[0]?.id ?? ''
+      initial.stageId && stList.some((s) => s.id === initial.stageId) ? initial.stageId : stList[0]?.id ?? ''
     setStageId(sid)
     setInterviewer(initial.interviewer)
     setNotes('')
-  }, [open, initial, stages])
+  }, [open, initial])
 
   const saveEvent = useMutation({
     mutationFn: async () => {
@@ -148,7 +153,9 @@ export function CandidateInterviewScheduleModal({
         </p>
 
         <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
-          Task name <span className="text-rose-600 dark:text-rose-400">*</span>
+          <span className="inline-flex flex-wrap items-baseline gap-0">
+            Task name<span className="text-rose-600 dark:text-rose-400">*</span>
+          </span>
           <input
             value={taskName}
             onChange={(e) => setTaskName(e.target.value)}
