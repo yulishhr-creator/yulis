@@ -12,8 +12,10 @@ export function mapUserFacingError(err: unknown): string {
           : ''
   const m = raw.trim()
   if (!m) return FALLBACK
+  if (/archived_at|position_candidates.*column/i.test(m) && /could not find|schema cache|42703/i.test(m))
+    return 'The database is missing assignment columns (e.g. archived_at). In Supabase SQL Editor, run supabase/migrations/029_ensure_position_candidates_archived_at.sql, then retry.'
   if (/schema cache|could not find.*column/i.test(m))
-    return 'The database needs the latest migration applied. In Supabase: run SQL from supabase/migrations/031 (or redeploy migrations), then retry.'
+    return 'The database needs pending migrations applied. In Supabase: run SQL from supabase/migrations (especially 029 if removing candidates fails), then retry or reload schema cache.'
   if (/function public\.ensure_position_public_share_token|42883|does not exist/i.test(m))
     return 'Sharing needs a quick database update. Apply migration031_ensure_position_public_share_token_rpc.sql in Supabase, then retry.'
   if (/rate_limit/i.test(m)) return 'Too many attempts. Please wait a bit and try again.'
