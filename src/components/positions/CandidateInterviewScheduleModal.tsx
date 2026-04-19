@@ -67,6 +67,23 @@ export function CandidateInterviewScheduleModal({
 
   useEffect(() => {
     if (!open || !initial) return
+    // #region agent log
+    fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0e315a' },
+      body: JSON.stringify({
+        sessionId: '0e315a',
+        hypothesisId: 'H1',
+        location: 'CandidateInterviewScheduleModal.tsx:syncEffect',
+        message: 'Schedule form sync effect ran (clears task name)',
+        data: {
+          stageIdLen: initial.stageId?.length ?? 0,
+          startsAtLen: initial.startsAt?.length ?? 0,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+    // #endregion
     const stList = stagesRef.current
     setTaskName('')
     setStartsAt(initial.startsAt || defaultStartsAtLocal())
@@ -158,7 +175,24 @@ export function CandidateInterviewScheduleModal({
           </span>
           <input
             value={taskName}
-            onChange={(e) => setTaskName(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value
+              // #region agent log
+              fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0e315a' },
+                body: JSON.stringify({
+                  sessionId: '0e315a',
+                  hypothesisId: 'H5',
+                  location: 'CandidateInterviewScheduleModal.tsx:taskNameChange',
+                  message: 'task name input change',
+                  data: { len: v.length },
+                  timestamp: Date.now(),
+                }),
+              }).catch(() => {})
+              // #endregion
+              setTaskName(v)
+            }}
             className="border-line rounded-xl border px-3 py-2 font-normal dark:border-line-dark dark:bg-stone-900/50"
             placeholder={`e.g. Interview — ${candidateName}`}
             required

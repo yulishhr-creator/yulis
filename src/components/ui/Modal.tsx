@@ -20,6 +20,9 @@ export function Modal({ open, onClose, title, children, size = 'md', headerAside
   const reduceMotion = useReducedMotion()
   const panelRef = useRef<HTMLDivElement>(null)
   const prevFocusRef = useRef<HTMLElement | null>(null)
+  /** Inline `onClose` from parents changes every render; must not re-run focus trap when only this reference changes. */
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
   const offCanvas = useOffCanvasOptional()
 
   useEffect(() => {
@@ -30,6 +33,20 @@ export function Modal({ open, onClose, title, children, size = 'md', headerAside
 
   useEffect(() => {
     if (!open) return
+    // #region agent log
+    fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0e315a' },
+      body: JSON.stringify({
+        sessionId: '0e315a',
+        hypothesisId: 'H3',
+        location: 'Modal.tsx:focusEffect',
+        message: 'Modal focus trap effect ran',
+        data: { open, runId: 'post-fix-verify' },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+    // #endregion
     prevFocusRef.current = document.activeElement as HTMLElement | null
     const t = window.setTimeout(() => {
       const root = panelRef.current
@@ -37,13 +54,31 @@ export function Modal({ open, onClose, title, children, size = 'md', headerAside
         root?.querySelector<HTMLElement>(
           'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
         ) ?? null
+      // #region agent log
+      fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0e315a' },
+        body: JSON.stringify({
+          sessionId: '0e315a',
+          hypothesisId: 'H3',
+          location: 'Modal.tsx:focusTimeout',
+          message: 'Modal moved focus to first focusable',
+          data: {
+            tag: first?.tagName ?? null,
+            ariaLabel: first?.getAttribute('aria-label') ?? null,
+            runId: 'post-fix-verify',
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+      // #endregion
       first?.focus()
     }, 0)
 
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         e.stopPropagation()
-        onClose()
+        onCloseRef.current()
       }
     }
     document.addEventListener('keydown', onKey)
@@ -52,7 +87,7 @@ export function Modal({ open, onClose, title, children, size = 'md', headerAside
       document.removeEventListener('keydown', onKey)
       prevFocusRef.current?.focus?.()
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
 
