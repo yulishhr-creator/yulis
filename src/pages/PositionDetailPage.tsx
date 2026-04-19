@@ -18,6 +18,7 @@ import {
   Phone,
   Ban,
   Play,
+  Clock,
   Pause,
   Share2,
   Pencil,
@@ -3127,7 +3128,7 @@ export function PositionDetailPage() {
                                   disabled={patchAssignmentStatus.isPending}
                                   className={`border-line flex h-8 w-full shrink-0 items-center justify-between gap-1 rounded-lg border px-2 text-xs font-bold shadow-sm transition dark:border-line-dark ${
                                     drawerCandidate!.status === 'in_progress'
-                                      ? 'border-emerald-200/90 bg-gradient-to-br from-emerald-50 to-white text-emerald-900 dark:border-emerald-800/80 dark:from-emerald-950/60 dark:to-stone-900 dark:text-emerald-200'
+                                      ? 'border-orange-200/90 bg-gradient-to-br from-orange-50 to-white text-orange-950 dark:border-orange-800/80 dark:from-orange-950/50 dark:to-stone-900 dark:text-orange-200'
                                       : drawerCandidate!.status === 'hired'
                                         ? 'border-amber-200/90 bg-gradient-to-br from-emerald-100 via-amber-50/90 to-white text-emerald-950 dark:border-emerald-700/70 dark:from-emerald-950/55 dark:via-amber-950/25 dark:to-stone-900 dark:text-emerald-100'
                                         : drawerCandidate!.status === 'rejected'
@@ -3140,7 +3141,7 @@ export function PositionDetailPage() {
                                   title="Assignment status"
                                 >
                                   {drawerCandidate!.status === 'in_progress' ? (
-                                    <Play className="h-3.5 w-3.5 shrink-0 fill-current text-emerald-600 dark:text-emerald-400" aria-hidden />
+                                    <Clock className="h-3.5 w-3.5 shrink-0 text-orange-600 dark:text-orange-400" aria-hidden />
                                   ) : drawerCandidate!.status === 'hired' ? (
                                     <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
                                   ) : drawerCandidate!.status === 'rejected' ? (
@@ -3160,7 +3161,7 @@ export function PositionDetailPage() {
                                   >
                                     {(
                                       [
-                                        { v: 'in_progress' as const, label: 'In progress', icon: Play, cls: 'text-emerald-800 dark:text-emerald-300' },
+                                        { v: 'in_progress' as const, label: 'In progress', icon: Clock, cls: 'text-orange-800 dark:text-orange-300' },
                                         { v: 'hired' as const, label: 'Hired', icon: CheckCircle2, cls: 'text-emerald-800 dark:text-emerald-300' },
                                         { v: 'rejected' as const, label: 'Rejected', icon: Ban, cls: 'text-rose-800 dark:text-rose-200' },
                                         { v: 'withdrawn' as const, label: 'Withdrawn', icon: Pause, cls: 'text-stone-700 dark:text-stone-300' },

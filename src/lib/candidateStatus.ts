@@ -59,7 +59,7 @@ export function assignmentStatusPill(status: string): { label: string; className
       return {
         label: 'In progress',
         className:
-          'border-sky-200/80 bg-sky-50 text-sky-900 dark:border-cyan-700/60 dark:bg-cyan-950/40 dark:text-cyan-100',
+          'border-orange-200/80 bg-orange-50 text-orange-950 dark:border-orange-800/60 dark:bg-orange-950/40 dark:text-orange-100',
       }
     case 'rejected':
       return {
