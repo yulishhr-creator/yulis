@@ -768,7 +768,9 @@ export function PositionDetailPage() {
   const shareChannelRef = useRef<HTMLDivElement>(null)
   const [candidateDragId, setCandidateDragId] = useState<string | null>(null)
   const [candidateDropStage, setCandidateDropStage] = useState<string | null>(null)
-  const [candidateDrawerPanel, setCandidateDrawerPanel] = useState<'overview' | 'files' | 'notes'>('overview')
+  const [candidateDrawerPanel, setCandidateDrawerPanel] = useState<'overview' | 'events' | 'files' | 'notes'>(
+    'overview',
+  )
   const [drawerPanelEntered, setDrawerPanelEntered] = useState(false)
   const [drawerFieldEdit, setDrawerFieldEdit] = useState<null | 'name' | 'email' | 'phone' | 'linkedin' | 'salary'>(null)
   const [drawerFieldDraft, setDrawerFieldDraft] = useState('')
@@ -2872,6 +2874,13 @@ export function PositionDetailPage() {
                       (f) => Boolean(f.name) && !f.name.startsWith('.'),
                     )
                     const fileCount = storageFiles.length
+                    const candidateCalendarRows = (positionCalendarEventsQ.data ?? [])
+                      .filter((ev) => ev.candidate_id === candId)
+                      .sort(
+                        (a, b) =>
+                          new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime(),
+                      )
+                    const eventCount = candidateCalendarRows.length
                     const salaryTitleSuffix = (() => {
                       const t = salaryRaw.trim()
                       if (!t) return null as string | null
@@ -3456,6 +3465,7 @@ export function PositionDetailPage() {
                           {(
                             [
                               { id: 'overview' as const, label: 'Overview' },
+                              { id: 'events' as const, label: `Events (${eventCount})` },
                               { id: 'files' as const, label: `Files (${fileCount})` },
                               { id: 'notes' as const, label: `Notes (${commentRows.length})` },
                             ] as const
@@ -3556,6 +3566,65 @@ export function PositionDetailPage() {
                                             {format(new Date(a.created_at), 'MMM d, yyyy · h:mm a')}
                                           </time>
                                         </div>
+                                      </div>
+                                    </li>
+                                  )
+                                })}
+                              </ul>
+                            )}
+                          </div>
+                        ) : null}
+
+                        {candidateDrawerPanel === 'events' ? (
+                          <div className="px-5 py-4">
+                            <p className="text-ink-muted mb-3 text-xs dark:text-stone-400">
+                              Your calendar events linked to this candidate (scheduled from this role or Overview).
+                            </p>
+                            {positionCalendarEventsQ.isLoading ? (
+                              <p className="text-ink-muted text-sm">Loading…</p>
+                            ) : candidateCalendarRows.length === 0 ? (
+                              <p className="text-ink-muted text-sm">
+                                No calendar events yet. Use <span className="font-semibold">Schedule</span> above or add
+                                an event on Overview.
+                              </p>
+                            ) : (
+                              <ul className="space-y-3">
+                                {candidateCalendarRows.map((ev) => {
+                                  const endMs = ev.ends_at ? new Date(ev.ends_at).getTime() : null
+                                  const now = Date.now()
+                                  const isUpcoming =
+                                    endMs != null ? endMs > now : new Date(ev.starts_at).getTime() > now
+                                  const dotClass = isUpcoming
+                                    ? 'bg-emerald-500'
+                                    : PIPELINE_STAGE_EVENT_DOT_PAST
+                                  const stageName = nestedStageName(
+                                    ev.position_stages as PositionCandidateJunction['position_stages'],
+                                  )
+                                  const startLabel = format(new Date(ev.starts_at), 'MMM d, yyyy · h:mm a')
+                                  const endLabel =
+                                    ev.ends_at != null
+                                      ? format(new Date(ev.ends_at), 'MMM d, yyyy · h:mm a')
+                                      : null
+                                  return (
+                                    <li
+                                      key={ev.id}
+                                      className="border-line flex gap-3 rounded-2xl border bg-white/80 px-3 py-3 dark:border-line-dark dark:bg-stone-900/60"
+                                    >
+                                      <span
+                                        className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${dotClass}`}
+                                        title={isUpcoming ? 'Upcoming' : 'Past'}
+                                        aria-hidden
+                                      />
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-stitch-on-surface text-sm font-semibold leading-snug dark:text-stone-100">
+                                          {ev.title || 'Event'}
+                                        </p>
+                                        <p className="text-ink-muted mt-1 text-xs font-medium dark:text-stone-400">
+                                          Stage: {stageName}
+                                        </p>
+                                        <p className="text-ink-muted mt-1 text-xs tabular-nums dark:text-stone-500">
+                                          {endLabel ? `${startLabel} → ${endLabel}` : startLabel}
+                                        </p>
                                       </div>
                                     </li>
                                   )
