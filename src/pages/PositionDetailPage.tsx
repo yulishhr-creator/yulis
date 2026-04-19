@@ -368,12 +368,20 @@ export function PositionDetailPage() {
   const [search, setSearch] = useSearchParams()
   const highlightCandidate = search.get('candidate')
 
-  type TabId = 'details' | 'candidates' | 'openings' | 'tasks' | 'activity'
+  type TabId = 'details' | 'candidates' | 'openings' | 'tasks' | 'comments' | 'activity'
   const tab = useMemo<TabId>(() => {
     if (highlightCandidate) return 'candidates'
     const v = search.get('tab')
     if (v === 'approaches') return 'openings'
-    if (v === 'details' || v === 'candidates' || v === 'openings' || v === 'tasks' || v === 'activity') return v
+    if (
+      v === 'details' ||
+      v === 'candidates' ||
+      v === 'openings' ||
+      v === 'tasks' ||
+      v === 'comments' ||
+      v === 'activity'
+    )
+      return v
     return 'details'
   }, [search, highlightCandidate])
 
@@ -537,6 +545,55 @@ export function PositionDetailPage() {
       return (data ?? []) as ActivityRow[]
     },
   })
+
+  type ViewerCommentRow = {
+    id: string
+    position_candidate_id: string
+    candidate_id: string
+    candidate_full_name: string
+    body: string
+    created_at: string
+  }
+
+  const viewerCommentsQ = useQuery({
+    queryKey: ['position-viewer-comments', id, user?.id],
+    networkMode: 'always',
+    enabled: Boolean(supabase && user && id),
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase!.rpc('list_position_public_viewer_messages_for_owner', {
+        p_position_id: id!,
+      })
+      if (error) throw error
+      return (data ?? []) as ViewerCommentRow[]
+    },
+  })
+
+  const seenViewerMessageIdsRef = useRef<Set<string> | null>(null)
+  useEffect(() => {
+    seenViewerMessageIdsRef.current = null
+  }, [id])
+
+  useEffect(() => {
+    if (!viewerCommentsQ.isSuccess || !viewerCommentsQ.data?.length) {
+      if (viewerCommentsQ.isSuccess && viewerCommentsQ.data?.length === 0) {
+        seenViewerMessageIdsRef.current = new Set()
+      }
+      return
+    }
+    const rows = viewerCommentsQ.data
+    if (seenViewerMessageIdsRef.current === null) {
+      seenViewerMessageIdsRef.current = new Set(rows.map((r) => r.id))
+      return
+    }
+    for (const r of rows) {
+      if (!seenViewerMessageIdsRef.current.has(r.id)) {
+        seenViewerMessageIdsRef.current.add(r.id)
+        const preview = r.body.length > 140 ? `${r.body.slice(0, 140)}…` : r.body
+        success(`New viewer comment (${r.candidate_full_name}): ${preview}`)
+      }
+    }
+  }, [viewerCommentsQ.isSuccess, viewerCommentsQ.data, success])
 
   const candidateDrawerFilesQ = useQuery({
     queryKey: ['candidate-docs-files', user?.id, highlightCandidate],
@@ -753,6 +810,7 @@ export function PositionDetailPage() {
     await qc.invalidateQueries({ queryKey: ['position-candidates', id] })
     await qc.invalidateQueries({ queryKey: ['position-transition-stats', id] })
     await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+    await qc.invalidateQueries({ queryKey: ['position-viewer-comments', id] })
     await qc.invalidateQueries({ queryKey: ['position-public-list-token', id] })
     await qc.invalidateQueries({ queryKey: ['positions'] })
     await qc.invalidateQueries({ queryKey: ['dashboard-top-positions'] })
@@ -1323,6 +1381,40 @@ export function PositionDetailPage() {
       setDrawerCommentText('')
       success('Comment added')
       await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+      await qc.invalidateQueries({ queryKey: ['position-viewer-comments', id] })
+    },
+    onError: (e: Error) => toastError(e),
+  })
+
+  const [commentsTabDrafts, setCommentsTabDrafts] = useState<Record<string, string>>({})
+
+  const replyFromCommentsTab = useMutation({
+    mutationFn: async (payload: {
+      messageId: string
+      text: string
+      candidateId: string
+      positionCandidateId: string
+    }) => {
+      const t = payload.text.trim()
+      if (!t) throw new Error('Enter a reply')
+      await logActivityEvent(supabase!, user!.id, {
+        event_type: 'note_added',
+        position_id: id!,
+        candidate_id: payload.candidateId,
+        position_candidate_id: payload.positionCandidateId,
+        title: 'Reply (public thread)',
+        subtitle: t,
+      })
+    },
+    onSuccess: async (_, v) => {
+      setCommentsTabDrafts((prev) => {
+        const next = { ...prev }
+        delete next[v.messageId]
+        return next
+      })
+      success('Reply added')
+      await qc.invalidateQueries({ queryKey: ['position-activity', id] })
+      await qc.invalidateQueries({ queryKey: ['position-viewer-comments', id] })
     },
     onError: (e: Error) => toastError(e),
   })
@@ -2208,6 +2300,7 @@ export function PositionDetailPage() {
               ['candidates', 'Candidates', candidateTabCount],
               ['openings', 'Approaches', null],
               ['tasks', 'Tasks', (tasksQ.data ?? []).length],
+              ['comments', 'Comments', (viewerCommentsQ.data ?? []).length],
               ['activity', 'Activity', (activityQ.data ?? []).length],
             ] as const
           ).map(([tid, label, count]) => (
@@ -3563,6 +3656,84 @@ export function PositionDetailPage() {
               </ul>
             )}
           </div>
+        </section>
+      ) : null}
+
+      {tab === 'comments' ? (
+        <section className="border-line max-w-3xl rounded-2xl border border-stone-200/80 bg-white/70 p-5 dark:border-line-dark dark:bg-stone-900/45">
+          <h2 className="text-stitch-on-surface text-lg font-extrabold tracking-tight dark:text-stone-100">
+            Comments from public link viewers
+          </h2>
+          <p className="text-ink-muted mt-2 text-sm dark:text-stone-400">
+            Messages left on the shared pipeline appear here. Your replies are logged as notes on the assignment and in
+            Activity.
+          </p>
+          {viewerCommentsQ.isLoading ? (
+            <p className="text-ink-muted mt-6 text-sm">Loading…</p>
+          ) : viewerCommentsQ.isError ? (
+            <p className="mt-6 text-sm text-rose-600 dark:text-rose-400">Could not load viewer comments.</p>
+          ) : (viewerCommentsQ.data ?? []).length === 0 ? (
+            <p className="text-ink-muted mt-6 text-sm">No viewer comments yet.</p>
+          ) : (
+            <ul className="mt-6 space-y-6">
+              {(viewerCommentsQ.data ?? []).map((row) => {
+                const draft = commentsTabDrafts[row.id] ?? ''
+                return (
+                  <li
+                    key={row.id}
+                    className="border-line rounded-xl border border-stone-200/90 bg-white/90 p-4 dark:border-line-dark dark:bg-stone-900/60"
+                  >
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <Link
+                        to={`/positions/${id}?tab=candidates&candidate=${encodeURIComponent(row.candidate_id)}`}
+                        className="text-sm font-bold text-[#006384] underline-offset-2 hover:underline dark:text-cyan-300"
+                      >
+                        {row.candidate_full_name}
+                      </Link>
+                      <time
+                        className="text-ink-muted text-xs tabular-nums dark:text-stone-500"
+                        dateTime={row.created_at}
+                      >
+                        {format(new Date(row.created_at), 'MMM d, yyyy · h:mm a')}
+                      </time>
+                    </div>
+                    <p className="text-stitch-on-surface mt-3 whitespace-pre-wrap text-sm leading-relaxed dark:text-stone-100">
+                      {row.body}
+                    </p>
+                    <label className="mt-4 flex flex-col gap-1 text-xs font-semibold text-stone-600 dark:text-stone-400">
+                      Your reply
+                      <textarea
+                        value={draft}
+                        onChange={(e) =>
+                          setCommentsTabDrafts((prev) => ({ ...prev, [row.id]: e.target.value }))
+                        }
+                        rows={3}
+                        placeholder="Reply as an internal note…"
+                        className="border-line rounded-xl border px-3 py-2 text-sm font-normal text-stone-800 placeholder:text-stone-400 dark:border-line-dark dark:bg-stone-900/50 dark:text-stone-100 dark:placeholder:text-stone-500"
+                      />
+                    </label>
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        type="button"
+                        disabled={!draft.trim() || replyFromCommentsTab.isPending}
+                        className="bg-accent text-stone-50 rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                        onClick={() =>
+                          void replyFromCommentsTab.mutateAsync({
+                            messageId: row.id,
+                            text: draft,
+                            candidateId: row.candidate_id,
+                            positionCandidateId: row.position_candidate_id,
+                          })
+                        }
+                      >
+                        {replyFromCommentsTab.isPending ? 'Sending…' : 'Send reply'}
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
         </section>
       ) : null}
 
