@@ -2,21 +2,15 @@
 
 Recruiting workspace (React + TypeScript + Vite + Supabase).
 
-## Gmail integration (compose)
+## Send email (compose button)
 
-The app can send email **through your Gmail account** using OAuth and the Gmail API. Configure this once in **Settings → Gmail**.
+The floating **New message** button opens the compose window. Sending goes to **`POST /api/email/send`** (authenticated with your Supabase session). That function forwards JSON to **[Make.com](https://www.make.com)** via **`MAKE_EMAIL_WEBHOOK_URL`** — the same automation account you can use from Cursor MCP (“Yuli's Make Account”). The browser cannot call MCP directly; the webhook connects your Make scenario to the app.
 
-### Google Cloud Console (one-time)
+### Make.com (one-time)
 
-1. Create a project (or pick an existing one) in [Google Cloud Console](https://console.cloud.google.com/).
-2. **APIs & Services → OAuth consent screen**: choose **External** (or Internal if Workspace-only). For personal testing, set publishing status to **Testing** and add your Gmail address under **Test users** (required for restricted scopes until the app is verified).
-3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → **Web application**.
-4. Under **Authorized redirect URIs**, add:
-   - `https://yulis.vercel.app/api/gmail/oauth/callback` (production)
-   - `http://localhost:3000/api/gmail/oauth/callback` (local — use `vercel dev`, see below)
-5. Enable **Gmail API** for the project (**APIs & Services → Library** → search “Gmail API” → Enable).
-
-Scopes used: `openid`, `email`, `profile`, `https://www.googleapis.com/auth/gmail.send`.
+1. In Make, create a scenario: trigger **Webhooks → Custom webhook** (copy the webhook URL).
+2. Add modules to send mail (e.g. **Gmail**, **Microsoft 365**, or **Email**) and map fields from the webhook payload: `to`, `cc`, `bcc`, `subject`, `bodyText`, `bodyHtml`, plus `initiatedByUserId` and `source` (`yulis`).
+3. Optionally set **`MAKE_EMAIL_WEBHOOK_SECRET`** in Vercel and add a filter in Make so only requests with header **`X-Email-Webhook-Secret`** matching your secret are accepted.
 
 ### Environment variables (Vercel + local)
 
@@ -24,30 +18,20 @@ Set these in the Vercel project (**Settings → Environment Variables**) for Pro
 
 | Variable | Description |
 |----------|-------------|
-| `GOOGLE_CLIENT_ID` | OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | OAuth client secret |
-| `GOOGLE_OAUTH_REDIRECT_URI` | Must match Google Console exactly, e.g. `https://yulis.vercel.app/api/gmail/oauth/callback` |
 | `SUPABASE_URL` | Same value as `VITE_SUPABASE_URL` |
-| `SUPABASE_ANON_KEY` | Same value as `VITE_SUPABASE_ANON_KEY` (API validates user JWTs) |
-| `SUPABASE_SERVICE_ROLE_KEY` | **Server only** — never expose to the browser |
-| `OAUTH_STATE_SECRET` | Long random secret (e.g. 32+ bytes hex) used to sign OAuth `state` |
-| `APP_ORIGIN` | Recommended: `https://yulis.vercel.app` so OAuth return URL is stable (preview deploys use a different `VERCEL_URL`) |
+| `SUPABASE_ANON_KEY` | Same value as `VITE_SUPABASE_ANON_KEY` (`/api/email/send` verifies the user JWT) |
+| `MAKE_EMAIL_WEBHOOK_URL` | Full URL of your Make **Custom webhook** trigger |
+| `MAKE_EMAIL_WEBHOOK_SECRET` | Optional; sent as header `X-Email-Webhook-Secret` if set |
 
-**Important:** `VITE_SUPABASE_*` is **only for the browser bundle**. Serverless functions under `/api/*` **do not** see `VITE_*` variables. You must set `SUPABASE_URL` and `SUPABASE_ANON_KEY` explicitly (same values as in the Vite vars). If `/api/gmail/status` or Connect fails with a message about a missing env name, add that variable in Vercel and **redeploy**.
-
-From the Google **Download JSON** (OAuth client): use `client_id` → `GOOGLE_CLIENT_ID` and `client_secret` → `GOOGLE_CLIENT_SECRET`.
+**Important:** `VITE_SUPABASE_*` is **only for the browser bundle**. Functions under `/api/*` **do not** see `VITE_*`. Set `SUPABASE_URL` and `SUPABASE_ANON_KEY` for serverless explicitly.
 
 Copy from [.env.example](.env.example) into `.env` for local runs.
 
-### Database migration for Gmail tokens
-
-Apply [`supabase/migrations/033_gmail_integration.sql`](supabase/migrations/033_gmail_integration.sql) to your hosted Supabase database (Dashboard → SQL → paste file, or `psql "$DATABASE_URL" -f ...`).
-
-### Local API + Gmail
+### Local API + compose
 
 Server routes live under `/api/*` (Vercel Functions).
 
-**Recommended (Vite + `/api` in one step):** from the repo root run:
+**Recommended (Vite + `/api` in one step):**
 
 ```bash
 npm run dev:stack
@@ -55,20 +39,20 @@ npm run dev:stack
 
 This starts `vercel dev` on **port 3000**, waits until that port accepts connections, then starts Vite on **port 5173**. Open **`http://localhost:5173`** — Vite proxies `/api/*` to `http://localhost:3000` (override with `DEV_API_PROXY_TARGET` in `.env` if needed).
 
-**Option A — one process, one URL:** run `npm run dev:vercel` (or `vercel dev`) and open the URL it prints (often `http://localhost:3000`). The SPA and `/api/gmail/*` share that origin (no Vite proxy).
+**One URL:** run `npm run dev:vercel` (or `vercel dev`) and use the URL it prints (often `http://localhost:3000`) — SPA and `/api/*` share that origin.
 
-**Option B — two terminals:** start `vercel dev --listen 3000` first, then in another terminal run `npm run dev` and open Vite’s URL.
+**Two terminals:** start `vercel dev --listen 3000`, then `npm run dev`, open Vite’s URL.
 
-If `/api/gmail/*` returns **502** while using Vite on :5173, nothing is listening on the proxy target — use `npm run dev:stack` or start `vercel dev` on that port before loading the app.
+If **`502`** appears on `/api/*` while using Vite on :5173, nothing is answering the proxy — start `vercel dev` on that port or use `npm run dev:stack`.
 
-Plain `npm run dev` alone does not run serverless routes; it only proxies `/api` if a backend is already up on the target port.
+Plain **`npm run dev`** only proxies `/api` when a backend is already listening on `DEV_API_PROXY_TARGET`.
 
 ---
 
 ## Scripts
 
-- `npm run dev` — Vite only (proxies `/api` to `DEV_API_PROXY_TARGET`; needs `vercel dev` on that port for Gmail APIs)
-- `npm run dev:stack` — `vercel dev` on :3000, then Vite on :5173 (use this for local Gmail + HMR)
+- `npm run dev` — Vite only (proxies `/api` to `DEV_API_PROXY_TARGET`; needs `vercel dev` on that port for `/api/email/send`)
+- `npm run dev:stack` — `vercel dev` on :3000, then Vite on :5173 (recommended for compose + HMR locally)
 - `npm run dev:vercel` — `vercel dev` only (single URL, often `http://localhost:3000`)
 - `npm run build` — typecheck + production bundle
 - `npm run lint` — ESLint

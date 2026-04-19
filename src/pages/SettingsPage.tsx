@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { motion, useReducedMotion } from 'framer-motion'
-import { List, Mail, Download, User, Archive, Clock, Banknote, Inbox } from 'lucide-react'
+import { List, Mail, Download, User, Archive, Clock, Banknote } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import JSZip from 'jszip'
@@ -28,7 +28,6 @@ const items = [
   { to: '/settings/position-fees', label: 'Position fees & milestones', desc: 'Planned and actual fees (₪) and critical-stage threshold per role.', icon: Banknote },
   { to: '/settings/lists', label: 'Lists & dropdowns', desc: 'Industries, payment presets, and other options.', icon: List },
   { to: '/settings/email-templates', label: 'Email templates', desc: 'Subjects and bodies with {{variables}}.', icon: Mail },
-  { to: '/settings/gmail', label: 'Gmail & compose', desc: 'Connect Gmail to send from the floating inbox button.', icon: Inbox },
 ] as const
 
 const DATASET_EXPORT_OPTIONS = [

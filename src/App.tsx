@@ -17,7 +17,6 @@ import { PositionDetailPage } from '@/pages/PositionDetailPage'
 import { PositionFeesPage } from '@/pages/PositionFeesPage'
 import { PositionFeesListPage } from '@/pages/PositionFeesListPage'
 import { SettingsPage } from '@/pages/SettingsPage'
-import { SettingsGmailPage } from '@/pages/SettingsGmailPage'
 import { EmailTemplatesPage } from '@/pages/EmailTemplatesPage'
 import { ListSettingsPage } from '@/pages/ListSettingsPage'
 import { ProfilePage } from '@/pages/ProfilePage'
@@ -70,7 +69,6 @@ export default function App() {
                     <Route path="/settings/position-fees" element={<PositionFeesListPage />} />
                     <Route path="/notifications" element={<NotificationsPage />} />
                     <Route path="/settings" element={<SettingsPage />} />
-                    <Route path="/settings/gmail" element={<SettingsGmailPage />} />
                     <Route path="/settings/profile" element={<ProfilePage />} />
                     <Route path="/settings/email-templates" element={<EmailTemplatesPage />} />
                     <Route path="/settings/lists" element={<ListSettingsPage />} />
