@@ -72,7 +72,7 @@ export type InterviewScheduleMakePayload = {
   interviewDuration: string
 }
 
-/** Sends email via server → Make.com webhook (configure MAKE_EMAIL_WEBHOOK_URL on Vercel). */
+/** Sends email via server → Make scenario HTTP trigger (MAKE_EMAIL_WEBHOOK_URL = Webhooks “Custom webhook” URL in Make, not Cursor MCP). */
 export async function sendComposeEmail(payload: SendComposePayload): Promise<MakeWebhookResult> {
   const res = await apiFetch('/api/email/send', {
     method: 'POST',
@@ -82,10 +82,14 @@ export async function sendComposeEmail(payload: SendComposePayload): Promise<Mak
     error?: string
     missing_env?: string
     detail?: string
+    userMessage?: string
     messageId?: string
     eventId?: string
   }
   if (!res.ok) {
+    if (typeof j.userMessage === 'string' && j.userMessage.trim()) {
+      throw new Error(j.userMessage.trim())
+    }
     const extra = j.detail ? ` (${j.detail})` : ''
     throw new Error(formatApiError(j, `send_${res.status}`) + extra)
   }
@@ -102,11 +106,15 @@ export async function sendInterviewScheduleToMake(payload: InterviewScheduleMake
     error?: string
     missing_env?: string
     detail?: string
+    userMessage?: string
     missing?: string[]
     messageId?: string
     eventId?: string
   }
   if (!res.ok) {
+    if (typeof j.userMessage === 'string' && j.userMessage.trim()) {
+      throw new Error(j.userMessage.trim())
+    }
     if (j.error === 'interview_missing_fields' && j.missing?.length) {
       throw new Error(`Missing required fields: ${j.missing.join(', ')}`)
     }

@@ -17,6 +17,54 @@ function isEmailish(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim())
 }
 
+/** Make “Custom webhook” / instant trigger hostnames (HTTPS only). Not Cursor MCP. */
+const MAKE_WEBHOOK_HOST = /^hook\.[a-z0-9.-]+\.make\.com$/i
+
+function validateMakeScenarioHttpUrl(url: string): { ok: true } | { ok: false; userMessage: string } {
+  const t = url.trim()
+  if (!t) {
+    return { ok: false, userMessage: 'MAKE_EMAIL_WEBHOOK_URL is empty.' }
+  }
+  try {
+    const u = new URL(t)
+    if (u.protocol !== 'https:') {
+      return {
+        ok: false,
+        userMessage:
+          'MAKE_EMAIL_WEBHOOK_URL must be https (Make Webhooks URL like https://hook.eu2.make.com/…). MCP links are not valid here.',
+      }
+    }
+    if (!MAKE_WEBHOOK_HOST.test(u.hostname)) {
+      return {
+        ok: false,
+        userMessage:
+          'Paste the URL from Make: scenario → Webhooks → Custom webhook (host hook.*.make.com). Cursor MCP URLs will not work in the app.',
+      }
+    }
+    return { ok: true }
+  } catch {
+    return {
+      ok: false,
+      userMessage:
+        'MAKE_EMAIL_WEBHOOK_URL is invalid. In Make.com copy the Webhooks “Custom webhook” HTTPS URL.',
+    }
+  }
+}
+
+async function postToMake(webhookUrl: string, secret: string | undefined, forward: object) {
+  const makeRes = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/plain, */*',
+      ...(secret ? { 'X-Email-Webhook-Secret': secret } : {}),
+    },
+    body: JSON.stringify(forward),
+  })
+  const text = await makeRes.text()
+  return { makeRes, text }
+}
+
 /** Make.com webhook may return JSON with `Message ID` (compose) or `Event ID` (interview calendar). */
 function parseMakeWebhookIds(responseText: string): { messageId?: string; eventId?: string } {
   const t = responseText.trim()
@@ -180,6 +228,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const webhookUrl = requireEnv('MAKE_EMAIL_WEBHOOK_URL')
     const secret = process.env.MAKE_EMAIL_WEBHOOK_SECRET?.trim()
 
+    const urlCheck = validateMakeScenarioHttpUrl(webhookUrl)
+    if (!urlCheck.ok) {
+      res.status(500).json({
+        error: 'invalid_make_trigger_url',
+        userMessage: urlCheck.userMessage,
+      })
+      return
+    }
+
     const bodyObj = rawBody && typeof rawBody === 'object' ? (rawBody as Record<string, unknown>) : null
     if (bodyObj?.eventType === 'interview') {
       const interviewParsed = parseInterviewPayload(rawBody)
@@ -195,21 +252,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         initiatedByUserId: userId,
         source: 'yulis',
       }
-      const makeRes = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json, text/plain, */*',
-          ...(secret ? { 'X-Email-Webhook-Secret': secret } : {}),
-        },
-        body: JSON.stringify(forward),
-      })
-      const textInterview = await makeRes.text()
+      let textInterview: string
+      let makeRes: Response
+      try {
+        const r = await postToMake(webhookUrl, secret, forward)
+        makeRes = r.makeRes
+        textInterview = r.text
+      } catch (e) {
+        console.error('make_fetch_failed', e)
+        res.status(502).json({
+          error: 'make_unreachable',
+          userMessage: 'Could not reach Make. Check MAKE_EMAIL_WEBHOOK_URL and that the scenario is active.',
+        })
+        return
+      }
       if (!makeRes.ok) {
         console.error('make_webhook_failed', makeRes.status, textInterview.slice(0, 800))
         res.status(502).json({
           error: 'make_webhook_failed',
-          detail: textInterview.slice(0, 240),
+          userMessage: 'Make returned an error. Open the scenario in Make.com and check the run log.',
+          detail: textInterview.slice(0, 120),
         })
         return
       }
@@ -235,22 +297,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       source: 'yulis',
     }
 
-    const makeRes = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json, text/plain, */*',
-        ...(secret ? { 'X-Email-Webhook-Secret': secret } : {}),
-      },
-      body: JSON.stringify(forward),
-    })
+    let text: string
+    let makeRes: Response
+    try {
+      const r = await postToMake(webhookUrl, secret, forward)
+      makeRes = r.makeRes
+      text = r.text
+    } catch (e) {
+      console.error('make_fetch_failed', e)
+      res.status(502).json({
+        error: 'make_unreachable',
+        userMessage: 'Could not reach Make. Check MAKE_EMAIL_WEBHOOK_URL and that the scenario is active.',
+      })
+      return
+    }
 
-    const text = await makeRes.text()
     if (!makeRes.ok) {
       console.error('make_webhook_failed', makeRes.status, text.slice(0, 800))
       res.status(502).json({
         error: 'make_webhook_failed',
-        detail: text.slice(0, 240),
+        userMessage: 'Make returned an error. Open the scenario in Make.com and check the run log.',
+        detail: text.slice(0, 120),
       })
       return
     }
