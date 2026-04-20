@@ -19,6 +19,9 @@ export type CandidateScheduleInitial = {
   durationMin: number
   stageId: string
   interviewer: string
+  interviewerMailDefault?: string | null
+  interviewerName2Default?: string | null
+  interviewerMail2Default?: string | null
 }
 
 type Props = {
@@ -70,6 +73,9 @@ export function CandidateInterviewScheduleModal({
   const [notes, setNotes] = useState('')
   const [scheduleMeetingEmail, setScheduleMeetingEmail] = useState(false)
   const [interviewerMail, setInterviewerMail] = useState('')
+  const [interviewer2Name, setInterviewer2Name] = useState('')
+  const [interviewer2Mail, setInterviewer2Mail] = useState('')
+  const [candidateNameEdit, setCandidateNameEdit] = useState('')
   const [candidateMail, setCandidateMail] = useState('')
 
   /** Parent passes `stages={data ?? []}` — new array ref every render; must not reset the form or focus is lost while typing. */
@@ -88,17 +94,22 @@ export function CandidateInterviewScheduleModal({
     setInterviewer(initial.interviewer)
     setNotes('')
     setScheduleMeetingEmail(false)
-    setInterviewerMail('')
+    setInterviewerMail((initial.interviewerMailDefault ?? '').trim())
+    setInterviewer2Name((initial.interviewerName2Default ?? '').trim())
+    setInterviewer2Mail((initial.interviewerMail2Default ?? '').trim())
+    setCandidateNameEdit((candidateName ?? '').trim())
     setCandidateMail((candidateEmail ?? '').trim())
-  }, [open, initial, candidateEmail])
+  }, [open, initial, candidateEmail, candidateName])
 
   function validateInterviewMake(): string | null {
     const missing: string[] = []
     const title = taskName.trim()
     const ivName = interviewer.trim()
     const ivMail = interviewerMail.trim()
+    const iv2n = interviewer2Name.trim()
+    const iv2m = interviewer2Mail.trim()
     const candMail = candidateMail.trim()
-    const candName = candidateName.trim()
+    const candName = candidateNameEdit.trim()
     const start = new Date(startsAt)
     const dm = Math.max(5, Math.min(24 * 60, Math.round(durationMin) || 60))
 
@@ -106,6 +117,12 @@ export function CandidateInterviewScheduleModal({
     if (!ivName) missing.push('Interviewer name')
     if (!ivMail) missing.push('Interviewer email')
     else if (!isEmailish(ivMail)) missing.push('Interviewer email (valid address)')
+    const hasIv2 = iv2n.length > 0 || iv2m.length > 0
+    if (hasIv2) {
+      if (!iv2n) missing.push('Interviewer 2 name')
+      if (!iv2m) missing.push('Interviewer 2 email')
+      else if (!isEmailish(iv2m)) missing.push('Interviewer 2 email (valid address)')
+    }
     if (!candName) missing.push('Candidate name')
     if (!candMail) missing.push('Candidate email')
     else if (!isEmailish(candMail)) missing.push('Candidate email (valid address)')
@@ -127,12 +144,15 @@ export function CandidateInterviewScheduleModal({
       const stage = stages.find((s) => s.id === stageId)
       const stageLabel = stage?.name?.trim() || '—'
       const iv = interviewer.trim()
+      const iv2 = interviewer2Name.trim()
+      const candLine = candidateNameEdit.trim() || candidateName.trim() || '—'
       const n = notes.trim()
       const subtitleLines = [
         `Role: ${positionTitle.trim() || '—'}`,
-        `Candidate: ${candidateName.trim() || '—'}`,
+        `Candidate: ${candLine}`,
         `Stage: ${stageLabel}`,
         iv ? `Interviewer: ${iv}` : null,
+        iv2 ? `Interviewer 2: ${iv2}` : null,
         n ? `Notes: ${n}` : null,
       ].filter(Boolean) as string[]
       const stageFk = stageId.trim() ? stageId : null
@@ -160,7 +180,9 @@ export function CandidateInterviewScheduleModal({
           interviewDesc,
           interviewerName: interviewer.trim(),
           interviewerMail: interviewerMail.trim(),
-          candidateName: candidateName.trim(),
+          interviewerName2: interviewer2Name.trim(),
+          interviewerMail2: interviewer2Mail.trim(),
+          candidateName: candidateNameEdit.trim(),
           candidateMail: candidateMail.trim(),
           interviewDate: start.toISOString(),
           interviewDuration: String(dm),
@@ -278,16 +300,18 @@ export function CandidateInterviewScheduleModal({
           </select>
         </label>
 
-        <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
-          Interviewer
-          <input
-            value={interviewer}
-            onChange={(e) => setInterviewer(e.target.value)}
-            className="border-line rounded-xl border px-3 py-2 font-normal dark:border-line-dark dark:bg-stone-900/50"
-            placeholder="Name or who will run the interview"
-            autoComplete="off"
-          />
-        </label>
+        {!scheduleMeetingEmail ? (
+          <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
+            Interviewer
+            <input
+              value={interviewer}
+              onChange={(e) => setInterviewer(e.target.value)}
+              className="border-line rounded-xl border px-3 py-2 font-normal dark:border-line-dark dark:bg-stone-900/50"
+              placeholder="Name or who will run the interview"
+              autoComplete="off"
+            />
+          </label>
+        ) : null}
 
         <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
           Notes
@@ -300,36 +324,6 @@ export function CandidateInterviewScheduleModal({
           />
         </label>
 
-        {scheduleMeetingEmail ? (
-          <div className="flex flex-col gap-3 rounded-xl border border-stone-200/90 bg-stone-50/50 p-3 dark:border-stone-600 dark:bg-stone-900/40">
-            <p className="text-ink-muted text-xs dark:text-stone-400">
-              Required for Google Calendar and Meet: interviewer and candidate email addresses.
-            </p>
-            <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
-              Interviewer email<span className="text-rose-600 dark:text-rose-400">*</span>
-              <input
-                type="email"
-                value={interviewerMail}
-                onChange={(e) => setInterviewerMail(e.target.value)}
-                className="border-line rounded-xl border px-3 py-2 font-normal dark:border-line-dark dark:bg-stone-900/50"
-                placeholder="interviewer@company.com"
-                autoComplete="email"
-              />
-            </label>
-            <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
-              Candidate email<span className="text-rose-600 dark:text-rose-400">*</span>
-              <input
-                type="email"
-                value={candidateMail}
-                onChange={(e) => setCandidateMail(e.target.value)}
-                className="border-line rounded-xl border px-3 py-2 font-normal dark:border-line-dark dark:bg-stone-900/50"
-                placeholder="candidate@email.com"
-                autoComplete="email"
-              />
-            </label>
-          </div>
-        ) : null}
-
         <div className="mt-1 flex flex-col gap-3 border-t border-stone-200/80 pt-4 dark:border-stone-600">
           <label className="text-ink-muted flex cursor-pointer items-start gap-2 text-sm dark:text-stone-400">
             <input
@@ -340,6 +334,119 @@ export function CandidateInterviewScheduleModal({
             />
             <span>Schedule Meeting (Email)</span>
           </label>
+
+          {scheduleMeetingEmail ? (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <div className="min-w-0 flex flex-col gap-2 rounded-xl border border-stone-200/90 bg-stone-50/50 p-3 dark:border-stone-600 dark:bg-stone-900/40">
+                <p className="text-ink-muted text-xs font-semibold dark:text-stone-400">Interviewer</p>
+                <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
+                  <span className="inline-flex flex-wrap items-baseline gap-x-1">
+                    Name
+                    <abbr
+                      title="Required"
+                      className="cursor-help text-rose-600 no-underline dark:text-rose-400"
+                    >
+                      *
+                    </abbr>
+                  </span>
+                  <input
+                    value={interviewer}
+                    onChange={(e) => setInterviewer(e.target.value)}
+                    className="border-line rounded-xl border px-3 py-2 font-normal dark:border-line-dark dark:bg-stone-900/50"
+                    placeholder="Name"
+                    autoComplete="name"
+                  />
+                </label>
+                <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
+                  <span className="inline-flex flex-wrap items-baseline gap-x-1">
+                    Email
+                    <abbr
+                      title="Required"
+                      className="cursor-help text-rose-600 no-underline dark:text-rose-400"
+                    >
+                      *
+                    </abbr>
+                  </span>
+                  <input
+                    type="email"
+                    value={interviewerMail}
+                    onChange={(e) => setInterviewerMail(e.target.value)}
+                    className="border-line rounded-xl border px-3 py-2 font-normal dark:border-line-dark dark:bg-stone-900/50"
+                    placeholder="email@company.com"
+                    autoComplete="email"
+                  />
+                </label>
+              </div>
+              <div className="min-w-0 flex flex-col gap-2 rounded-xl border border-stone-200/90 bg-stone-50/50 p-3 dark:border-stone-600 dark:bg-stone-900/40">
+                <p className="text-ink-muted text-xs font-semibold dark:text-stone-400">Interviewer 2</p>
+                <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
+                  <span className="inline-flex flex-wrap items-baseline gap-x-1">
+                    Name
+                  </span>
+                  <input
+                    value={interviewer2Name}
+                    onChange={(e) => setInterviewer2Name(e.target.value)}
+                    className="border-line rounded-xl border px-3 py-2 font-normal dark:border-line-dark dark:bg-stone-900/50"
+                    placeholder="Optional"
+                    autoComplete="off"
+                  />
+                </label>
+                <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
+                  <span className="inline-flex flex-wrap items-baseline gap-x-1">
+                    Email
+                  </span>
+                  <input
+                    type="email"
+                    value={interviewer2Mail}
+                    onChange={(e) => setInterviewer2Mail(e.target.value)}
+                    className="border-line rounded-xl border px-3 py-2 font-normal dark:border-line-dark dark:bg-stone-900/50"
+                    placeholder="Optional"
+                    autoComplete="email"
+                  />
+                </label>
+              </div>
+              <div className="min-w-0 flex flex-col gap-2 rounded-xl border border-stone-200/90 bg-stone-50/50 p-3 dark:border-stone-600 dark:bg-stone-900/40">
+                <p className="text-ink-muted text-xs font-semibold dark:text-stone-400">Candidate</p>
+                <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
+                  <span className="inline-flex flex-wrap items-baseline gap-x-1">
+                    Name
+                    <abbr
+                      title="Required"
+                      className="cursor-help text-rose-600 no-underline dark:text-rose-400"
+                    >
+                      *
+                    </abbr>
+                  </span>
+                  <input
+                    value={candidateNameEdit}
+                    onChange={(e) => setCandidateNameEdit(e.target.value)}
+                    className="border-line rounded-xl border px-3 py-2 font-normal dark:border-line-dark dark:bg-stone-900/50"
+                    placeholder="Candidate name"
+                    autoComplete="name"
+                  />
+                </label>
+                <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
+                  <span className="inline-flex flex-wrap items-baseline gap-x-1">
+                    Email
+                    <abbr
+                      title="Required"
+                      className="cursor-help text-rose-600 no-underline dark:text-rose-400"
+                    >
+                      *
+                    </abbr>
+                  </span>
+                  <input
+                    type="email"
+                    value={candidateMail}
+                    onChange={(e) => setCandidateMail(e.target.value)}
+                    className="border-line rounded-xl border px-3 py-2 font-normal dark:border-line-dark dark:bg-stone-900/50"
+                    placeholder="candidate@email.com"
+                    autoComplete="email"
+                  />
+                </label>
+              </div>
+            </div>
+          ) : null}
 
           <div className="flex flex-wrap gap-2">
             <button

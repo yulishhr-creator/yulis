@@ -64,6 +64,9 @@ export type InterviewScheduleMakePayload = {
   interviewDesc: string
   interviewerName: string
   interviewerMail: string
+  interviewerName2: string
+  /** Second interviewer email (Make scenario key). */
+  interviewerMail2: string
   candidateName: string
   candidateMail: string
   /** ISO 8601 datetime string */

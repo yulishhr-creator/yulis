@@ -1902,7 +1902,32 @@ export function PositionDetailPage() {
     const stageRow = stages.find((s) => s.id === sid)
     const dur =
       stageRow?.duration_minutes != null && stageRow.duration_minutes > 0 ? stageRow.duration_minutes : 60
-    const hm = (posQ.data as { hiring_manager_name?: string | null } | undefined)?.hiring_manager_name?.trim() ?? ''
+    const pos = posQ.data as
+      | { hiring_manager_name?: string | null; hiring_manager_email?: string | null }
+      | undefined
+    const hm = pos?.hiring_manager_name?.trim() ?? ''
+    const hmEmail = pos?.hiring_manager_email?.trim() ?? ''
+    const looksLikeEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim())
+    const rawIv = stageRow?.interviewers?.trim() ?? ''
+    const parts = rawIv.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean)
+    const interviewerLine =
+      hm || (parts[0] && !looksLikeEmail(parts[0]!) ? parts[0]! : '')
+    let interviewerMailDefault = hmEmail
+    if (!interviewerMailDefault && parts[0] && looksLikeEmail(parts[0]!)) {
+      interviewerMailDefault = parts[0]!
+    }
+    let interviewerName2Default = ''
+    let interviewerMail2Default = ''
+    if (parts.length >= 2) {
+      const p1 = parts[0]!
+      const p2 = parts[1]!
+      if (looksLikeEmail(p2)) {
+        interviewerMail2Default = p2
+        if (!looksLikeEmail(p1)) interviewerName2Default = p1
+      } else {
+        interviewerName2Default = p2
+      }
+    }
     const d = new Date()
     d.setMinutes(0, 0, 0)
     d.setHours(d.getHours() + 1)
@@ -1910,7 +1935,10 @@ export function PositionDetailPage() {
       startsAt: format(d, "yyyy-MM-dd'T'HH:mm"),
       durationMin: dur,
       stageId: sid,
-      interviewer: hm,
+      interviewer: interviewerLine,
+      interviewerMailDefault: interviewerMailDefault || null,
+      interviewerName2Default: interviewerName2Default || null,
+      interviewerMail2Default: interviewerMail2Default || null,
     })
     setCandidateScheduleModalKey((k) => k + 1)
   }, [drawerCandidate, stagesQ.data, posQ.data])

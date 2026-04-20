@@ -86,6 +86,8 @@ type InterviewMakePayload = {
   interviewDesc: string
   interviewerName: string
   interviewerMail: string
+  interviewerName2: string
+  interviewerMail2: string
   candidateName: string
   candidateMail: string
   interviewDate: string
@@ -106,6 +108,8 @@ function parseInterviewPayload(
   const interviewDesc = typeof o.interviewDesc === 'string' ? o.interviewDesc.trim() : ''
   const interviewerName = typeof o.interviewerName === 'string' ? o.interviewerName.trim() : ''
   const interviewerMail = typeof o.interviewerMail === 'string' ? o.interviewerMail.trim() : ''
+  const interviewerName2 = typeof o.interviewerName2 === 'string' ? o.interviewerName2.trim() : ''
+  const interviewerMail2 = typeof o.interviewerMail2 === 'string' ? o.interviewerMail2.trim() : ''
   const candidateName = typeof o.candidateName === 'string' ? o.candidateName.trim() : ''
   const candidateMail = typeof o.candidateMail === 'string' ? o.candidateMail.trim() : ''
   const interviewDate = typeof o.interviewDate === 'string' ? o.interviewDate.trim() : ''
@@ -122,6 +126,12 @@ function parseInterviewPayload(
   if (!interviewerName) missing.push('interviewerName')
   if (!interviewerMail) missing.push('interviewerMail')
   else if (!isEmailish(interviewerMail)) missing.push('interviewerMail (invalid email)')
+  const hasIv2 = interviewerName2.length > 0 || interviewerMail2.length > 0
+  if (hasIv2) {
+    if (!interviewerName2) missing.push('interviewerName2')
+    if (!interviewerMail2) missing.push('interviewerMail2')
+    else if (!isEmailish(interviewerMail2)) missing.push('interviewerMail2 (invalid email)')
+  }
   if (!candidateName) missing.push('candidateName')
   if (!candidateMail) missing.push('candidateMail')
   else if (!isEmailish(candidateMail)) missing.push('candidateMail (invalid email)')
@@ -140,6 +150,8 @@ function parseInterviewPayload(
       interviewDesc,
       interviewerName,
       interviewerMail,
+      interviewerName2,
+      interviewerMail2,
       candidateName,
       candidateMail,
       interviewDate,
