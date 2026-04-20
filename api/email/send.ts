@@ -17,6 +17,22 @@ function isEmailish(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim())
 }
 
+/** Make.com webhook may return JSON with `Message ID` (compose) or `Event ID` (interview calendar). */
+function parseMakeWebhookIds(responseText: string): { messageId?: string; eventId?: string } {
+  const t = responseText.trim()
+  if (!t) return {}
+  try {
+    const j = JSON.parse(t) as Record<string, unknown>
+    const messageIdRaw = j['Message ID'] ?? j.messageId ?? j.message_id
+    const eventIdRaw = j['Event ID'] ?? j.eventId ?? j.event_id
+    const messageId = typeof messageIdRaw === 'string' && messageIdRaw.trim() ? messageIdRaw.trim() : undefined
+    const eventId = typeof eventIdRaw === 'string' && eventIdRaw.trim() ? eventIdRaw.trim() : undefined
+    return { messageId, eventId }
+  } catch {
+    return {}
+  }
+}
+
 type InterviewMakePayload = {
   eventType: 'interview'
   interviewDesc: string
@@ -197,7 +213,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         })
         return
       }
-      res.status(200).json({ ok: true })
+      const ids = parseMakeWebhookIds(textInterview)
+      res.status(200).json({
+        ok: true,
+        ...(ids.messageId ? { messageId: ids.messageId } : {}),
+        ...(ids.eventId ? { eventId: ids.eventId } : {}),
+      })
       return
     }
 
@@ -234,7 +255,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return
     }
 
-    res.status(200).json({ ok: true })
+    const ids = parseMakeWebhookIds(text)
+    res.status(200).json({
+      ok: true,
+      ...(ids.messageId ? { messageId: ids.messageId } : {}),
+      ...(ids.eventId ? { eventId: ids.eventId } : {}),
+    })
   } catch (e) {
     sendApiError(res, 500, e, 'email_send_failed')
   }

@@ -23,8 +23,14 @@ export function ComposeFab() {
 
   const sendMut = useMutation({
     mutationFn: sendComposeEmail,
-    onSuccess: () => {
-      success('Message sent')
+    onSuccess: (result) => {
+      const suffix =
+        result.messageId != null && result.messageId !== ''
+          ? ` Message ID: ${result.messageId}.`
+          : result.eventId != null && result.eventId !== ''
+            ? ` Event ID: ${result.eventId}.`
+            : ''
+      success(`Message sent${suffix}`)
       setComposerOpen(false)
       setMinimized(false)
       setDraft(emptyComposeDraft())

@@ -44,6 +44,20 @@ export type SendComposePayload = {
   bodyHtml?: string
 }
 
+/** IDs returned by Make when the webhook responds with JSON (`Message ID` or `Event ID`). */
+export type MakeWebhookResult = {
+  messageId?: string
+  eventId?: string
+}
+
+function parseMakeSendResponse(raw: unknown): MakeWebhookResult {
+  if (!raw || typeof raw !== 'object') return {}
+  const o = raw as Record<string, unknown>
+  const messageId = typeof o.messageId === 'string' && o.messageId.trim() ? o.messageId.trim() : undefined
+  const eventId = typeof o.eventId === 'string' && o.eventId.trim() ? o.eventId.trim() : undefined
+  return { messageId, eventId }
+}
+
 /** Payload for Make.com “interview” route (Google Meet + Calendar). Same webhook as compose. */
 export type InterviewScheduleMakePayload = {
   eventType: 'interview'
@@ -59,35 +73,45 @@ export type InterviewScheduleMakePayload = {
 }
 
 /** Sends email via server → Make.com webhook (configure MAKE_EMAIL_WEBHOOK_URL on Vercel). */
-export async function sendComposeEmail(payload: SendComposePayload): Promise<void> {
+export async function sendComposeEmail(payload: SendComposePayload): Promise<MakeWebhookResult> {
   const res = await apiFetch('/api/email/send', {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+  const j = (await res.json().catch(() => ({}))) as {
+    error?: string
+    missing_env?: string
+    detail?: string
+    messageId?: string
+    eventId?: string
+  }
   if (!res.ok) {
-    const j = (await res.json().catch(() => ({}))) as { error?: string; missing_env?: string; detail?: string }
     const extra = j.detail ? ` (${j.detail})` : ''
     throw new Error(formatApiError(j, `send_${res.status}`) + extra)
   }
+  return parseMakeSendResponse(j)
 }
 
 /** Triggers Make scenario for interview scheduling (eventType `interview`). */
-export async function sendInterviewScheduleToMake(payload: InterviewScheduleMakePayload): Promise<void> {
+export async function sendInterviewScheduleToMake(payload: InterviewScheduleMakePayload): Promise<MakeWebhookResult> {
   const res = await apiFetch('/api/email/send', {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+  const j = (await res.json().catch(() => ({}))) as {
+    error?: string
+    missing_env?: string
+    detail?: string
+    missing?: string[]
+    messageId?: string
+    eventId?: string
+  }
   if (!res.ok) {
-    const j = (await res.json().catch(() => ({}))) as {
-      error?: string
-      missing_env?: string
-      detail?: string
-      missing?: string[]
-    }
     if (j.error === 'interview_missing_fields' && j.missing?.length) {
       throw new Error(`Missing required fields: ${j.missing.join(', ')}`)
     }
     const extra = j.detail ? ` (${j.detail})` : ''
     throw new Error(formatApiError(j, `send_${res.status}`) + extra)
   }
+  return parseMakeSendResponse(j)
 }

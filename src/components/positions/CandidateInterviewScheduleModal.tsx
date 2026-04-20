@@ -116,7 +116,7 @@ export function CandidateInterviewScheduleModal({
   }
 
   const saveEvent = useMutation({
-    mutationFn: async (): Promise<{ didMake: boolean }> => {
+    mutationFn: async (): Promise<{ didMake: boolean; messageId?: string; eventId?: string }> => {
       if (!supabase || !uid) throw new Error('Not signed in')
       const title = taskName.trim()
       if (!title) throw new Error('Enter a task name')
@@ -155,7 +155,7 @@ export function CandidateInterviewScheduleModal({
         const v = validateInterviewMake()
         if (v) throw new Error(v)
         const interviewDesc = [title, n].filter(Boolean).join('\n\n')
-        await sendInterviewScheduleToMake({
+        const makeIds = await sendInterviewScheduleToMake({
           eventType: 'interview',
           interviewDesc,
           interviewerName: interviewer.trim(),
@@ -165,12 +165,20 @@ export function CandidateInterviewScheduleModal({
           interviewDate: start.toISOString(),
           interviewDuration: String(dm),
         })
-        return { didMake: true }
+        return { didMake: true, ...makeIds }
       }
       return { didMake: false }
     },
     onSuccess: async (data) => {
-      success(data.didMake ? 'Event added and meeting scheduled' : 'Event added to calendar')
+      const idSuffix =
+        data.eventId != null && data.eventId !== ''
+          ? ` Event ID: ${data.eventId}`
+          : data.messageId != null && data.messageId !== ''
+            ? ` Message ID: ${data.messageId}`
+            : ''
+      success(
+        (data.didMake ? 'Event added and meeting scheduled.' : 'Event added to calendar.') + (idSuffix ? `${idSuffix}.` : ''),
+      )
       await qc.invalidateQueries({ queryKey: ['calendar-events'] })
       await qc.invalidateQueries({ queryKey: ['position-calendar-events', positionId] })
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
