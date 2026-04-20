@@ -49,8 +49,8 @@ function saveDraft(d: Partial<Draft>) {
   }
 }
 
-function emptyStage(): StageDraft {
-  return { name: '', description: '', interviewers: '', durationMinutes: '', isRemote: false }
+function emptyStage(defaultName = ''): StageDraft {
+  return { name: defaultName, description: '', interviewers: '', durationMinutes: '', isRemote: false }
 }
 
 function wizardSectionClass(): string {
@@ -115,9 +115,16 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
   const [hiringManagerName, setHiringManagerName] = useState(d0.hiringManagerName ?? '')
   const [hiringManagerEmail, setHiringManagerEmail] = useState(d0.hiringManagerEmail ?? '')
   const [hiringManagerPhone, setHiringManagerPhone] = useState(d0.hiringManagerPhone ?? '')
-  const [stages, setStages] = useState<StageDraft[]>(
-    Array.isArray(d0.stages) && d0.stages.length ? d0.stages : [emptyStage()],
-  )
+  const [stages, setStages] = useState<StageDraft[]>(() => {
+    if (Array.isArray(d0.stages) && d0.stages.length) {
+      // Draft restore: ensure every row has a label so Continue isn't blocked with no explanation.
+      return d0.stages.map((row, i) => ({
+        ...row,
+        name: row.name?.trim() ? row.name : `Stage ${i + 1}`,
+      }))
+    }
+    return [emptyStage('Stage 1')]
+  })
   const [welcome1, setWelcome1] = useState(d0.welcome1 ?? '')
   const [welcome2, setWelcome2] = useState(d0.welcome2 ?? '')
   const [welcome3, setWelcome3] = useState(d0.welcome3 ?? '')
@@ -498,10 +505,17 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
             {step === 1 ? (
           <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-ink-muted text-sm dark:text-stone-400">Define your interview workflow for this role.</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-ink-muted text-sm dark:text-stone-400">Define your interview workflow for this role.</p>
+                {!canStep1 ? (
+                  <p className="mt-1 text-xs font-medium text-rose-600 dark:text-rose-400" role="status">
+                    Each stage needs a name in the title field above — edit the suggested names or replace them with your own.
+                  </p>
+                ) : null}
+              </div>
               <button
                 type="button"
-                onClick={() => setStages((s) => [...s, emptyStage()])}
+                onClick={() => setStages((s) => [...s, emptyStage(`Stage ${s.length + 1}`)])}
                 className="inline-flex items-center gap-1 rounded-full border border-stone-300 px-3 py-1.5 text-xs font-bold dark:border-stone-600"
               >
                 <Plus className="h-3.5 w-3.5" aria-hidden />
