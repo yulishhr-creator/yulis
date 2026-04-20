@@ -44,6 +44,20 @@ export type SendComposePayload = {
   bodyHtml?: string
 }
 
+/** Payload for Make.com “interview” route (Google Meet + Calendar). Same webhook as compose. */
+export type InterviewScheduleMakePayload = {
+  eventType: 'interview'
+  interviewDesc: string
+  interviewerName: string
+  interviewerMail: string
+  candidateName: string
+  candidateMail: string
+  /** ISO 8601 datetime string */
+  interviewDate: string
+  /** Duration in minutes (string for Make compatibility) */
+  interviewDuration: string
+}
+
 /** Sends email via server → Make.com webhook (configure MAKE_EMAIL_WEBHOOK_URL on Vercel). */
 export async function sendComposeEmail(payload: SendComposePayload): Promise<void> {
   const res = await apiFetch('/api/email/send', {
@@ -52,6 +66,27 @@ export async function sendComposeEmail(payload: SendComposePayload): Promise<voi
   })
   if (!res.ok) {
     const j = (await res.json().catch(() => ({}))) as { error?: string; missing_env?: string; detail?: string }
+    const extra = j.detail ? ` (${j.detail})` : ''
+    throw new Error(formatApiError(j, `send_${res.status}`) + extra)
+  }
+}
+
+/** Triggers Make scenario for interview scheduling (eventType `interview`). */
+export async function sendInterviewScheduleToMake(payload: InterviewScheduleMakePayload): Promise<void> {
+  const res = await apiFetch('/api/email/send', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const j = (await res.json().catch(() => ({}))) as {
+      error?: string
+      missing_env?: string
+      detail?: string
+      missing?: string[]
+    }
+    if (j.error === 'interview_missing_fields' && j.missing?.length) {
+      throw new Error(`Missing required fields: ${j.missing.join(', ')}`)
+    }
     const extra = j.detail ? ` (${j.detail})` : ''
     throw new Error(formatApiError(j, `send_${res.status}`) + extra)
   }

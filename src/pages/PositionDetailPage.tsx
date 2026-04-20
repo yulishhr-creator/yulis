@@ -3942,6 +3942,7 @@ export function PositionDetailPage() {
                   candidateName={
                     nestedCandidate(drawerCandidate?.candidates ?? null)?.full_name?.trim() || 'Candidate'
                   }
+                  candidateEmail={nestedCandidate(drawerCandidate?.candidates ?? null)?.email ?? null}
                   positionTitle={position?.title?.trim() ?? ''}
                   positionId={id!}
                 />

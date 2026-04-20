@@ -4,6 +4,7 @@ import { format } from 'date-fns'
 
 import { useAuth } from '@/auth/useAuth'
 import { getSupabase } from '@/lib/supabase'
+import { sendInterviewScheduleToMake } from '@/lib/emailSendApi'
 import { useToast } from '@/hooks/useToast'
 import { Modal } from '@/components/ui/Modal'
 
@@ -27,6 +28,8 @@ type Props = {
   stages: ScheduleStageOption[]
   candidateId: string
   candidateName: string
+  /** From candidate profile; user can edit when scheduling a Google meeting. */
+  candidateEmail?: string | null
   positionTitle: string
   positionId: string
 }
@@ -38,6 +41,10 @@ function defaultStartsAtLocal(): string {
   return format(d, "yyyy-MM-dd'T'HH:mm")
 }
 
+function isEmailish(s: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim())
+}
+
 export function CandidateInterviewScheduleModal({
   open,
   onClose,
@@ -45,6 +52,7 @@ export function CandidateInterviewScheduleModal({
   stages,
   candidateId,
   candidateName,
+  candidateEmail = null,
   positionTitle,
   positionId,
 }: Props) {
@@ -60,6 +68,9 @@ export function CandidateInterviewScheduleModal({
   const [stageId, setStageId] = useState('')
   const [interviewer, setInterviewer] = useState('')
   const [notes, setNotes] = useState('')
+  const [scheduleMeetingEmail, setScheduleMeetingEmail] = useState(false)
+  const [interviewerMail, setInterviewerMail] = useState('')
+  const [candidateMail, setCandidateMail] = useState('')
 
   /** Parent passes `stages={data ?? []}` — new array ref every render; must not reset the form or focus is lost while typing. */
   const stagesRef = useRef(stages)
@@ -67,23 +78,6 @@ export function CandidateInterviewScheduleModal({
 
   useEffect(() => {
     if (!open || !initial) return
-    // #region agent log
-    fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0e315a' },
-      body: JSON.stringify({
-        sessionId: '0e315a',
-        hypothesisId: 'H1',
-        location: 'CandidateInterviewScheduleModal.tsx:syncEffect',
-        message: 'Schedule form sync effect ran (clears task name)',
-        data: {
-          stageIdLen: initial.stageId?.length ?? 0,
-          startsAtLen: initial.startsAt?.length ?? 0,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {})
-    // #endregion
     const stList = stagesRef.current
     setTaskName('')
     setStartsAt(initial.startsAt || defaultStartsAtLocal())
@@ -93,10 +87,36 @@ export function CandidateInterviewScheduleModal({
     setStageId(sid)
     setInterviewer(initial.interviewer)
     setNotes('')
-  }, [open, initial])
+    setScheduleMeetingEmail(false)
+    setInterviewerMail('')
+    setCandidateMail((candidateEmail ?? '').trim())
+  }, [open, initial, candidateEmail])
+
+  function validateInterviewMake(): string | null {
+    const missing: string[] = []
+    const title = taskName.trim()
+    const ivName = interviewer.trim()
+    const ivMail = interviewerMail.trim()
+    const candMail = candidateMail.trim()
+    const candName = candidateName.trim()
+    const start = new Date(startsAt)
+    const dm = Math.max(5, Math.min(24 * 60, Math.round(durationMin) || 60))
+
+    if (!title) missing.push('Task name')
+    if (!ivName) missing.push('Interviewer name')
+    if (!ivMail) missing.push('Interviewer email')
+    else if (!isEmailish(ivMail)) missing.push('Interviewer email (valid address)')
+    if (!candName) missing.push('Candidate name')
+    if (!candMail) missing.push('Candidate email')
+    else if (!isEmailish(candMail)) missing.push('Candidate email (valid address)')
+    if (Number.isNaN(start.getTime())) missing.push('Start date and time')
+    if (!Number.isFinite(dm) || dm < 5) missing.push('Duration (minutes)')
+
+    return missing.length ? missing.join('; ') : null
+  }
 
   const saveEvent = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<{ didMake: boolean }> => {
       if (!supabase || !uid) throw new Error('Not signed in')
       const title = taskName.trim()
       if (!title) throw new Error('Enter a task name')
@@ -130,9 +150,27 @@ export function CandidateInterviewScheduleModal({
         position_stage_id: stageFk,
       })
       if (error) throw error
+
+      if (scheduleMeetingEmail) {
+        const v = validateInterviewMake()
+        if (v) throw new Error(v)
+        const interviewDesc = [title, n].filter(Boolean).join('\n\n')
+        await sendInterviewScheduleToMake({
+          eventType: 'interview',
+          interviewDesc,
+          interviewerName: interviewer.trim(),
+          interviewerMail: interviewerMail.trim(),
+          candidateName: candidateName.trim(),
+          candidateMail: candidateMail.trim(),
+          interviewDate: start.toISOString(),
+          interviewDuration: String(dm),
+        })
+        return { didMake: true }
+      }
+      return { didMake: false }
     },
-    onSuccess: async () => {
-      success('Event added to calendar')
+    onSuccess: async (data) => {
+      success(data.didMake ? 'Event added and meeting scheduled' : 'Event added to calendar')
       await qc.invalidateQueries({ queryKey: ['calendar-events'] })
       await qc.invalidateQueries({ queryKey: ['position-calendar-events', positionId] })
       await qc.invalidateQueries({ queryKey: ['notification-count'] })
@@ -161,6 +199,13 @@ export function CandidateInterviewScheduleModal({
         className="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault()
+          if (scheduleMeetingEmail) {
+            const v = validateInterviewMake()
+            if (v) {
+              toastError(v)
+              return
+            }
+          }
           saveEvent.mutate()
         }}
       >
@@ -175,24 +220,7 @@ export function CandidateInterviewScheduleModal({
           </span>
           <input
             value={taskName}
-            onChange={(e) => {
-              const v = e.target.value
-              // #region agent log
-              fetch('http://127.0.0.1:7883/ingest/253f2f27-b59e-401e-9330-b3044ff73852', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0e315a' },
-                body: JSON.stringify({
-                  sessionId: '0e315a',
-                  hypothesisId: 'H5',
-                  location: 'CandidateInterviewScheduleModal.tsx:taskNameChange',
-                  message: 'task name input change',
-                  data: { len: v.length },
-                  timestamp: Date.now(),
-                }),
-              }).catch(() => {})
-              // #endregion
-              setTaskName(v)
-            }}
+            onChange={(e) => setTaskName(e.target.value)}
             className="border-line rounded-xl border px-3 py-2 font-normal dark:border-line-dark dark:bg-stone-900/50"
             placeholder={`e.g. Interview — ${candidateName}`}
             required
@@ -264,22 +292,64 @@ export function CandidateInterviewScheduleModal({
           />
         </label>
 
-        <div className="mt-2 flex flex-wrap gap-2 border-t border-stone-200/80 pt-4 dark:border-stone-600">
-          <button
-            type="submit"
-            disabled={saveEvent.isPending || !taskName.trim()}
-            className="bg-accent text-stone-50 rounded-full px-5 py-2 text-sm font-semibold disabled:opacity-50"
-          >
-            {saveEvent.isPending ? 'Creating…' : 'Create'}
-          </button>
-          <button
-            type="button"
-            className="border-line rounded-full border px-5 py-2 text-sm font-semibold dark:border-line-dark"
-            disabled={saveEvent.isPending}
-            onClick={handleClose}
-          >
-            Cancel
-          </button>
+        {scheduleMeetingEmail ? (
+          <div className="flex flex-col gap-3 rounded-xl border border-stone-200/90 bg-stone-50/50 p-3 dark:border-stone-600 dark:bg-stone-900/40">
+            <p className="text-ink-muted text-xs dark:text-stone-400">
+              Required for Google Calendar and Meet: interviewer and candidate email addresses.
+            </p>
+            <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
+              Interviewer email<span className="text-rose-600 dark:text-rose-400">*</span>
+              <input
+                type="email"
+                value={interviewerMail}
+                onChange={(e) => setInterviewerMail(e.target.value)}
+                className="border-line rounded-xl border px-3 py-2 font-normal dark:border-line-dark dark:bg-stone-900/50"
+                placeholder="interviewer@company.com"
+                autoComplete="email"
+              />
+            </label>
+            <label className="flex min-w-0 flex-col gap-1 text-sm font-medium">
+              Candidate email<span className="text-rose-600 dark:text-rose-400">*</span>
+              <input
+                type="email"
+                value={candidateMail}
+                onChange={(e) => setCandidateMail(e.target.value)}
+                className="border-line rounded-xl border px-3 py-2 font-normal dark:border-line-dark dark:bg-stone-900/50"
+                placeholder="candidate@email.com"
+                autoComplete="email"
+              />
+            </label>
+          </div>
+        ) : null}
+
+        <div className="mt-1 flex flex-col gap-3 border-t border-stone-200/80 pt-4 dark:border-stone-600">
+          <label className="text-ink-muted flex cursor-pointer items-start gap-2 text-sm dark:text-stone-400">
+            <input
+              type="checkbox"
+              checked={scheduleMeetingEmail}
+              onChange={(e) => setScheduleMeetingEmail(e.target.checked)}
+              className="border-line mt-0.5 rounded border-stone-300 dark:border-stone-600"
+            />
+            <span>Schedule Meeting (Email)</span>
+          </label>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              disabled={saveEvent.isPending || !taskName.trim()}
+              className="bg-accent text-stone-50 rounded-full px-5 py-2 text-sm font-semibold disabled:opacity-50"
+            >
+              {saveEvent.isPending ? 'Creating…' : 'Create'}
+            </button>
+            <button
+              type="button"
+              className="border-line rounded-full border px-5 py-2 text-sm font-semibold dark:border-line-dark"
+              disabled={saveEvent.isPending}
+              onClick={handleClose}
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       </form>
     </Modal>

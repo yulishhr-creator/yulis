@@ -17,6 +17,73 @@ function isEmailish(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim())
 }
 
+type InterviewMakePayload = {
+  eventType: 'interview'
+  interviewDesc: string
+  interviewerName: string
+  interviewerMail: string
+  candidateName: string
+  candidateMail: string
+  interviewDate: string
+  interviewDuration: string
+}
+
+function parseInterviewPayload(
+  raw: unknown,
+): { ok: true; value: InterviewMakePayload } | { ok: false; status: number; code: string; missing?: string[] } {
+  if (!raw || typeof raw !== 'object') {
+    return { ok: false, status: 400, code: 'invalid_body' }
+  }
+  const o = raw as Record<string, unknown>
+  if (o.eventType !== 'interview') {
+    return { ok: false, status: 400, code: 'invalid_event_type' }
+  }
+
+  const interviewDesc = typeof o.interviewDesc === 'string' ? o.interviewDesc.trim() : ''
+  const interviewerName = typeof o.interviewerName === 'string' ? o.interviewerName.trim() : ''
+  const interviewerMail = typeof o.interviewerMail === 'string' ? o.interviewerMail.trim() : ''
+  const candidateName = typeof o.candidateName === 'string' ? o.candidateName.trim() : ''
+  const candidateMail = typeof o.candidateMail === 'string' ? o.candidateMail.trim() : ''
+  const interviewDate = typeof o.interviewDate === 'string' ? o.interviewDate.trim() : ''
+  const durationRaw = o.interviewDuration
+  const interviewDuration =
+    typeof durationRaw === 'number' && Number.isFinite(durationRaw)
+      ? String(durationRaw)
+      : typeof durationRaw === 'string'
+        ? durationRaw.trim()
+        : ''
+
+  const missing: string[] = []
+  if (!interviewDesc) missing.push('interviewDesc')
+  if (!interviewerName) missing.push('interviewerName')
+  if (!interviewerMail) missing.push('interviewerMail')
+  else if (!isEmailish(interviewerMail)) missing.push('interviewerMail (invalid email)')
+  if (!candidateName) missing.push('candidateName')
+  if (!candidateMail) missing.push('candidateMail')
+  else if (!isEmailish(candidateMail)) missing.push('candidateMail (invalid email)')
+  if (!interviewDate) missing.push('interviewDate')
+  else if (Number.isNaN(Date.parse(interviewDate))) missing.push('interviewDate (invalid)')
+  if (!interviewDuration) missing.push('interviewDuration')
+
+  if (missing.length) {
+    return { ok: false, status: 400, code: 'interview_missing_fields', missing }
+  }
+
+  return {
+    ok: true,
+    value: {
+      eventType: 'interview',
+      interviewDesc,
+      interviewerName,
+      interviewerMail,
+      candidateName,
+      candidateMail,
+      interviewDate,
+      interviewDuration,
+    },
+  }
+}
+
 function parsePayload(raw: unknown): { ok: true; value: ComposePayload } | { ok: false; status: number; code: string } {
   if (!raw || typeof raw !== 'object') {
     return { ok: false, status: 400, code: 'invalid_body' }
@@ -94,16 +161,54 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
+    const webhookUrl = requireEnv('MAKE_EMAIL_WEBHOOK_URL')
+    const secret = process.env.MAKE_EMAIL_WEBHOOK_SECRET?.trim()
+
+    const bodyObj = rawBody && typeof rawBody === 'object' ? (rawBody as Record<string, unknown>) : null
+    if (bodyObj?.eventType === 'interview') {
+      const interviewParsed = parseInterviewPayload(rawBody)
+      if (!interviewParsed.ok) {
+        res.status(interviewParsed.status).json({
+          error: interviewParsed.code,
+          missing: interviewParsed.missing,
+        })
+        return
+      }
+      const forward = {
+        ...interviewParsed.value,
+        initiatedByUserId: userId,
+        source: 'yulis',
+      }
+      const makeRes = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/plain, */*',
+          ...(secret ? { 'X-Email-Webhook-Secret': secret } : {}),
+        },
+        body: JSON.stringify(forward),
+      })
+      const textInterview = await makeRes.text()
+      if (!makeRes.ok) {
+        console.error('make_webhook_failed', makeRes.status, textInterview.slice(0, 800))
+        res.status(502).json({
+          error: 'make_webhook_failed',
+          detail: textInterview.slice(0, 240),
+        })
+        return
+      }
+      res.status(200).json({ ok: true })
+      return
+    }
+
     const parsed = parsePayload(rawBody)
     if (!parsed.ok) {
       res.status(parsed.status).json({ error: parsed.code })
       return
     }
 
-    const webhookUrl = requireEnv('MAKE_EMAIL_WEBHOOK_URL')
-    const secret = process.env.MAKE_EMAIL_WEBHOOK_SECRET?.trim()
-
     const forward = {
+      eventType: 'Registration' as const,
       ...parsed.value,
       initiatedByUserId: userId,
       source: 'yulis',
