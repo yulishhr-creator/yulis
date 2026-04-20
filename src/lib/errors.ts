@@ -14,6 +14,8 @@ export function mapUserFacingError(err: unknown): string {
   if (!m) return FALLBACK
   if (/archived_at|position_candidates.*column/i.test(m) && /could not find|schema cache|42703/i.test(m))
     return 'The database is missing assignment columns (e.g. archived_at). In Supabase SQL Editor, run supabase/migrations/029_ensure_position_candidates_archived_at.sql, then retry.'
+  if (/requirements/i.test(m) && /could not find|schema cache|42703/i.test(m))
+    return 'The database is missing positions.requirements. In Supabase SQL Editor, run supabase/migrations/015_positions_requirements_column.sql, then retry.'
   if (/schema cache|could not find.*column/i.test(m))
     return 'The database needs pending migrations applied. In Supabase: run SQL from supabase/migrations (especially 029 if removing candidates fails), then retry or reload schema cache.'
   if (/function public\.ensure_position_public_share_token|42883|does not exist/i.test(m))
