@@ -66,7 +66,8 @@ function formatSalaryExpectationDisplay(raw: string | null | undefined): string 
   const t = raw?.trim() ?? ''
   if (!t) return '—'
   const p = parseIlsAmountInput(t)
-  return typeof p === 'number' ? `${p.toLocaleString('en-US')}₪` : t
+  if (typeof p === 'number') return `${p.toLocaleString('en-US')}₪`
+  return t
 }
 
 type OverviewEditKey =
@@ -712,8 +713,8 @@ export function CandidateDetailPage() {
                     <input
                       value={overviewDraft}
                       onChange={(e) => setOverviewDraft(e.target.value)}
-                      placeholder="ILS amount"
-                      className="border-line text-ink min-w-0 flex-1 rounded-lg border bg-white px-2 py-1 text-sm tabular-nums dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
+                      placeholder="e.g. 14,000–19,000 or ₪25k"
+                      className="border-line text-ink min-w-0 flex-1 rounded-lg border bg-white px-2 py-1 text-sm dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
                       autoFocus
                     />
                     <button
@@ -726,12 +727,7 @@ export function CandidateDetailPage() {
                           void commitCandidatePatch({ salary_expectation: null })
                           return
                         }
-                        const p = parseIlsAmountInput(t)
-                        if (p === 'invalid') {
-                          toastError('Enter a valid amount or leave empty.')
-                          return
-                        }
-                        void commitCandidatePatch({ salary_expectation: p !== null ? String(p) : null })
+                        void commitCandidatePatch({ salary_expectation: t })
                       }}
                     >
                       <Check className="h-4 w-4" aria-hidden />

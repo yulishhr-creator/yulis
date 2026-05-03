@@ -3173,7 +3173,7 @@ export function PositionDetailPage() {
                       if (!t) return null as string | null
                       const p = parseIlsAmountInput(t)
                       if (typeof p === 'number') return `₪${p.toLocaleString('he-IL')}`
-                      return `(${t})`
+                      return t
                     })()
                     const posBudget = (position as { salary_budget?: number | null }).salary_budget
                     const budgetDisplay =
@@ -3419,8 +3419,8 @@ export function PositionDetailPage() {
                                         <input
                                           value={drawerFieldDraft}
                                           onChange={(e) => setDrawerFieldDraft(e.target.value)}
-                                          className="border-line text-stitch-on-surface min-w-0 max-w-full flex-1 rounded-lg border bg-white px-2 py-1 text-sm font-semibold tabular-nums sm:max-w-[12rem] dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
-                                          placeholder="₪ amount"
+                                          className="border-line text-stitch-on-surface min-w-0 max-w-full flex-1 rounded-lg border bg-white px-2 py-1 text-sm font-semibold sm:max-w-[12rem] dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
+                                          placeholder="e.g. 14,000–19,000 or ₪25k"
                                           autoFocus
                                         />
                                         <button
@@ -3429,16 +3429,9 @@ export function PositionDetailPage() {
                                           aria-label="Save salary expectation"
                                           onClick={() => {
                                             const t = drawerFieldDraft.trim()
-                                            let toSave: string | null = t
-                                            if (t) {
-                                              const p = parseIlsAmountInput(t)
-                                              if (p === 'invalid') {
-                                                toastError('Enter a valid amount or leave empty.')
-                                                return
-                                              }
-                                              if (p !== null) toSave = String(p)
-                                            } else toSave = null
-                                            void saveCandidateFromDrawer(candId, { salary_expectation: toSave })
+                                            void saveCandidateFromDrawer(candId, {
+                                              salary_expectation: t === '' ? null : t,
+                                            })
                                           }}
                                         >
                                           <Check className="h-4 w-4" aria-hidden />
@@ -3705,7 +3698,7 @@ export function PositionDetailPage() {
                                           value={drawerFieldDraft}
                                           onChange={(e) => setDrawerFieldDraft(e.target.value)}
                                           className="border-line text-stitch-on-surface min-w-0 flex-1 rounded-lg border bg-white px-2 py-1 dark:border-line-dark dark:bg-stone-900 dark:text-stone-100"
-                                          placeholder="Expected salary (ILS)"
+                                          placeholder="e.g. 14,000–19,000 or ₪25k"
                                           autoFocus
                                         />
                                         <button
@@ -3714,16 +3707,9 @@ export function PositionDetailPage() {
                                           aria-label="Save salary expectation"
                                           onClick={() => {
                                             const t = drawerFieldDraft.trim()
-                                            let toSave: string | null = t
-                                            if (t) {
-                                              const p = parseIlsAmountInput(t)
-                                              if (p === 'invalid') {
-                                                toastError('Enter a valid amount or leave empty.')
-                                                return
-                                              }
-                                              if (p !== null) toSave = String(p)
-                                            } else toSave = null
-                                            void saveCandidateFromDrawer(candId, { salary_expectation: toSave })
+                                            void saveCandidateFromDrawer(candId, {
+                                              salary_expectation: t === '' ? null : t,
+                                            })
                                           }}
                                         >
                                           <Check className="h-4 w-4" aria-hidden />
