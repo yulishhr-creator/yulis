@@ -150,6 +150,17 @@ function normalizeAssignmentSource(raw: string): AssignmentSourceValue {
   return 'sourcing'
 }
 
+/** Pre-migration-021 DBs only allow `external` | `app`. Map canonical UI values for a compatibility write. */
+function legacyAssignmentSourceDbValue(v: AssignmentSourceValue): 'external' | 'app' {
+  return v === 'import' ? 'external' : 'app'
+}
+
+function isPostgresCheckViolation(err: { code?: string; message?: string } | null | undefined): boolean {
+  if (!err) return false
+  if (err.code === '23514') return true
+  return /violates check constraint|check constraint/i.test(err.message ?? '')
+}
+
 const ASSIGNMENT_OUTCOME_REJECTED_REASONS: ReadonlyArray<{ id: string; label: string }> = [
   { id: 'profile_mismatch', label: 'Not a fit — profile or experience mismatch' },
   { id: 'client_passed', label: 'Client passed — chose another candidate' },
@@ -1603,12 +1614,22 @@ export function PositionDetailPage() {
 
   const updateAssignmentSource = useMutation({
     mutationFn: async (payload: { positionCandidateId: string; source: AssignmentSourceValue }) => {
-      const { error } = await supabase!
-        .from('position_candidates')
-        .update({ source: payload.source })
-        .eq('id', payload.positionCandidateId)
-        .eq('user_id', user!.id)
-      if (error) throw error
+      const { positionCandidateId, source } = payload
+      const patch = (dbSource: string) =>
+        supabase!
+          .from('position_candidates')
+          .update({ source: dbSource })
+          .eq('id', positionCandidateId)
+          .eq('user_id', user!.id)
+
+      const first = await patch(source)
+      if (!first.error) return
+
+      if (!isPostgresCheckViolation(first.error)) throw first.error
+
+      const legacy = legacyAssignmentSourceDbValue(source)
+      const second = await patch(legacy)
+      if (second.error) throw second.error
     },
     onSuccess: async () => {
       success('Source updated')

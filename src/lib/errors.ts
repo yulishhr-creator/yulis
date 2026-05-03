@@ -24,6 +24,8 @@ export function mapUserFacingError(err: unknown): string {
   if (/^forbidden$|permission denied|42501/i.test(m)) return 'You do not have access to share this role.'
   if (/position not found/i.test(m)) return 'This role was removed or is unavailable.'
   if (/invalid token|invalid assignment|invalid position|^invalid$/i.test(m)) return 'This link is not valid.'
+  if (/position_candidates_source_check/i.test(m))
+    return 'Could not save lead source. Apply supabase/migrations/021_position_candidate_source_taxonomy.sql on your Supabase project (or redeploy after DB migration), then retry.'
   if (/violates|constraint|duplicate key|23505/i.test(m)) return 'That value is not allowed or already exists.'
   if (/JWT|session expired|not authenticated/i.test(m)) return 'Please sign in again.'
   if (m.length > 160) return FALLBACK
