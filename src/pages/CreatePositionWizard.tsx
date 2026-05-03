@@ -171,16 +171,11 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
   ])
 
   const feeIls = parseOptionalNumber(plannedFee)
-  const salaryNum = parseOptionalNumber(salaryBudget)
 
   async function onCreate() {
     if (!supabase || !user || !companyId) return
     if (plannedFee.trim() && feeIls == null) {
       toastError('Recruitment fee must be a valid number, or leave it empty.')
-      return
-    }
-    if (salaryBudget.trim() && salaryNum == null) {
-      toastError('Salary budget must be a valid number, or leave it empty.')
       return
     }
     if (!stages.length || !stages.every((s) => s.name.trim())) {
@@ -196,7 +191,7 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
       industry: industry.trim() || null,
       status: 'active' as const,
       planned_fee_ils: feeIls,
-      salary_budget: salaryNum,
+      salary_budget: salaryBudget.trim() || null,
       opened_at: openedAt,
       hiring_manager_name: hiringManagerName.trim() || null,
       hiring_manager_email: hiringManagerEmail.trim() || null,
@@ -703,7 +698,7 @@ export function CreatePositionWizard({ companies }: { companies: { id: string; n
               </div>
               <div className="flex justify-between gap-2 border-b border-stone-200/70 pb-2 dark:border-stone-600/80">
                 <dt className="text-ink-muted">Salary budget</dt>
-                <dd className="font-semibold">{salaryNum != null ? String(salaryNum) : '—'}</dd>
+                <dd className="font-semibold">{salaryBudget.trim() || '—'}</dd>
               </div>
               <div className="flex justify-between gap-2 border-b border-stone-200/70 pb-2 dark:border-stone-600/80">
                 <dt className="text-ink-muted">Recruitment fee</dt>

@@ -843,7 +843,7 @@ export function PositionDetailPage() {
       hiring_manager_name?: string | null
       hiring_manager_email?: string | null
       hiring_manager_phone?: string | null
-      salary_budget?: number | null
+      salary_budget?: string | null
       planned_fee_ils?: number | null
     }
     const reqText = normalizeRequirementsText(pos.requirements)
@@ -851,7 +851,7 @@ export function PositionDetailPage() {
     setHiringManagerName(pos.hiring_manager_name ?? '')
     setHiringManagerEmail(pos.hiring_manager_email ?? '')
     setHiringManagerPhone(pos.hiring_manager_phone ?? '')
-    setSalaryBudgetStr(pos.salary_budget != null ? String(pos.salary_budget) : '')
+    setSalaryBudgetStr(pos.salary_budget != null && String(pos.salary_budget).trim() !== '' ? String(pos.salary_budget) : '')
     const to = (position as { target_openings?: number | null }).target_openings
     setTargetOpeningsStr(to != null && Number.isFinite(Number(to)) && Number(to) >= 1 ? String(Math.floor(Number(to))) : '1')
     setRecruitmentFeeStr(pos.planned_fee_ils != null ? String(pos.planned_fee_ils) : '')
@@ -973,6 +973,22 @@ export function PositionDetailPage() {
     if (!t) return null
     const n = Number(t)
     return Number.isFinite(n) ? n : 'invalid'
+  }
+
+  function formatPositionSalaryBudgetDisplay(raw: string | null | undefined): string {
+    const t = String(raw ?? '').trim()
+    if (!t) return ''
+    const p = parseIlsAmountInput(t)
+    if (typeof p === 'number') return formatIlsAmountDisplay(String(p))
+    return t
+  }
+
+  function formatPositionSalaryBudgetLine(raw: string | null | undefined): string {
+    const t = String(raw ?? '').trim()
+    if (!t) return '—'
+    const p = parseIlsAmountInput(t)
+    if (typeof p === 'number') return `₪${p.toLocaleString('he-IL')}`
+    return t
   }
 
   const savePos = useMutation({
@@ -2811,21 +2827,17 @@ export function PositionDetailPage() {
             <DetailHoverField
               label="Client salary budget (ILS)"
               value={salaryBudgetStr}
-              readOnlyFormat={formatIlsAmountDisplay}
+              readOnlyFormat={formatPositionSalaryBudgetDisplay}
               onSave={async (next) => {
-                const parsed = parseIlsAmountInput(next)
-                if (parsed === 'invalid') {
-                  toastError('Enter a valid number or leave empty.')
-                  return
-                }
+                const t = next.trim()
                 const { error } = await supabase!
                   .from('positions')
-                  .update({ salary_budget: parsed })
+                  .update({ salary_budget: t === '' ? null : t })
                   .eq('id', id!)
                   .eq('user_id', user!.id)
                 if (error) toastError(error)
                 else {
-                  setSalaryBudgetStr(parsed != null ? String(parsed) : '')
+                  setSalaryBudgetStr(t)
                   success('Saved')
                   await invalidateAll()
                 }
@@ -3196,11 +3208,8 @@ export function PositionDetailPage() {
                       if (typeof p === 'number') return `₪${p.toLocaleString('he-IL')}`
                       return t
                     })()
-                    const posBudget = (position as { salary_budget?: number | null }).salary_budget
-                    const budgetDisplay =
-                      posBudget != null && Number.isFinite(Number(posBudget))
-                        ? `₪${Number(posBudget).toLocaleString('he-IL')}`
-                        : '—'
+                    const posBudget = (position as { salary_budget?: string | null }).salary_budget
+                    const budgetDisplay = formatPositionSalaryBudgetLine(posBudget)
                     const positionOpenedShort = formatOpenedAtShort(
                       (position as { opened_at?: string | null }).opened_at,
                     )
