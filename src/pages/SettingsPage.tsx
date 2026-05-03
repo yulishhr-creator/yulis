@@ -52,7 +52,7 @@ export function SettingsPage() {
     enabled: Boolean(supabase && user),
     queryFn: async () => {
       const [p, c] = await Promise.all([
-        supabase!.from('positions').select('id, title, status, company_id, planned_fee_ils, actual_fee_ils, created_at').eq('user_id', user!.id),
+        supabase!.from('positions').select('id, title, status, company_id, planned_fee_ils, actual_fee_ils, created_at, target_openings').eq('user_id', user!.id),
         supabase!.from('candidates').select('id, full_name, email, status, created_at').eq('user_id', user!.id),
       ])
       return { positions: p.data ?? [], candidates: c.data ?? [] }

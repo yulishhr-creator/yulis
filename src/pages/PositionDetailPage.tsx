@@ -753,6 +753,7 @@ export function PositionDetailPage() {
   const [hiringManagerEmail, setHiringManagerEmail] = useState('')
   const [hiringManagerPhone, setHiringManagerPhone] = useState('')
   const [salaryBudgetStr, setSalaryBudgetStr] = useState('')
+  const [targetOpeningsStr, setTargetOpeningsStr] = useState('1')
   const [recruitmentFeeStr, setRecruitmentFeeStr] = useState('')
   const [welcome1, setWelcome1] = useState('')
   const [welcome2, setWelcome2] = useState('')
@@ -840,6 +841,8 @@ export function PositionDetailPage() {
     setHiringManagerEmail(pos.hiring_manager_email ?? '')
     setHiringManagerPhone(pos.hiring_manager_phone ?? '')
     setSalaryBudgetStr(pos.salary_budget != null ? String(pos.salary_budget) : '')
+    const to = (position as { target_openings?: number | null }).target_openings
+    setTargetOpeningsStr(to != null && Number.isFinite(Number(to)) && Number(to) >= 1 ? String(Math.floor(Number(to))) : '1')
     setRecruitmentFeeStr(pos.planned_fee_ils != null ? String(pos.planned_fee_ils) : '')
     setWelcome1(position.welcome_1 ?? '')
     setWelcome2(position.welcome_2 ?? '')
@@ -1381,9 +1384,41 @@ export function PositionDetailPage() {
     onError: (e: Error) => toastError(e),
   })
 
+  const rejectOtherActiveAssignments = useMutation({
+    mutationFn: async (hiredPcId: string) => {
+      const otherIds = (candidatesQ.data ?? [])
+        .filter((c) => c.id !== hiredPcId && c.status === 'in_progress')
+        .map((c) => c.id)
+      if (otherIds.length === 0) return { count: 0 }
+      const { error } = await supabase!
+        .from('position_candidates')
+        .update({ status: 'rejected' })
+        .in('id', otherIds)
+        .eq('user_id', user!.id)
+        .eq('position_id', id!)
+      if (error) throw error
+      const { error: taskErr } = await supabase!
+        .from('tasks')
+        .update({ status: 'closed' })
+        .in('position_candidate_id', otherIds)
+        .eq('user_id', user!.id)
+        .neq('status', 'closed')
+      if (taskErr) throw taskErr
+      return { count: otherIds.length }
+    },
+    onSuccess: async ({ count }) => {
+      setHiredFollowUpPcId(null)
+      success(count > 0 ? `Rejected ${count} other active candidate(s) · role stays open` : 'No other in-progress candidates to reject')
+      await invalidateAll()
+    },
+    onError: (e: Error) => toastError(e),
+  })
+
   const bulkRejectOthersAndSucceedPosition = useMutation({
     mutationFn: async (hiredPcId: string) => {
-      const otherIds = (candidatesQ.data ?? []).filter((c) => c.id !== hiredPcId).map((c) => c.id)
+      const otherIds = (candidatesQ.data ?? [])
+        .filter((c) => c.id !== hiredPcId && c.status === 'in_progress')
+        .map((c) => c.id)
       if (otherIds.length > 0) {
         const { error } = await supabase!
           .from('position_candidates')
@@ -1414,14 +1449,14 @@ export function PositionDetailPage() {
       setStatus('succeeded')
       success(
         otherCount > 0
-          ? `Position marked succeeded · ${otherCount} other assignment(s) set to Rejected`
+          ? `Position marked succeeded · ${otherCount} other in-progress assignment(s) set to Rejected`
           : 'Position marked succeeded',
       )
       await logActivityEvent(supabase!, user!.id, {
         event_type: 'position_status_changed',
         position_id: id!,
         title: 'Position closed after hire',
-        subtitle: `${prev} → succeeded · bulk rejected ${otherCount}`,
+        subtitle: `${prev} → succeeded · rejected ${otherCount} in-progress`,
         metadata: { from: prev, to: 'succeeded', bulk_reject_count: otherCount },
       })
       await invalidateAll()
@@ -2110,6 +2145,11 @@ export function PositionDetailPage() {
   const openedAtForHeader = (position as { opened_at?: string | null }).opened_at
   const openedShort = formatOpenedAtShort(openedAtForHeader)
   const openedLabel = openedShort === '—' ? 'Opened —' : `Opened ${openedShort}`
+  const targetOpenings = Math.max(
+    1,
+    Math.floor(Number((position as { target_openings?: number | null }).target_openings) || 1),
+  )
+  const hiredSeatCount = hiredCandidates.length
 
   function formatActivityArrowPath(subtitle: string | null): string {
     if (!subtitle) return '—'
@@ -2466,6 +2506,16 @@ export function PositionDetailPage() {
                   ·
                 </span>
                 <span title="Days since this role was created in Yulis">On books {daysSinceCreated}d</span>
+                {(targetOpenings > 1 || hiredSeatCount > 0) && (
+                  <>
+                    <span aria-hidden className="mx-2">
+                      ·
+                    </span>
+                    <span title="Hired assignments vs target seats for this requisition">
+                      Seats {hiredSeatCount}/{targetOpenings}
+                    </span>
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -2761,6 +2811,34 @@ export function PositionDetailPage() {
               }}
             />
             <DetailHoverField
+              label="Target openings (seats)"
+              value={targetOpeningsStr}
+              readOnlyFormat={(v) => (v.trim() ? v.trim() : '1')}
+              onSave={async (next) => {
+                const t = next.trim() || '1'
+                if (!/^\d+$/.test(t)) {
+                  toastError('Enter a whole number 1 or greater.')
+                  return
+                }
+                const n = parseInt(t, 10)
+                if (n < 1 || n > 999) {
+                  toastError('Seats must be between 1 and 999.')
+                  return
+                }
+                const { error } = await supabase!
+                  .from('positions')
+                  .update({ target_openings: n })
+                  .eq('id', id!)
+                  .eq('user_id', user!.id)
+                if (error) toastError(error)
+                else {
+                  setTargetOpeningsStr(String(n))
+                  success('Saved')
+                  await invalidateAll()
+                }
+              }}
+            />
+            <DetailHoverField
               label="Opened on"
               value={openedAtStr}
               inputType="date"
@@ -3010,7 +3088,8 @@ export function PositionDetailPage() {
             <section className="border-line rounded-2xl border bg-white/50 p-4 shadow-sm dark:border-line-dark dark:bg-stone-900/40">
               <h3 className={pipelineSubsectionHeadingClass}>Hired</h3>
               <p className="text-ink-muted mt-1 px-1 text-xs dark:text-stone-500">
-                Candidates marked hired on this role — most recent first.
+                Candidates marked hired on this role — most recent first. Filled {hiredSeatCount} of {targetOpenings}{' '}
+                seat{targetOpenings === 1 ? '' : 's'}.
               </p>
               <ul className="mt-4 space-y-3">
                 {hiredCandidates.length === 0 ? (
@@ -4693,25 +4772,60 @@ export function PositionDetailPage() {
         {hiredFollowUpPcId ? (
           <>
             <p className="text-stitch-on-surface text-sm leading-relaxed dark:text-stone-200">
-              Should we set all of this position&apos;s candidates into <strong>Rejected</strong> and set the position to{' '}
-              <strong>Success</strong>?
+              {targetOpenings > 1 ? (
+                <>
+                  Filled <strong>{hiredSeatCount}</strong> of <strong>{targetOpenings}</strong> seats. Reject other{' '}
+                  <strong>in progress</strong> candidates to clear the pipeline (role stays open), or mark the role{' '}
+                  <strong>Succeeded</strong> when hiring is complete.
+                </>
+              ) : (
+                <>
+                  Reject other <strong>in progress</strong> candidates on this role and mark the position{' '}
+                  <strong>Succeeded</strong>?
+                </>
+              )}
             </p>
             <div className="mt-6 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
                 className="rounded-full bg-orange-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-600 disabled:opacity-50"
-                disabled={bulkRejectOthersAndSucceedPosition.isPending}
+                disabled={bulkRejectOthersAndSucceedPosition.isPending || rejectOtherActiveAssignments.isPending}
                 onClick={() => setHiredFollowUpPcId(null)}
               >
                 Skip
               </button>
+              {targetOpenings > 1 ? (
+                <button
+                  type="button"
+                  className="border-line rounded-full border bg-stone-100 px-4 py-2 text-sm font-semibold text-stone-800 shadow-sm transition hover:bg-stone-200 disabled:opacity-50 dark:border-line-dark dark:bg-stone-800 dark:text-stone-100 dark:hover:bg-stone-700"
+                  disabled={bulkRejectOthersAndSucceedPosition.isPending || rejectOtherActiveAssignments.isPending}
+                  onClick={() => void rejectOtherActiveAssignments.mutateAsync(hiredFollowUpPcId)}
+                >
+                  {rejectOtherActiveAssignments.isPending ? 'Working…' : 'Reject in-progress only'}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
-                disabled={bulkRejectOthersAndSucceedPosition.isPending}
-                onClick={() => void bulkRejectOthersAndSucceedPosition.mutateAsync(hiredFollowUpPcId)}
+                disabled={bulkRejectOthersAndSucceedPosition.isPending || rejectOtherActiveAssignments.isPending}
+                onClick={() => {
+                  if (hiredSeatCount < targetOpenings) {
+                    if (
+                      !window.confirm(
+                        `Only ${hiredSeatCount} of ${targetOpenings} seat(s) filled. Close this role as succeeded anyway?`,
+                      )
+                    ) {
+                      return
+                    }
+                  }
+                  void bulkRejectOthersAndSucceedPosition.mutateAsync(hiredFollowUpPcId)
+                }}
               >
-                {bulkRejectOthersAndSucceedPosition.isPending ? 'Working…' : 'Sure thing!'}
+                {bulkRejectOthersAndSucceedPosition.isPending
+                  ? 'Working…'
+                  : targetOpenings > 1
+                    ? 'Reject others & mark succeeded'
+                    : 'Sure thing!'}
               </button>
             </div>
           </>

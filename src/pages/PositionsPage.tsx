@@ -87,6 +87,7 @@ type PositionListItem = {
   created_at: string
   updated_at?: string
   opened_at?: string
+  target_openings?: number | null
   companies: unknown
   position_candidates?: BoardAssignmentRow[] | null
 }
@@ -108,6 +109,8 @@ function PositionCard({
   const openedRef = p.opened_at ? `${p.opened_at}T12:00:00` : p.created_at
   const daysSinceOpened = differenceInCalendarDays(new Date(), new Date(openedRef))
   const daysSinceCreated = differenceInCalendarDays(new Date(), new Date(p.created_at))
+  const targetOpenings = Math.max(1, Math.floor(Number(p.target_openings) || 1))
+  const hiredSeatCount = (p.position_candidates ?? []).filter((pc) => !pc.archived_at && pc.status === 'hired').length
   const cands = (p.position_candidates ?? []).filter((pc) => {
     if (pc.archived_at) return false
     if (pc.status === 'rejected' || pc.status === 'hired') return false
@@ -151,6 +154,14 @@ function PositionCard({
               title="Days open (role opened-on) / days since record created"
             >
               {daysSinceOpened}d / {daysSinceCreated}d
+              {targetOpenings > 1 ? (
+                <>
+                  <span aria-hidden className="mx-1.5 select-none">
+                    ·
+                  </span>
+                  <span title="Hired vs target seats">Seats {hiredSeatCount}/{targetOpenings}</span>
+                </>
+              ) : null}
             </span>
           </div>
           <div className="text-ink-muted mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs dark:text-stone-500">
@@ -390,7 +401,7 @@ export function PositionsPage() {
     enabled: Boolean(supabase && user),
     queryFn: async () => {
       const selectWithArchive = `
-          id, title, status, company_id, created_at, updated_at, opened_at,
+          id, title, status, company_id, created_at, updated_at, opened_at, target_openings,
           companies ( name ),
           position_candidates (
             id,
@@ -402,7 +413,7 @@ export function PositionsPage() {
           )
         `
       const selectWithoutArchive = `
-          id, title, status, company_id, created_at, updated_at, opened_at,
+          id, title, status, company_id, created_at, updated_at, opened_at, target_openings,
           companies ( name ),
           position_candidates (
             id,
