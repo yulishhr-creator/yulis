@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import * as XLSX from '@e965/xlsx'
 import {
@@ -422,6 +422,7 @@ export function PositionDetailPage() {
   const { user } = useAuth()
   const supabase = getSupabase()
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const { success, error: toastError } = useToast()
   const [search, setSearch] = useSearchParams()
   const highlightCandidate = search.get('candidate')
@@ -764,6 +765,7 @@ export function PositionDetailPage() {
   const [status, setStatus] = useState('active')
   const [shareOpen, setShareOpen] = useState(false)
   const [shareUrl, setShareUrl] = useState<string | null>(null)
+  const [deletePositionOpen, setDeletePositionOpen] = useState(false)
   const [selectedPositionTask, setSelectedPositionTask] = useState<PositionTaskRow | null>(null)
   const [headerStatusOpen, setHeaderStatusOpen] = useState(false)
   const headerStatusRef = useRef<HTMLDivElement>(null)
@@ -1021,6 +1023,24 @@ export function PositionDetailPage() {
       setStatus('active')
       success('Position reopened')
       await invalidateAll()
+    },
+    onError: (e: Error) => toastError(e),
+  })
+
+  const softDeletePosition = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase!
+        .from('positions')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', id!)
+        .eq('user_id', user!.id)
+      if (error) throw error
+    },
+    onSuccess: async () => {
+      setDeletePositionOpen(false)
+      success('Position deleted')
+      await invalidateAll()
+      navigate(backToPositionsList)
     },
     onError: (e: Error) => toastError(e),
   })
@@ -2638,6 +2658,19 @@ export function PositionDetailPage() {
                 ) : null}
               </div>
             ) : null}
+            <button
+              type="button"
+              title="Delete position"
+              aria-label="Delete position"
+              onClick={() => {
+                setHeaderStatusOpen(false)
+                setShareChannelOpen(false)
+                setDeletePositionOpen(true)
+              }}
+              className="border-line flex h-10 w-10 items-center justify-center rounded-xl border bg-white/90 text-stone-600 shadow-sm transition hover:bg-stone-100 hover:text-red-600 dark:border-line-dark dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700 dark:hover:text-red-400"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden />
+            </button>
           </div>
         </div>
 
@@ -4921,6 +4954,29 @@ export function PositionDetailPage() {
       <Modal open={shareOpen} onClose={() => setShareOpen(false)} title="Share link" size="sm">
         <p className="text-ink-muted text-sm">Anyone with this link can view a summary (expires in 7 days).</p>
         <p className="mt-2 break-all rounded-lg bg-stone-100 p-2 text-xs dark:bg-stone-800">{shareUrl}</p>
+      </Modal>
+
+      <Modal open={deletePositionOpen} onClose={() => setDeletePositionOpen(false)} title="Delete position" size="sm">
+        <p className="text-stitch-on-surface text-sm leading-relaxed dark:text-stone-200">
+          Are you Sure you would like to delete position <strong>{position.title}</strong>?
+        </p>
+        <div className="mt-6 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            className="border-line rounded-full border bg-stone-50 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100 dark:border-line-dark dark:bg-stone-800/80 dark:text-stone-100 dark:hover:bg-stone-700"
+            onClick={() => setDeletePositionOpen(false)}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={softDeletePosition.isPending}
+            className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-50"
+            onClick={() => void softDeletePosition.mutateAsync()}
+          >
+            {softDeletePosition.isPending ? 'Deleting…' : 'Trash it'}
+          </button>
+        </div>
       </Modal>
     </div>
   )
